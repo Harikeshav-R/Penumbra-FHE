@@ -4,24 +4,10 @@
 //! and exposes a pythonic API for the underlying Rust primitives.
 
 use penumbra_runtime::{
-    add, decrypt, encrypt, keygen, scalar_mul, sub, Ciphertext, ClientKey, PenumbraRuntimeError,
-    SecurityParams, ServerKey,
+    add, decrypt, encrypt, keygen, scalar_mul, sub, Ciphertext, ClientKey, SecurityParams,
+    ServerKey,
 };
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-
-// We need to implement From<PenumbraRuntimeError> for PyErr, but for now we'll just map it directly in the wrappers.
-// To follow rule 9.2 (Penumbra-specific exception types), we should import it from `penumbra_fhe.errors` if possible,
-// but PyO3 allows creating custom exception types.
-// Wait, we can import `penumbra_fhe.errors.PenumbraRuntimeError` dynamically.
-fn to_py_err(err: PenumbraRuntimeError, py: Python<'_>) -> PyErr {
-    if let Ok(module) = py.import("penumbra_fhe.errors") {
-        if let Ok(err_class) = module.getattr("PenumbraRuntimeError") {
-            return PyErr::from_value(err_class.call1((err.to_string(),)).unwrap().into_any());
-        }
-    }
-    PyRuntimeError::new_err(err.to_string())
-}
 
 /// Security parameters for homomorphic encryption.
 #[pyclass(name = "SecurityParams")]
@@ -58,30 +44,24 @@ impl PyCiphertext {
     ///
     /// :param rhs: The ciphertext to add.
     /// :returns: A new ciphertext containing the sum.
-    /// :raises PenumbraRuntimeError: If the server key is not set.
-    fn __add__(&self, rhs: &PyCiphertext, py: Python<'_>) -> PyResult<Self> {
-        let result = add(&self.0, &rhs.0).map_err(|e| to_py_err(e, py))?;
-        Ok(PyCiphertext(result))
+    fn __add__(&self, rhs: &PyCiphertext) -> Self {
+        PyCiphertext(add(&self.0, &rhs.0))
     }
 
     /// Subtract an encrypted value from this one.
     ///
     /// :param rhs: The ciphertext to subtract.
     /// :returns: A new ciphertext containing the difference.
-    /// :raises PenumbraRuntimeError: If the server key is not set.
-    fn __sub__(&self, rhs: &PyCiphertext, py: Python<'_>) -> PyResult<Self> {
-        let result = sub(&self.0, &rhs.0).map_err(|e| to_py_err(e, py))?;
-        Ok(PyCiphertext(result))
+    fn __sub__(&self, rhs: &PyCiphertext) -> Self {
+        PyCiphertext(sub(&self.0, &rhs.0))
     }
 
     /// Multiply this encrypted value by a plaintext scalar.
     ///
     /// :param scalar: The plaintext scalar multiplier.
     /// :returns: A new ciphertext containing the product.
-    /// :raises PenumbraRuntimeError: If the server key is not set.
-    fn __mul__(&self, scalar: u32, py: Python<'_>) -> PyResult<Self> {
-        let result = scalar_mul(&self.0, scalar).map_err(|e| to_py_err(e, py))?;
-        Ok(PyCiphertext(result))
+    fn __mul__(&self, scalar: u32) -> Self {
+        PyCiphertext(scalar_mul(&self.0, scalar))
     }
 }
 
@@ -91,17 +71,17 @@ impl PyCiphertext {
 /// :returns: A tuple containing the (ClientKey, ServerKey).
 #[pyfunction]
 #[pyo3(name = "keygen")]
-fn py_keygen(params: &PySecurityParams, py: Python<'_>) -> PyResult<(PyClientKey, PyServerKey)> {
+fn py_keygen(params: &PySecurityParams) -> (PyClientKey, PyServerKey) {
     let p = SecurityParams {
         rng_seed: params.0.rng_seed,
     };
-    let (c, s) = keygen(p).map_err(|e| to_py_err(e, py))?;
-    Ok((PyClientKey(c), PyServerKey(s)))
+    let (c, s) = keygen(p);
+    (PyClientKey(c), PyServerKey(s))
 }
 
-/// Encrypt a 32-bit integer using the client key.
+/// Encrypt a 32-bit unsigned integer using the client key.
 ///
-/// :param val: The integer to encrypt.
+/// :param val: The unsigned integer to encrypt. Values outside [0, 2**32-1] will wrap or raise OverflowError depending on Python conversion.
 /// :param key: The client key.
 /// :returns: A new Ciphertext.
 #[pyfunction]
@@ -110,7 +90,7 @@ fn py_encrypt(val: u32, key: &PyClientKey) -> PyCiphertext {
     PyCiphertext(encrypt(val, &key.0))
 }
 
-/// Decrypt a ciphertext back into a 32-bit integer.
+/// Decrypt a ciphertext back into a 32-bit unsigned integer.
 ///
 /// :param ct: The ciphertext to decrypt.
 /// :param key: The client key.

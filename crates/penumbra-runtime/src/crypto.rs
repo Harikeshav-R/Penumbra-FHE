@@ -1,4 +1,3 @@
-use crate::error::PenumbraRuntimeError;
 use tfhe::prelude::*;
 use tfhe::shortint::parameters::PARAM_MESSAGE_2_CARRY_2_KS_PBS;
 use tfhe::{
@@ -35,16 +34,16 @@ pub struct Ciphertext(pub(crate) FheUint32);
 /// ```
 /// use penumbra_runtime::{keygen, SecurityParams};
 /// let params = SecurityParams { rng_seed: 42 };
-/// let (client_key, server_key) = keygen(params).unwrap();
+/// let (client_key, server_key) = keygen(params);
 /// ```
-pub fn keygen(params: SecurityParams) -> Result<(ClientKey, ServerKey), PenumbraRuntimeError> {
+pub fn keygen(params: SecurityParams) -> (ClientKey, ServerKey) {
     let config = ConfigBuilder::with_custom_parameters(PARAM_MESSAGE_2_CARRY_2_KS_PBS).build();
     let seed = Seed(params.rng_seed as u128);
 
     let client_key = TfheClientKey::generate_with_seed(config, seed);
     let server_key = TfheServerKey::new(&client_key);
 
-    Ok((ClientKey(client_key), ServerKey(server_key)))
+    (ClientKey(client_key), ServerKey(server_key))
 }
 
 /// Set the global server key for the current thread.
@@ -58,7 +57,7 @@ pub fn keygen(params: SecurityParams) -> Result<(ClientKey, ServerKey), Penumbra
 /// ```
 /// use penumbra_runtime::{keygen, set_server_key, SecurityParams};
 /// let params = SecurityParams { rng_seed: 42 };
-/// let (_, server_key) = keygen(params).unwrap();
+/// let (_, server_key) = keygen(params);
 /// set_server_key(&server_key);
 /// ```
 pub fn set_server_key(key: &ServerKey) {
@@ -78,7 +77,7 @@ pub fn set_server_key(key: &ServerKey) {
 /// ```
 /// use penumbra_runtime::{keygen, encrypt, SecurityParams};
 /// let params = SecurityParams { rng_seed: 42 };
-/// let (client_key, _) = keygen(params).unwrap();
+/// let (client_key, _) = keygen(params);
 /// let ct = encrypt(5, &client_key);
 /// ```
 pub fn encrypt(val: u32, key: &ClientKey) -> Ciphertext {
@@ -99,7 +98,7 @@ pub fn encrypt(val: u32, key: &ClientKey) -> Ciphertext {
 /// ```
 /// use penumbra_runtime::{keygen, encrypt, decrypt, SecurityParams};
 /// let params = SecurityParams { rng_seed: 42 };
-/// let (client_key, _) = keygen(params).unwrap();
+/// let (client_key, _) = keygen(params);
 /// let ct = encrypt(5, &client_key);
 /// assert_eq!(decrypt(&ct, &client_key), 5);
 /// ```

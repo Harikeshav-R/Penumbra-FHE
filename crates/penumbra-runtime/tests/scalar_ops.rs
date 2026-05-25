@@ -10,7 +10,7 @@ static KEYS: OnceLock<(ClientKey, ServerKey)> = OnceLock::new();
 fn get_keys() -> &'static (ClientKey, ServerKey) {
     KEYS.get_or_init(|| {
         let params = SecurityParams { rng_seed: 42 };
-        keygen(params).unwrap()
+        keygen(params)
     })
 }
 
@@ -39,7 +39,7 @@ proptest! {
         let ct_x = encrypt(x, client_key);
         let ct_y = encrypt(y, client_key);
 
-        let ct_res = add(&ct_x, &ct_y).unwrap();
+        let ct_res = add(&ct_x, &ct_y);
         let res = decrypt(&ct_res, client_key);
 
         assert_eq!(res, x + y);
@@ -53,7 +53,7 @@ proptest! {
         let ct_x = encrypt(x, client_key);
         let ct_y = encrypt(y, client_key);
 
-        let ct_res = sub(&ct_x, &ct_y).unwrap();
+        let ct_res = sub(&ct_x, &ct_y);
         let res = decrypt(&ct_res, client_key);
 
         assert_eq!(res, x - y);
@@ -66,7 +66,7 @@ proptest! {
 
         let ct_x = encrypt(x, client_key);
 
-        let ct_res = scalar_mul(&ct_x, k).unwrap();
+        let ct_res = scalar_mul(&ct_x, k);
         let res = decrypt(&ct_res, client_key);
 
         assert_eq!(res, x * k);
