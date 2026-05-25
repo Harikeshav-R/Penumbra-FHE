@@ -45,18 +45,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4.1.5 # v4
-      - uses: PyO3/maturin-action@v1.44.0 # v1
+      - uses: PyO3/maturin-action@v1.51.0 # v1
         with:
           command: build
           args: --release --out dist -i python${{ matrix.python-version }}
       # For Linux, also build aarch64 via cross-compile
-      - uses: PyO3/maturin-action@v1.44.0 # v1
+      - uses: PyO3/maturin-action@v1.51.0 # v1
         if: runner.os == 'Linux'
         with:
           command: build
           args: --release --target aarch64-unknown-linux-gnu --out dist -i python${{ matrix.python-version }}
       # For macOS, also build aarch64
-      - uses: PyO3/maturin-action@v1.44.0 # v1
+      - uses: PyO3/maturin-action@v1.51.0 # v1
         if: runner.os == 'macOS'
         with:
           command: build
