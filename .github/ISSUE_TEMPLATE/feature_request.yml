@@ -1,0 +1,53 @@
+name: Feature Request
+description: Suggest an idea for Penumbra.
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "Check ROADMAP.md first. Features already on the roadmap don't need a new issue; comment on the tracking issue instead."
+  - type: input
+    id: summary
+    attributes:
+      label: Short summary
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: "What problem does this solve?"
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed solution
+      description: "How would you like to see this implemented?"
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope estimate
+      options:
+        - small
+        - medium
+        - large
+        - unsure
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Acknowledgments
+      options:
+        - label: I have read ROADMAP.md
+          required: true
+        - label: This feature aligns with the project's scope (per PHILOSOPHY.md §6)
+          required: true

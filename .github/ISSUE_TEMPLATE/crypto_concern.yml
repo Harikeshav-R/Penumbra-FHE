@@ -1,0 +1,42 @@
+name: Cryptographic Concern
+description: Ask a question or raise a concern about cryptographic correctness (NOT vulnerabilities).
+labels: ["crypto", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "**STOP.** If you believe you have found a security vulnerability, do **not** file this issue. Follow the process in [SECURITY.md](../../SECURITY.md) instead."
+  - type: textarea
+    id: observation
+    attributes:
+      label: What you observed
+    validations:
+      required: true
+  - type: textarea
+    id: concern
+    attributes:
+      label: Why you believe this is a correctness concern
+    validations:
+      required: true
+  - type: textarea
+    id: component
+    attributes:
+      label: Affected component
+      description: "e.g. analyzer / compiler / runtime / poly / depth-cost-table / other"
+    validations:
+      required: true
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Reproducer or reference
+      description: "A code snippet or a link to the literature."
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Acknowledgments
+      options:
+        - label: I have confirmed this is not a security vulnerability
+          required: true
+        - label: I have read ARCHITECTURE.md §7 and SECURITY.md
+          required: true

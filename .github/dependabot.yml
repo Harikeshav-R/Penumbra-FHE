@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # tfhe-rs is pinned manually to ensure crypto safety and verify updates.
+      # Bumps to TFHE-rs require the `crypto` commit type and a two-reviewer process.
+      - dependency-name: "tfhe"
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5

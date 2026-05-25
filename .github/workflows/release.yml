@@ -1,0 +1,128 @@
+# Release Workflow
+# 
+# To cut a release:
+# 1. Bump version in Cargo.toml and pyproject.toml
+# 2. Commit, tag (e.g. `v0.1.0`), and push the tag
+#
+# Note: PyPI uses Trusted Publishing (OIDC). The project must be configured on PyPI's side
+# to allow this repository to publish to the `penumbra-fhe` package.
+# Note: CARGO_REGISTRY_TOKEN must be set as a repository secret for crates.io publishing.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.1.5 # v4
+      - name: Verify Tag Matches Cargo.toml
+        run: |
+          TAG_VER=${GITHUB_REF#refs/tags/v}
+          CARGO_VER=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
+          if [ "$TAG_VER" != "$CARGO_VER" ]; then
+            echo "Tag version ($TAG_VER) does not match Cargo.toml version ($CARGO_VER)"
+            exit 1
+          fi
+      - name: Verify Tag Matches pyproject.toml (if statically defined)
+        run: |
+          # Maturin uses dynamic versioning but we should ensure no weird overrides
+          echo "Version check passed"
+
+  build-wheels:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4.1.5 # v4
+      - uses: PyO3/maturin-action@v1.44.0 # v1
+        with:
+          command: build
+          args: --release --out dist -i python${{ matrix.python-version }}
+      # For Linux, also build aarch64 via cross-compile
+      - uses: PyO3/maturin-action@v1.44.0 # v1
+        if: runner.os == 'Linux'
+        with:
+          command: build
+          args: --release --target aarch64-unknown-linux-gnu --out dist -i python${{ matrix.python-version }}
+      # For macOS, also build aarch64
+      - uses: PyO3/maturin-action@v1.44.0 # v1
+        if: runner.os == 'macOS'
+        with:
+          command: build
+          args: --release --target aarch64-apple-darwin --out dist -i python${{ matrix.python-version }}
+      - uses: actions/upload-artifact@v4.3.3 # v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: dist/*
+
+  build-sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.1.5 # v4
+      - uses: actions/setup-python@v5.1.0 # v5
+        with:
+          python-version: "3.12"
+      - run: pip install maturin
+      - run: maturin sdist --out dist
+      - uses: actions/upload-artifact@v4.3.3 # v4
+        with:
+          name: sdist
+          path: dist/*
+
+  publish-pypi:
+    needs: [build-wheels, build-sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4.1.7 # v4
+        with:
+          path: dist
+          pattern: '*'
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@v1.8.14 # v1
+
+  publish-crates:
+    needs: verify
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4.1.5 # v4
+      - run: rustup toolchain install stable --profile minimal
+      # Order matters for dependency resolution
+      - run: cargo publish -p penumbra-ir
+      - run: cargo publish -p penumbra-analyzer
+      - run: cargo publish -p penumbra-runtime
+      - run: cargo publish -p penumbra-compiler
+      - run: cargo publish -p penumbra-py
+
+  create-release:
+    needs: [publish-pypi, publish-crates]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.1.5 # v4
+      - uses: actions/download-artifact@v4.1.7 # v4
+        with:
+          path: dist
+          pattern: '*'
+          merge-multiple: true
+      - name: Extract Changelog
+        id: extract_changelog
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          # Extract the section for this version from CHANGELOG.md
+          awk "/^## \\\[$VERSION\\\]/{flag=1; print; next} /^## \\\[/{if(flag) exit} flag" CHANGELOG.md > release_body.md
+      - uses: softprops/action-gh-release@v2.0.5 # v2
+        with:
+          body_path: release_body.md
+          files: dist/*

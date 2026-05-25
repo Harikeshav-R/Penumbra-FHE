@@ -1,0 +1,13 @@
+# This file is set up to fan out to additional reviewers as the project grows.
+# Currently, the core cryptography and architecture are maintained by a single owner,
+# but explicit lines are maintained here for visibility of crypto-sensitive areas.
+
+* @Harikeshav-R
+
+# Crypto-sensitive areas
+/crates/penumbra-compiler/src/poly/ @Harikeshav-R
+/crates/penumbra-analyzer/src/depth_costs.rs @Harikeshav-R
+/crates/penumbra-runtime/ @Harikeshav-R
+/SECURITY.md @Harikeshav-R
+/LICENSE @Harikeshav-R
+/NOTICE @Harikeshav-R
