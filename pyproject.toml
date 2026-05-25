@@ -1,0 +1,87 @@
+[build-system]
+requires = ["maturin>=1.13,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "penumbra-fhe"
+description = "A homomorphic inference engine for privacy-preserving ML."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Harikeshav R", email = "r.harikeshav@gmail.com" }]
+keywords = ["fhe", "homomorphic-encryption", "privacy", "machine-learning", "cryptography"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security :: Cryptography",
+]
+dynamic = ["version"]
+dependencies = ["onnx>=1.21", "numpy>=2.4"]
+
+[project.urls]
+Homepage = "https://github.com/Harikeshav-R/penumbra-fhe"
+Documentation = "https://harikeshav-r.github.io/penumbra-fhe/"
+Repository = "https://github.com/Harikeshav-R/penumbra-fhe"
+Issues = "https://github.com/Harikeshav-R/penumbra-fhe/issues"
+Changelog = "https://github.com/Harikeshav-R/penumbra-fhe/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+dev = [
+    "maturin>=1.13",
+    "ruff>=0.15",
+    "pyrefly>=1.0",
+    "pytest>=9",
+    "pytest-benchmark>=5.2",
+    "pre-commit>=4.6",
+]
+docs = [
+    "sphinx>=9",
+    "sphinx-rtd-theme>=3.1",
+    "myst-parser>=5.1",
+    "sphinx-autodoc-typehints>=3.10",
+]
+examples = ["torch>=2.12"]
+
+[tool.maturin]
+python-source = "python"
+module-name = "penumbra_fhe._bindings"
+manifest-path = "crates/penumbra-py/Cargo.toml"
+features = ["pyo3/extension-module"]
+strip = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "D", "UP", "ANN", "S", "B", "A", "C4", "DTZ", "T20", "RET", "SIM", "ARG", "PTH", "PL", "RUF"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "sphinx"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "D"]
+"examples/**/*.py" = ["D", "T20"]
+
+[tool.ruff.format]
+
+[tool.pyrefly]
+# pyrefly strictly checks python files
+project-root = "python"
+strict = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: end-to-end tests",
+    "crypto: tests touching cryptographic primitives",
+]

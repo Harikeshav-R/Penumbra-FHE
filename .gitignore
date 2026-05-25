@@ -1,0 +1,57 @@
+# Rust
+target/
+# Cargo.lock is KEEP because this workspace includes a binary crate via PyO3.
+# We want reproducible builds for the Python extension.
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyrefly_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Maturin
+*.whl
+
+# Sphinx
+docs/_build/
+docs/api/_autosummary/
+
+# macOS
+.DS_Store
+
+# Linux
+*~
+
+# Windows
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage
+.coverage
+htmlcov/
+coverage.xml
+lcov.info
+*.profraw
+
+# Benchmarks
+benchmarks/local/
+
+# Environment files
+.env
+.envrc
+
+# Project-specific
+/*.onnx

@@ -1,0 +1,14 @@
+msrv = "1.78"
+cognitive-complexity-threshold = 25
+too-many-arguments-threshold = 7
+type-complexity-threshold = 250
+avoid-breaking-exported-api = false
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+
+# Methods that shouldn't be used in the library
+disallowed-methods = [
+    "std::process::exit",
+    "rand::thread_rng",
+    "rand::rngs::OsRng",
+]
