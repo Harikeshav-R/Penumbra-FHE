@@ -1,19 +1,17 @@
-"""
-Penumbra FHE: A homomorphic inference engine for privacy-preserving ML.
-"""
+"""Penumbra FHE: A homomorphic inference engine for privacy-preserving ML."""
 
 from .errors import (
+    PenumbraCompilerError,
+    PenumbraDepthBudgetError,
     PenumbraError,
     PenumbraIngestionError,
-    PenumbraCompilerError,
     PenumbraRuntimeError,
-    PenumbraDepthBudgetError,
 )
 
 __all__ = [
+    "PenumbraCompilerError",
+    "PenumbraDepthBudgetError",
     "PenumbraError",
     "PenumbraIngestionError",
-    "PenumbraCompilerError",
     "PenumbraRuntimeError",
-    "PenumbraDepthBudgetError",
 ]
