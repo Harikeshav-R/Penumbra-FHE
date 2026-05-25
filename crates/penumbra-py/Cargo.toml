@@ -1,0 +1,26 @@
+[package]
+name = "penumbra-py"
+description = "Python bindings for Penumbra."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+name = "_bindings"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3.workspace = true
+thiserror.workspace = true
+penumbra-ir = { path = "../penumbra-ir" }
+penumbra-analyzer = { path = "../penumbra-analyzer" }
+penumbra-compiler = { path = "../penumbra-compiler" }
+penumbra-runtime = { path = "../penumbra-runtime" }

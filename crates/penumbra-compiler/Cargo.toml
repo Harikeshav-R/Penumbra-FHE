@@ -1,0 +1,19 @@
+[package]
+name = "penumbra-compiler"
+description = "Lowering passes and polynomial approximations for Penumbra."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+penumbra-ir = { path = "../penumbra-ir" }
+penumbra-runtime = { path = "../penumbra-runtime" }
+thiserror.workspace = true

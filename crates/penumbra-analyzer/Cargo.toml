@@ -1,0 +1,18 @@
+[package]
+name = "penumbra-analyzer"
+description = "Depth cost analysis and bootstrapping placement for Penumbra."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+penumbra-ir = { path = "../penumbra-ir" }
+thiserror.workspace = true
