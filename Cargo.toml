@@ -61,3 +61,7 @@ inherits = "release"
 
 [profile.dev]
 opt-level = 1
+
+# Optimize dependencies even in dev/test for tolerable cryptography performance
+[profile.dev.package."*"]
+opt-level = 3
