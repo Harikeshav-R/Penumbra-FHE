@@ -1,10 +1,8 @@
-"""
-Smoke tests for Penumbra.
-"""
+"""Smoke tests for Penumbra."""
 
-import pytest
+import penumbra_fhe
 
-def test_import_success():
+
+def test_import_success() -> None:
     """Ensure the package can be imported."""
-    import penumbra_fhe
     assert penumbra_fhe is not None

@@ -1,10 +1,9 @@
-"""
-ONNX ingestion for Penumbra FHE.
-"""
+"""ONNX ingestion for Penumbra FHE."""
 
-import onnx # type: ignore
+import onnx  # type: ignore
 
 from .errors import PenumbraIngestionError
+
 
 def load_onnx(path: str) -> onnx.ModelProto:
     """

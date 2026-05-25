@@ -40,21 +40,24 @@ repos:
       - id: ruff-check
         name: ruff check
         entry: ruff check --fix
-        language: system
+        language: python
+        additional_dependencies: ["ruff"]
         types_or: [python, pyi]
         require_serial: true
 
       - id: ruff-format
         name: ruff format
         entry: ruff format
-        language: system
+        language: python
+        additional_dependencies: ["ruff"]
         types_or: [python, pyi]
         require_serial: true
 
       - id: pyrefly
         name: pyrefly
         entry: pyrefly check python/
-        language: system
+        language: python
+        additional_dependencies: ["pyrefly"]
         types: [python]
         pass_filenames: false
 
