@@ -1,6 +1,3 @@
-"""Penumbra FHE: A homomorphic inference engine for privacy-preserving ML."""
-
-from . import _bindings
 from .errors import (
     PenumbraCompilerError,
     PenumbraDepthBudgetError,
@@ -9,15 +6,7 @@ from .errors import (
     PenumbraRuntimeError,
 )
 
-
-def version() -> str:
-    """
-    Get the version of the penumbra-fhe core library.
-
-    :returns: The version string.
-    """
-    return _bindings.version()
-
+def version() -> str: ...
 
 __all__ = [
     "PenumbraCompilerError",

@@ -5,8 +5,17 @@
 
 use pyo3::prelude::*;
 
+/// Get the version of the penumbra-fhe core library.
+///
+/// :returns: The version string.
+#[pyfunction]
+fn version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 #[pymodule]
-fn _bindings(_m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _bindings(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register Rust functions and classes here
+    m.add_function(wrap_pyfunction!(version, m)?)?;
     Ok(())
 }

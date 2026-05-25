@@ -1,5 +1,5 @@
 # Release Workflow
-# 
+#
 # To cut a release:
 # 1. Bump version in Cargo.toml and pyproject.toml
 # 2. Commit, tag (e.g. `v0.1.0`), and push the tag

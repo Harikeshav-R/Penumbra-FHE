@@ -23,33 +23,33 @@ The repository scaffold and CI must exist before any technical work begins. This
 ### 0.1 — Repository hygiene
 
 **DoD:**
-- [ ] All documents in [the repo manifest](#repository-file-manifest) committed to `main`.
-- [ ] `LICENSE`, `NOTICE`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CONTRIBUTING.md`, `AGENTS.md` present.
-- [ ] Branch protection enabled on `main` (require PR, require CI green, require signed commits).
-- [ ] Issue/PR templates populated.
-- [ ] Repository description, topics, and homepage URL set on GitHub.
+- [x] All documents in [the repo manifest](#repository-file-manifest) committed to `main`.
+- [x] `LICENSE`, `NOTICE`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CONTRIBUTING.md`, `AGENTS.md` present.
+- [x] Branch protection enabled on `main` (require PR, require CI green, require signed commits).
+- [x] Issue/PR templates populated.
+- [x] Repository description, topics, and homepage URL set on GitHub.
 
 ### 0.2 — Toolchain
 
 **DoD:**
-- [ ] `rust-toolchain.toml` pins stable channel with `rustfmt`, `clippy`, `rust-src`.
-- [ ] `pyproject.toml` declares `requires-python = ">=3.12"`.
-- [ ] `maturin develop` succeeds locally on macOS aarch64 and Linux x86_64.
-- [ ] `cargo test --workspace` succeeds (with empty crates).
-- [ ] `pytest` succeeds (with one smoke test).
+- [x] `rust-toolchain.toml` pins stable channel with `rustfmt`, `clippy`, `rust-src`.
+- [x] `pyproject.toml` declares `requires-python = ">=3.12"`.
+- [x] `maturin develop` succeeds locally on macOS aarch64 and Linux x86_64.
+- [x] `cargo test --workspace` succeeds (with empty crates).
+- [x] `pytest` succeeds (with one smoke test).
 
 ### 0.3 — CI green
 
 **DoD:**
-- [ ] `.github/workflows/ci.yml` passes on Ubuntu latest, macOS latest, Windows latest (x86_64).
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test --workspace`, `ruff check`, `pyrefly check`, `pytest` all run in CI.
-- [ ] `.github/workflows/docs.yml` builds Sphinx + rustdoc and deploys to GitHub Pages.
+- [x] `.github/workflows/ci.yml` passes on Ubuntu latest, macOS latest, Windows latest (x86_64).
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test --workspace`, `ruff check`, `pyrefly check`, `pytest` all run in CI.
+- [x] `.github/workflows/docs.yml` builds Sphinx + rustdoc and deploys to GitHub Pages.
 
 ### 0.4 — Pre-commit hooks
 
 **DoD:**
-- [ ] `.pre-commit-config.yaml` runs `rustfmt`, `clippy`, `ruff`, `pyrefly`, conventional-commit lint, and end-of-file fixers.
-- [ ] Hook installed in dev setup (documented in `CONTRIBUTING.md`).
+- [x] `.pre-commit-config.yaml` runs `rustfmt`, `clippy`, `ruff`, `pyrefly`, conventional-commit lint, and end-of-file fixers.
+- [x] Hook installed in dev setup (documented in `CONTRIBUTING.md`).
 
 ---
 
@@ -68,10 +68,10 @@ This is the highest-risk week. TFHE-rs and PyO3 have a steep setup curve, especi
 - A Python integration test that imports `penumbra_fhe`, calls `version()`, and asserts the result.
 
 **DoD:**
-- [ ] `cargo build --workspace --release` succeeds in <10 minutes on the reference machine.
-- [ ] `maturin build --release` produces a wheel for cpython-3.12.
-- [ ] CI green on all three platforms.
-- [ ] An issue tagged `documentation/setup` exists capturing every TFHE-rs gotcha encountered.
+- [x] `cargo build --workspace --release` succeeds in <10 minutes on the reference machine.
+- [x] `maturin build --release` produces a wheel for cpython-3.12.
+- [x] CI green on all three platforms.
+- [x] An issue tagged `documentation/setup` exists capturing every TFHE-rs gotcha encountered.
 
 **Depends on:** Phase 0 complete.
 
