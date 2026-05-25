@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `penumbra_fhe.version()`: A Python API returning the current crate version.
 
 ### Changed
 

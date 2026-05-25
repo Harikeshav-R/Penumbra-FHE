@@ -5,8 +5,14 @@
 
 use pyo3::prelude::*;
 
+#[pyfunction]
+fn version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 #[pymodule]
-fn _bindings(_m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _bindings(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register Rust functions and classes here
+    m.add_function(wrap_pyfunction!(version, m)?)?;
     Ok(())
 }
