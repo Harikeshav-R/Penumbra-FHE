@@ -350,8 +350,7 @@ penumbra-fhe/
 ├── CODE_OF_CONDUCT.md                     # Contributor Covenant 2.1
 ├── SECURITY.md                            # disclosure policy
 ├── CHANGELOG.md                           # Keep a Changelog format
-├── LICENSE                                # Apache-2.0
-├── NOTICE                                 # Apache-2.0 NOTICE file
+├── LICENSE                                # MIT
 ├── .gitignore
 ├── .gitattributes
 ├── .editorconfig

@@ -16,7 +16,7 @@ This document is exhaustive on purpose. The project implements cryptography. The
 | **Build tools** | `cargo`, `maturin` |
 | **Python version** | 3.12+ |
 | **Rust channel** | stable |
-| **License** | Apache-2.0 |
+| **License** | MIT |
 | **Status** | Pre-alpha |
 
 ---

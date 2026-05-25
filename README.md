@@ -8,7 +8,7 @@
 [![Docs](https://github.com/Harikeshav-R/penumbra-fhe/actions/workflows/docs.yml/badge.svg)](https://harikeshav-r.github.io/penumbra-fhe/)
 [![PyPI](https://img.shields.io/pypi/v/penumbra-fhe.svg)](https://pypi.org/project/penumbra-fhe/)
 [![Crates.io](https://img.shields.io/crates/v/penumbra-fhe.svg)](https://crates.io/crates/penumbra-fhe)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust: stable](https://img.shields.io/badge/rust-stable-orange.svg)](rust-toolchain.toml)
 [![Python: 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](pyproject.toml)
 [![Code of Conduct](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
@@ -59,7 +59,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the milestone schedule.
 - **Polynomial activation library.** Drop-in polynomial approximations for ReLU, sigmoid, tanh at degrees 3, 5, 7.
 - **Honest benchmarks.** Per-layer latency profiling, depth-cost breakdown, accuracy degradation reporting. We tell you exactly what FHE costs.
 - **Pip-installable.** `pip install penumbra-fhe`. The crypto runs in Rust; you write Python.
-- **Apache-2.0 licensed.** Use it commercially. Modify it. Ship it.
+- **MIT licensed.** Use it commercially. Modify it. Ship it.
 
 ## Supported model classes
 
@@ -237,7 +237,7 @@ This project implements cryptography. If you find a security issue, **do not ope
 
 ## License
 
-Licensed under the **Apache License, Version 2.0**. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+Licensed under the **MIT License**. See [`LICENSE`](LICENSE).
 
 Penumbra builds on [TFHE-rs](https://github.com/zama-ai/tfhe-rs), licensed BSD-3-Clause-Clear. We are deeply indebted to the Zama team for making practical FHE possible.
 
@@ -253,9 +253,3 @@ If you use Penumbra in academic work:
   url    = {https://github.com/Harikeshav-R/penumbra-fhe},
 }
 ```
-
----
-
-<div align="center">
-<sub>Built with the help of <a href="https://www.anthropic.com/claude">Claude</a>.</sub>
-</div>
