@@ -11,5 +11,4 @@ def test_import_success() -> None:
 def test_version() -> None:
     """Ensure the version function works and returns a string."""
     v = penumbra_fhe.version()
-    assert isinstance(v, str)
-    assert len(v) > 0
+    assert isinstance(v, str) and bool(v)

@@ -5,6 +5,9 @@
 
 use pyo3::prelude::*;
 
+/// Get the version of the penumbra-fhe core library.
+///
+/// :returns: The version string.
 #[pyfunction]
 fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
