@@ -81,7 +81,7 @@ fn py_keygen(params: &PySecurityParams) -> (PyClientKey, PyServerKey) {
 
 /// Encrypt a 32-bit unsigned integer using the client key.
 ///
-/// :param val: The unsigned integer to encrypt. Values outside [0, 2**32-1] will wrap or raise OverflowError depending on Python conversion.
+/// :param val: The unsigned integer to encrypt. Values outside [0, 2**32-1] will raise an OverflowError.
 /// :param key: The client key.
 /// :returns: A new Ciphertext.
 #[pyfunction]
