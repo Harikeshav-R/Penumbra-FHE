@@ -69,6 +69,17 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
+      - run: python -m venv .venv
+      - name: Activate venv (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+          echo "VIRTUAL_ENV=${{ github.workspace }}/.venv" >> $GITHUB_ENV
+      - name: Activate venv (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "${{ github.workspace }}\.venv\Scripts" >> $env:GITHUB_PATH
+          echo "VIRTUAL_ENV=${{ github.workspace }}\.venv" >> $env:GITHUB_ENV
       - run: pip install maturin
       - run: maturin develop --release
       - run: pip install pytest pytest-benchmark
