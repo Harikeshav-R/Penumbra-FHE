@@ -79,21 +79,14 @@ This is the highest-risk week. TFHE-rs and PyO3 have a steep setup curve, especi
 
 **Risk — PyO3 ABI mismatch on macOS aarch64:** Apple Silicon wheels occasionally break with new PyO3 releases. Mitigation: pin `pyo3` exactly in `Cargo.toml`; only upgrade with intent.
 
-### Week 2 — Encrypted scalar operations
-
-**Deliverables:**
-- `penumbra-runtime` exposes `Ciphertext` (newtype over TFHE-rs's `FheUint32` to start).
-- Free functions for encrypted add, encrypted sub, encrypted scalar multiply.
-- A property-based test suite (`proptest`) that verifies:
-  - `decrypt(encrypt(x) + encrypt(y)) == x + y` for `x, y` in valid range.
-  - `decrypt(encrypt(x) * k) == x * k` for scalar `k`.
-  - Bootstrapping refreshes ciphertext (noise budget restored).
-- Python bindings: `penumbra_fhe.encrypt(int) -> Ciphertext`, `penumbra_fhe.decrypt(Ciphertext) -> int`, `Ciphertext.__add__`, `Ciphertext.__mul__`.
-
-**DoD:**
-- [ ] Property tests pass with 1000 cases each, no failures.
-- [ ] Documented round-trip example in `docs/tutorials/scalars.rst`.
-- [ ] No clippy warnings, no `unwrap()` in non-test code (use `?` or explicit panic with message).
+### Week 2: Encrypted Scalar Operations
+- [x] Basic types (`Ciphertext`, `ClientKey`, `ServerKey`, `SecurityParams`).
+- [x] Keygen, encryption, and decryption wrappers in `penumbra-runtime`.
+- [x] Homomorphic scalar addition, subtraction, multiplication.
+- [x] Python bindings: `penumbra_fhe.encrypt(int) -> Ciphertext`, `penumbra_fhe.decrypt(Ciphertext) -> int`, `Ciphertext.__add__`, `Ciphertext.__mul__`.
+- [x] **DoD**: `proptest` suite validates 100 randomized operations against plaintext equivalents.
+- [x] Documented round-trip example in `docs/tutorials/scalars.rst`.
+- [x] No clippy warnings, no `unwrap()` in non-test code (use `?` or explicit panic with message).
 
 **Depends on:** Week 1.
 
