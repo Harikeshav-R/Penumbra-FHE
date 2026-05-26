@@ -32,7 +32,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(100))]
 
     #[test]
-    fn test_encrypted_add(x in 0..1000u32, y in 0..1000u32) {
+    fn test_encrypted_add(x in any::<u32>(), y in any::<u32>()) {
         ensure_server_key();
         let (client_key, _) = get_keys();
 
@@ -42,11 +42,11 @@ proptest! {
         let ct_res = add(&ct_x, &ct_y);
         let res = decrypt(&ct_res, client_key);
 
-        assert_eq!(res, x + y);
+        assert_eq!(res, x.wrapping_add(y));
     }
 
     #[test]
-    fn test_encrypted_sub(x in 1000..2000u32, y in 0..1000u32) {
+    fn test_encrypted_sub(x in any::<u32>(), y in any::<u32>()) {
         ensure_server_key();
         let (client_key, _) = get_keys();
 
@@ -56,11 +56,11 @@ proptest! {
         let ct_res = sub(&ct_x, &ct_y);
         let res = decrypt(&ct_res, client_key);
 
-        assert_eq!(res, x - y);
+        assert_eq!(res, x.wrapping_sub(y));
     }
 
     #[test]
-    fn test_encrypted_scalar_mul(x in 0..100u32, k in 0..10u32) {
+    fn test_encrypted_scalar_mul(x in any::<u32>(), k in any::<u32>()) {
         ensure_server_key();
         let (client_key, _) = get_keys();
 
@@ -69,6 +69,6 @@ proptest! {
         let ct_res = scalar_mul(&ct_x, k);
         let res = decrypt(&ct_res, client_key);
 
-        assert_eq!(res, x * k);
+        assert_eq!(res, x.wrapping_mul(k));
     }
 }
