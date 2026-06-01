@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4.1.5 # v4
       - run: rustup toolchain install stable --profile minimal --component clippy
-      - uses: Swatinem/rust-cache@v2.7.3 # v2
+      - uses: Swatinem/rust-cache@v2.9.1 # v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   rust-test:
@@ -43,7 +43,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - run: rustup target add x86_64-pc-windows-msvc
         if: runner.os == 'Windows'
-      - uses: Swatinem/rust-cache@v2.7.3 # v2
+      - uses: Swatinem/rust-cache@v2.9.1 # v2
       - run: cargo test --workspace
 
   python-lint:
