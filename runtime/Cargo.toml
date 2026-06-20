@@ -1,0 +1,32 @@
+[package]
+name = "penumbra-fhe-runtime"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.83"
+license = "Apache-2.0"
+description = "TFHE backend (Layers 1+2) for Penumbra-FHE: encrypted ML inference runtime."
+repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
+readme = "README.md"
+keywords = ["fhe", "tfhe", "homomorphic", "encryption", "inference"]
+categories = ["cryptography"]
+publish = false
+
+[lib]
+name = "penumbra_fhe_runtime"
+path = "src/lib.rs"
+
+[dependencies]
+# FHE primitives. High-level `integer`/`shortint` API is used for bootstrapped
+# integer arithmetic and programmable bootstrapping (lookup tables). See PROJECT.md §15.
+tfhe = { version = "1.6", features = ["shortint", "integer"] }
+# IR (de)serialization. The IR is the bridge to the Python front end (PROJECT.md §7, §13).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+# (placeholder for future test-only deps)
+
+[profile.release]
+# FHE is dramatically faster in release; this is the profile used for any timing work.
+# See docs/DEVELOPMENT.md and ROADMAP.md Phase 0 pitfalls.
+opt-level = 3

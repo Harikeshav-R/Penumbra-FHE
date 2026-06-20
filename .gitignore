@@ -1,0 +1,35 @@
+# ---- Rust ----
+/target/
+runtime/target/
+**/*.rs.bk
+# Cargo.lock IS committed: the runtime is the deployable app (publish = false), so we want
+# reproducible builds. uv.lock (Python) is committed for the same reason.
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual envs / uv
+.venv/
+venv/
+.env
+
+# ---- Penumbra artifacts ----
+*.fhe             # serialized IR / exported models
+*.onnx            # exported model artifacts (examples regenerate these)
+*.key             # crypto key material — never commit
+*.ckpt
+data/             # downloaded datasets (MNIST, faces, ...)
+
+# ---- Editors / OS ----
+.idea/
+.vscode/
+*.swp
+.DS_Store

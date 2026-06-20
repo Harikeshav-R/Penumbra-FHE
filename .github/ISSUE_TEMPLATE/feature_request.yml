@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest a new capability — a new op, model family, or ergonomics improvement.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Penumbra-FHE has a deliberately **narrow** scope: encrypted inference on small
+        models via a fixed ~8-op vocabulary. Please check `PROJECT.md` §16 (scope) before
+        filing — features that require a general FHE compiler or large-LLM support are out
+        of scope by design.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The use case or model you want to run that you currently can't.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        If this is a new op, note how it would reduce to TFHE primitives (plaintext-weight
+        arithmetic, adds, or a single-input LUT) within the bit-width budget.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of request
+      options:
+        - New operator
+        - New model family / ONNX op coverage
+        - Quantization improvement
+        - Performance / parameter tuning
+        - API / ergonomics
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
