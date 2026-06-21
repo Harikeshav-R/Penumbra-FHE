@@ -66,11 +66,13 @@ jobs:
         run: uv sync --dev
 
       # Lint/format the package and the top-level `tests/` tree (part of the suite).
+      # `--config` is explicit so the package and the out-of-tree `tests/` dir use the
+      # same settings — otherwise config discovery for `../tests` falls back to defaults.
       - name: Ruff
-        run: uv run ruff check . ../tests
+        run: uv run ruff check --config pyproject.toml . ../tests
 
       - name: Black (check)
-        run: uv run black --check . ../tests
+        run: uv run black --check --config pyproject.toml . ../tests
 
       - name: Pytest
         run: uv run pytest
