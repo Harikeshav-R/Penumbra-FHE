@@ -6,7 +6,6 @@ rust-version = "1.83"
 license = "Apache-2.0"
 description = "TFHE backend (Layers 1+2) for Penumbra-FHE: encrypted ML inference runtime."
 repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
-readme = "README.md"
 keywords = ["fhe", "tfhe", "homomorphic", "encryption", "inference"]
 categories = ["cryptography"]
 publish = false

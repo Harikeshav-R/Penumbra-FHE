@@ -60,14 +60,17 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
+      # Core deps + dev tools only. The heavy `ml` extra (torch/brevitas) isn't
+      # exercised in Phase 0; add a dedicated job once it is.
       - name: Sync dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --dev
 
+      # Lint/format the package and the top-level `tests/` tree (part of the suite).
       - name: Ruff
-        run: uv run ruff check .
+        run: uv run ruff check . ../tests
 
       - name: Black (check)
-        run: uv run black --check .
+        run: uv run black --check . ../tests
 
       - name: Pytest
         run: uv run pytest

@@ -9,7 +9,7 @@ for the working rules (they apply to humans too).
 | Tool | Version | Notes |
 |---|---|---|
 | Rust | stable ≥ 1.83 | `tfhe-rs` needs a recent stable. Install via [rustup](https://rustup.rs). |
-| Python | 3.11–3.12 | Pinned in `python/pyproject.toml`. 3.13+ not yet supported by the ML stack. |
+| Python | 3.10–3.12 | Pinned in `python/pyproject.toml` (`>=3.10,<3.13`). 3.13+ not yet supported by the ML stack. |
 | [uv](https://docs.astral.sh/uv/) | latest | **The project standard** for Python env/deps — not poetry/pip/conda. |
 
 ## Layout
