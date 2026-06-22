@@ -17,11 +17,17 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 import penumbra
 from penumbra.quantization import QuantSpec, linear_logit_int, symmetric_spec
 
-FIXTURE = Path(__file__).resolve().parent.parent / "examples" / "mnist" / "phase2_fixture.json"
+FIXTURE = (
+    Path(__file__).resolve().parent.parent
+    / "examples"
+    / "mnist"
+    / "phase2_fixture.json"
+)
 
 
 def test_package_imports_and_has_version():
@@ -83,3 +89,21 @@ def test_symmetric_spec_roundtrip():
     q = spec.quantize(w)
     assert isinstance(spec, QuantSpec)
     assert q.min() >= spec.qmin and q.max() <= spec.qmax
+
+
+def test_quant_spec_rejects_invalid_specs():
+    """Invalid specs must fail loudly on construction, not as cryptic later errors."""
+    with pytest.raises(ValueError):
+        QuantSpec(scale=1.0, bits=0, signed=False)
+    with pytest.raises(ValueError):
+        QuantSpec(scale=1.0, bits=1, signed=True)  # signed needs sign + magnitude
+    with pytest.raises(ValueError):
+        QuantSpec(scale=0.0, bits=4, signed=True)  # non-positive scale
+    with pytest.raises(ValueError):
+        QuantSpec(scale=float("nan"), bits=4, signed=True)  # non-finite scale
+
+
+def test_symmetric_spec_rejects_zero_width_range():
+    """A bit-width whose range edge collapses to 0 must raise, not divide by zero."""
+    with pytest.raises(ValueError):
+        symmetric_spec(np.array([1.0, -2.0]), bits=1, signed=True)

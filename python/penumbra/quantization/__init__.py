@@ -26,6 +26,7 @@ linear classifier by hand and produce a fixture for the golden test. The full se
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -42,6 +43,23 @@ class QuantSpec:
     scale: float
     bits: int
     signed: bool
+
+    def __post_init__(self) -> None:
+        # Validate invariants on construction so misuse fails loudly here with a clear
+        # message, rather than later as a cryptic shift/division error deep in quantize()
+        # or in fixture generation (this is part of the public quantization API).
+        if self.bits <= 0:
+            raise ValueError(f"QuantSpec.bits must be positive, got {self.bits}")
+        if self.signed and self.bits < 2:
+            # A signed range needs one bit for sign plus at least one magnitude bit;
+            # bits == 1 leaves qmax == 0 and no representable positive value.
+            raise ValueError(
+                f"signed QuantSpec needs bits >= 2 (sign + magnitude), got {self.bits}"
+            )
+        if not math.isfinite(self.scale) or self.scale <= 0:
+            raise ValueError(
+                f"QuantSpec.scale must be finite and positive, got {self.scale}"
+            )
 
     @property
     def qmin(self) -> int:
@@ -66,12 +84,22 @@ def symmetric_spec(values: np.ndarray, bits: int, *, signed: bool) -> QuantSpec:
     values = np.asarray(values, dtype=np.float64)
     peak = float(np.max(np.abs(values))) if values.size else 0.0
     edge = (1 << (bits - 1)) - 1 if signed else (1 << bits) - 1
+    # The range edge collapses to 0 for degenerate bit-widths (e.g. signed bits == 1), which
+    # would make scale = peak / 0. Fail loudly before dividing (`AGENTS.md` §1.4); QuantSpec
+    # re-checks the same invariant on construction.
+    if edge == 0:
+        raise ValueError(
+            f"bits={bits}, signed={signed} yields a zero-width range (no representable "
+            "nonzero value); use a larger bit-width"
+        )
     # Guard against a degenerate all-zero tensor: a unit scale keeps everything at 0.
     scale = peak / edge if peak > 0 else 1.0
     return QuantSpec(scale=scale, bits=bits, signed=signed)
 
 
-def linear_logit_int(x_q: np.ndarray, w_q: np.ndarray, bias_q: np.ndarray | int) -> np.ndarray:
+def linear_logit_int(
+    x_q: np.ndarray, w_q: np.ndarray, bias_q: np.ndarray | int
+) -> np.ndarray:
     """The quantized-integer logit ``w_q . x_q + bias_q`` — the cleartext oracle.
 
     All-integer by construction: this is exactly the arithmetic the FHE ``Linear`` op
