@@ -45,6 +45,13 @@ pub const MESSAGE_BITS: usize = 2;
 /// `num_blocks` fixes the radix width — the central bit-width budget (`PROJECT.md` §9).
 /// All ciphertexts in one model must share it so they are arithmetic-compatible.
 pub fn keygen(num_blocks: usize) -> (RadixClientKey, ServerKey) {
+    // Zero blocks is a nonsensical radix width: it carries no value and would otherwise
+    // surface as an opaque panic deep inside `tfhe-rs` (or in `blocks()[0]` accesses).
+    // Reject it here with an actionable message (`AGENTS.md` §1.4).
+    assert!(
+        num_blocks > 0,
+        "keygen requires num_blocks > 0 (radix integers need at least one block)"
+    );
     gen_keys_radix(DEFAULT_PARAMS, num_blocks)
 }
 

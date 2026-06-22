@@ -19,6 +19,10 @@ use crate::ops::{CtVec, EvalCtx, Op};
 /// Evaluate a linear chain of ops over an encrypted input, threading each op's output into
 /// the next. Returns the final encrypted output (e.g. a one-element class-index vector).
 pub fn evaluate(ctx: &EvalCtx, ops: &[Box<dyn Op>], input: &CtVec) -> CtVec {
+    // We clone the input once so the borrowed `&CtVec` API stays ergonomic for callers.
+    // Threading ownership through the loop to elide this clone is a possible optimization,
+    // but it's negligible against PBS cost (runtime ≈ number of bootstraps) and not worth an
+    // API change here — perf tuning is deferred to Phase 10 (`PROJECT.md` §10).
     let mut acc = input.clone();
     for op in ops {
         acc = op.eval(ctx, &acc);
