@@ -24,7 +24,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Quantization + model-export stack. Heavy; kept optional so the core IR/ONNX path is light.
+# Quantization + model-export stack. Heavy; kept optional so the core IR/ONNX path is
+# light. Only the example *generators* need these — the committed fixtures are plain data,
+# so CI (and the golden test) never import this stack.
 ml = [
     "torch>=2.2",
     "brevitas>=0.10",
