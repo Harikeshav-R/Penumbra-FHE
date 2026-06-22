@@ -1,0 +1,154 @@
+//! Golden exactness test — the project's truth oracle (`AGENTS.md` §1.1, ROADMAP Phase 2).
+//!
+//! > FHE output must equal the quantized-cleartext output, **bit-for-bit**.
+//!
+//! TFHE is exact, so any mismatch here is a quantization or implementation bug, never
+//! crypto noise. This test wires that invariant into CI: it reads the committed Phase-2
+//! fixture (`examples/mnist/phase2_fixture.json`), computes the quantized-integer
+//! reference *in Rust*, runs the encrypted forward pass through the real op graph, and
+//! asserts they agree over a batch.
+//!
+//! The reference is recomputed here (not just read from `expected_labels`) so that a
+//! divergence is localized to the FHE path immediately — "debug the cleartext quantized
+//! path first" (`AGENTS.md` §1.1). The fixture's `expected_labels` are additionally
+//! checked against this Rust reference, guarding against fixture drift.
+//!
+//! Cross-language IR conformance (Python emits IR, Rust consumes it) is Phase 3; Phase 2's
+//! gate is self-contained in Rust.
+//!
+//! Run with `cargo test --release` — debug FHE is impractically slow (`docs/DEVELOPMENT.md`).
+
+use std::path::PathBuf;
+
+use penumbra_fhe_runtime::{
+    check_bit_width_budget, decrypt_label, encrypt, evaluate, keygen, Activation, Argmax, EvalCtx,
+    Linear, Op,
+};
+use serde_json::Value;
+
+/// Load the committed Phase-2 fixture as untyped JSON (typed IR structs are Phase 3).
+fn load_fixture() -> Value {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/mnist/phase2_fixture.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read fixture {}: {e}", path.display()));
+    serde_json::from_str(&text).expect("fixture is valid JSON")
+}
+
+fn as_i64_vec(v: &Value) -> Vec<i64> {
+    v.as_array()
+        .expect("expected JSON array")
+        .iter()
+        .map(|x| x.as_i64().expect("expected integer"))
+        .collect()
+}
+
+/// The quantized-cleartext oracle, in plain integer arithmetic: `w·x + b`, then threshold.
+fn cleartext_label(weights: &[i64], bias: i64, input: &[i64], threshold: i64) -> i64 {
+    let logit: i64 = weights.iter().zip(input).map(|(&w, &x)| w * x).sum::<i64>() + bias;
+    i64::from(logit >= threshold)
+}
+
+/// The headline gate: encrypted `Linear → Argmax` equals the quantized-cleartext label,
+/// bit-for-bit, over the whole committed test batch.
+#[test]
+fn fhe_matches_quantized_cleartext_logreg() {
+    let fx = load_fixture();
+
+    let num_blocks = fx["num_blocks"].as_u64().unwrap() as usize;
+    let input_bits = fx["input_bits"].as_u64().unwrap() as usize;
+    let weight_bits = fx["weight_bits"].as_u64().unwrap() as usize;
+
+    // Single-logit binary classifier: one weight row, one bias, one threshold.
+    let weights = as_i64_vec(&fx["linear"]["weights"][0]);
+    let bias = fx["linear"]["bias"][0].as_i64().unwrap();
+    let threshold = fx["argmax"]["threshold"].as_i64().unwrap();
+
+    let test_inputs: Vec<Vec<i64>> = fx["test_inputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(as_i64_vec)
+        .collect();
+    let expected_labels = as_i64_vec(&fx["expected_labels"]);
+
+    // Build the op graph in-code from the fixture data (real IR is Phase 3).
+    let ops: Vec<Box<dyn Op>> = vec![
+        Box::new(Linear {
+            weights: vec![weights.clone()],
+            bias: vec![bias],
+            weight_bits,
+        }),
+        Box::new(Argmax { threshold }),
+    ];
+
+    // Fail loudly before any crypto if the budget can't hold the accumulator.
+    check_bit_width_budget(&ops, input_bits, num_blocks).expect("bit-width budget must fit");
+
+    let (ck, sk) = keygen(num_blocks);
+    let ctx = EvalCtx {
+        sk: &sk,
+        num_blocks,
+    };
+
+    for (i, input) in test_inputs.iter().enumerate() {
+        // Oracle: recompute in Rust integers, and confirm the fixture agrees (no drift).
+        let reference = cleartext_label(&weights, bias, input, threshold);
+        assert_eq!(
+            reference, expected_labels[i],
+            "fixture expected_labels[{i}] disagrees with the Rust cleartext oracle"
+        );
+
+        // FHE path: encrypt -> evaluate -> decrypt.
+        let ct = encrypt(&ck, input);
+        let out = evaluate(&ctx, &ops, &ct);
+        let label = decrypt_label(&ck, &out);
+
+        assert_eq!(
+            label, reference,
+            "GOLDEN VIOLATION at sample {i}: FHE label {label} != quantized-cleartext {reference}"
+        );
+    }
+}
+
+/// Golden exactness for the `Activation(LUT)` op on its narrow domain: the PBS output must
+/// match the cleartext table for every input value (the `hello_fhe` LUT discipline, now
+/// through the op interface). The binary decision doesn't use this LUT, so it is proven
+/// independently here — and is the forward-compat anchor for Phase-4 post-Requant activations.
+#[test]
+fn fhe_activation_lut_matches_table() {
+    let fx = load_fixture();
+    let num_blocks = fx["num_blocks"].as_u64().unwrap() as usize;
+    let output_bits = fx["activation"]["output_bits"].as_u64().unwrap() as usize;
+
+    let lut: Vec<u64> = fx["activation"]["lut"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_u64().unwrap())
+        .collect();
+    let test_inputs = as_i64_vec(&fx["activation"]["test_inputs"]);
+    let expected = as_i64_vec(&fx["activation"]["expected"]);
+
+    let act = Activation {
+        lut: lut.clone(),
+        output_bits,
+    };
+
+    let (ck, sk) = keygen(num_blocks);
+    let ctx = EvalCtx {
+        sk: &sk,
+        num_blocks,
+    };
+
+    for (i, &v) in test_inputs.iter().enumerate() {
+        let ct = encrypt(&ck, &[v]);
+        let out = act.eval(&ctx, &ct);
+        let got = decrypt_label(&ck, &out);
+        assert_eq!(
+            got, expected[i],
+            "GOLDEN VIOLATION: activation LUT on input {v} gave {got}, expected {}",
+            expected[i]
+        );
+    }
+}
