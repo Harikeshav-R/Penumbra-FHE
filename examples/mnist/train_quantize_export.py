@@ -21,10 +21,13 @@ identical to what a real MNIST 0-vs-1 model would produce; swapping in a real da
 trained model is a drop-in change once the ML stack is installable. This is flagged so the
 synthetic stand-in is not mistaken for the eventual MNIST example (ROADMAP Phase 2/4).
 
-Bit-width budget (``PROJECT.md`` §9): 64 features, inputs ~4 bits, weights signed 4 bits.
-A term is <= 15*7 ~ 7 bits; summing 64 of them reaches ~13 bits; plus sign and bias it fits
-comfortably in a 16-bit signed radix (``num_blocks = 8`` x 2 message bits). The fixture
-records ``num_blocks`` so the runtime keygen uses the same budget.
+Bit-width budget (``PROJECT.md`` §9): 64 features, inputs 4-bit unsigned (max 15), weights
+4-bit signed (min -8). A single term reaches ``|15 * -8| = 120`` (~7 bits); summing 64 of
+them reaches ~7680 (~13 bits). The quantized bias can independently be larger than the
+summed products, so the accumulator width is ``max(sum_bits, bias_bits) + 1`` — here the
+bias is ~11 bits, giving ~14 bits total, which still fits comfortably in a 16-bit signed
+radix (``num_blocks = 8`` x 2 message bits). The fixture records ``num_blocks`` so the
+runtime keygen uses the same budget, and ``Linear::output_bits`` enforces this same rule.
 """
 
 from __future__ import annotations
@@ -161,7 +164,9 @@ def main() -> None:
     print(f"wrote {FIXTURE_PATH}")
     print(f"  float accuracy     = {acc_float:.4f}")
     print(f"  quantized accuracy = {acc_quant:.4f}")
-    print(f"  test batch         = {len(labels_batch)} samples, num_blocks={NUM_BLOCKS}")
+    print(
+        f"  test batch         = {len(labels_batch)} samples, num_blocks={NUM_BLOCKS}"
+    )
 
 
 if __name__ == "__main__":
