@@ -9,7 +9,9 @@
 //!
 //! A dot product over `N` inputs of `b`-bit values against `w`-bit weights produces, per
 //! output, an accumulator of about `b + w + ceil(log2(N))` bits (the `+ceil(log2 N)` is
-//! the carry from summing `N` terms). The bias adds at most one more bit. This growth is
+//! the carry from summing `N` terms). The plaintext bias is a *separate* contributor sized
+//! from its own magnitude — it can exceed the summed products after rescaling — so the
+//! accumulator width is `max(sum_bits, bias_bits) + 1`, not `sum_bits + 1`. This growth is
 //! why a later `Requant` (Phase 4) is needed before feeding a narrow LUT — in Phase 2 we
 //! simply size the radix (`num_blocks`) to hold the result.
 
@@ -34,6 +36,16 @@ pub struct Linear {
 impl Op for Linear {
     fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
         let sk = ctx.sk;
+
+        // Fail loudly on a malformed layer: `zip` would otherwise silently truncate to the
+        // shorter of the two, dropping outputs or biases without any error (`AGENTS.md` §1.4).
+        assert_eq!(
+            self.weights.len(),
+            self.bias.len(),
+            "Linear must have one bias per weight row: {} rows vs {} biases",
+            self.weights.len(),
+            self.bias.len()
+        );
 
         self.weights
             .iter()
@@ -62,14 +74,31 @@ impl Op for Linear {
     }
 
     fn output_bits(&self, input_bits: usize) -> usize {
-        // Accumulator width: per-term product is input_bits + weight_bits; summing N terms
-        // adds ceil(log2 N); the bias adds at most one guard bit. (`PROJECT.md` §9.)
+        // Accumulator width has two contributors that we must take the *max* of, not assume
+        // the dot-product dominates (`PROJECT.md` §9):
+        //   - the summed products: per-term width is input_bits + weight_bits, and summing
+        //     N terms adds ceil(log2 N) of carry;
+        //   - the plaintext bias: a quantized bias can be larger than the summed products
+        //     (especially after rescaling), so it must be sized from its actual magnitude —
+        //     assuming "+1 guard bit" under-counts and would let the budget check miss a
+        //     real overflow (`AGENTS.md` §1.3).
+        // The final `+1` is sign headroom plus the carry from adding the bias to the sum.
         let n = self.weights.first().map_or(0, Vec::len);
         let sum_growth = if n <= 1 {
             0
         } else {
             usize::BITS as usize - (n - 1).leading_zeros() as usize
         };
-        input_bits + self.weight_bits + sum_growth + 1
+        let sum_bits = input_bits + self.weight_bits + sum_growth;
+
+        let max_bias = self
+            .bias
+            .iter()
+            .map(|b| b.unsigned_abs())
+            .max()
+            .unwrap_or(0);
+        let bias_bits = (u64::BITS - max_bias.leading_zeros()) as usize;
+
+        sum_bits.max(bias_bits) + 1
     }
 }
