@@ -1,0 +1,54 @@
+name: Bug report
+description: Report something that isn't working as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! If FHE output differs from the quantized-cleartext output,
+        remember TFHE is **exact** — that's a quantization or implementation bug, never
+        crypto noise. Please include the cleartext-reference behavior if you have it.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including the error message if any.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps / code / model to reproduce. A small model is ideal.
+      placeholder: |
+        1. Load model ...
+        2. quantize(...) / compile()
+        3. predict_encrypted(x)
+        4. See error / wrong result
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Python front end (ONNX loader / quantization / IR)
+        - Rust runtime (ops / eval / keys)
+        - IR / cross-language bridge
+        - Examples / docs
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Rust version (`rustc --version`), Python version, `tfhe` version.
+    validations:
+      required: true

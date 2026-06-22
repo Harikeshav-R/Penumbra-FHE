@@ -1,0 +1,68 @@
+[project]
+name = "penumbra-fhe"
+version = "0.0.0"
+description = "Encrypted ML inference on ONNX models via TFHE — load a model, run it under FHE, never write crypto code."
+readme = "../README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Harikeshav Rameshkumar" }]
+requires-python = ">=3.10,<3.13"
+keywords = ["fhe", "tfhe", "homomorphic", "encryption", "onnx", "inference", "quantization"]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security :: Cryptography",
+]
+
+# Front-end deps (Layer 3 + quantization + ONNX loader + IR emitter). See PROJECT.md §15.
+dependencies = [
+    "onnx>=1.16",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+# Quantization + model-export stack. Heavy; kept optional so the core IR/ONNX path is light.
+ml = [
+    "torch>=2.2",
+    "brevitas>=0.10",
+]
+
+[project.urls]
+Homepage = "https://github.com/Harikeshav-R/Penumbra-FHE"
+Repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["penumbra"]
+
+# ---------------------------------------------------------------------------
+# Dev tooling. `uv` is the project standard for env/deps (PROJECT.md §15) — not poetry.
+# ---------------------------------------------------------------------------
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "black>=24.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# Sensible default set: pycodestyle, pyflakes, isort, pyupgrade, bugbear.
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.pytest.ini_options]
+testpaths = ["../tests"]
+pythonpath = ["."]
