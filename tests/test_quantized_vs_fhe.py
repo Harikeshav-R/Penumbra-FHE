@@ -22,12 +22,7 @@ import pytest
 import penumbra
 from penumbra.quantization import QuantSpec, linear_logit_int, symmetric_spec
 
-FIXTURE = (
-    Path(__file__).resolve().parent.parent
-    / "examples"
-    / "mnist"
-    / "phase2_fixture.json"
-)
+FIXTURE = Path(__file__).resolve().parent.parent / "examples" / "mnist" / "phase2_fixture.json"
 
 
 def test_package_imports_and_has_version():

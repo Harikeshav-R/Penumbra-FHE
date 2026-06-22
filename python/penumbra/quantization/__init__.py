@@ -57,9 +57,7 @@ class QuantSpec:
                 f"signed QuantSpec needs bits >= 2 (sign + magnitude), got {self.bits}"
             )
         if not math.isfinite(self.scale) or self.scale <= 0:
-            raise ValueError(
-                f"QuantSpec.scale must be finite and positive, got {self.scale}"
-            )
+            raise ValueError(f"QuantSpec.scale must be finite and positive, got {self.scale}")
 
     @property
     def qmin(self) -> int:
@@ -97,9 +95,7 @@ def symmetric_spec(values: np.ndarray, bits: int, *, signed: bool) -> QuantSpec:
     return QuantSpec(scale=scale, bits=bits, signed=signed)
 
 
-def linear_logit_int(
-    x_q: np.ndarray, w_q: np.ndarray, bias_q: np.ndarray | int
-) -> np.ndarray:
+def linear_logit_int(x_q: np.ndarray, w_q: np.ndarray, bias_q: np.ndarray | int) -> np.ndarray:
     """The quantized-integer logit ``w_q . x_q + bias_q`` — the cleartext oracle.
 
     All-integer by construction: this is exactly the arithmetic the FHE ``Linear`` op
