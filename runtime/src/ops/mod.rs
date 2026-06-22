@@ -22,5 +22,58 @@
 //! 4. golden test: FHE == quantized-cleartext, bit-for-bit
 //! 5. docs update (`docs/SUPPORTED-OPS.md`)
 //!
-//! TODO(phase-2): `linear`, `activation`, `argmax`.
-//! TODO(phase-4): `conv2d`, `pool`, `requant`, `add`.
+//! ## Representation (Phase 2)
+//!
+//! Every value flows as a [`CtVec`] — a `Vec` of **signed** radix ciphertexts. A `Vec`
+//! (rather than a shaped tensor type) is deliberate: it lets the Phase-3 IR walker store
+//! named intermediate results in a `HashMap<String, CtVec>` and dispatch each node through
+//! the same [`Op::eval`] signature without changing this trait.
+//!
+//! Phase 2 implements `Linear`, `Activation`, `Argmax`. `Conv2d`/`Pool`/`Requant`/`Add`
+//! arrive in Phase 4 against this same trait.
+
+use tfhe::integer::{ServerKey, SignedRadixCiphertext};
+
+pub mod activation;
+pub mod argmax;
+pub mod linear;
+
+pub use activation::Activation;
+pub use argmax::Argmax;
+pub use linear::Linear;
+
+/// An encrypted tensor flowing between ops. Phase 2 is a flat vector of signed radix
+/// integers; shaped tensors (for conv) are a later concern layered on top, not a change
+/// to this type's role as the inter-op currency.
+pub type CtVec = Vec<SignedRadixCiphertext>;
+
+/// Shared, read-only evaluation context handed to every op.
+///
+/// Carries the server key (the public evaluation key — the only key the server holds,
+/// `PROJECT.md` §11) and `num_blocks`, the central bit-width budget (`keys::keygen`).
+pub struct EvalCtx<'a> {
+    /// Public evaluation key enabling plaintext-weight arithmetic and bootstrapping.
+    pub sk: &'a ServerKey,
+    /// Radix width shared by every ciphertext in the model (the bit-width budget).
+    pub num_blocks: usize,
+}
+
+/// The stable op-eval interface (`PROJECT.md` §4, ROADMAP Phase 2).
+///
+/// Every op takes encrypted inputs + the server key and returns encrypted outputs. No
+/// plaintext data ever flows through `eval` — that is the privacy boundary. The eval loop
+/// ([`crate::eval::evaluate`]) dispatches uniformly through this trait, so adding an op
+/// never edits the loop, and a new *use case* never edits any op (`AGENTS.md` §1.2).
+pub trait Op {
+    /// Evaluate this op over `inputs`, returning the encrypted outputs.
+    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec;
+
+    /// Declare how this op grows the bit-width budget (`PROJECT.md` §9).
+    ///
+    /// Given the bit-width of its inputs, return the bit-width of its outputs. This is the
+    /// seed of the Phase-4 central bit-width tracker: implementing it now means the
+    /// contract exists before automatic `Requant` insertion makes it load-bearing. The
+    /// returned width must never exceed the radix capacity, or the model fails loudly
+    /// before evaluation (`AGENTS.md` §1.3, §1.4).
+    fn output_bits(&self, input_bits: usize) -> usize;
+}
