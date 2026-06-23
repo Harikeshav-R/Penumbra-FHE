@@ -35,7 +35,11 @@ impl Op for Argmax {
     }
 
     fn output_bits(&self, _input_bits: usize) -> usize {
-        // The output is a single class bit.
+        // The returned `1` is the *logical* output width: a single class bit, which is what
+        // the budget tracker should propagate. `eval` widens that bit into a full num_blocks
+        // radix only so the `CtVec` stays homogeneous for the decrypt path — that physical
+        // ciphertext width is deliberately not reflected here. Nothing is chained after
+        // Argmax in Phase 2 (it is terminal), so the logical width is what matters.
         1
     }
 }

@@ -111,6 +111,46 @@ fn fhe_matches_quantized_cleartext_logreg() {
     }
 }
 
+/// Regression for the §1.3 budget soundness bug in `Linear::output_bits` (FINDING #1): the
+/// accumulator is `sum_of_products + bias`, a signed quantity, so its width is
+/// `max(sum_bits, bias_bits) + 2` — one carry bit from the bias add *and* one sign bit.
+///
+/// This is a pure bit-width-tracker test: it calls `output_bits`/`check_bit_width_budget`
+/// only, with no keygen or FHE eval, so it runs instantly.
+#[test]
+fn budget_rejects_bias_sum_carry_overflow() {
+    // 129 inputs, input_bits = 1, weight_bits = 6, bias = 32767 (15 magnitude bits).
+    //   sum_growth = bit_length(128) = 8;  sum_bits = 1 + 6 + 8 = 15
+    //   bias_bits  = magnitude_bits(32767) = 15
+    // True signed width = max(15, 15) + 2 = 17 > capacity 16 (num_blocks = 8). The buggy
+    // `+1` formula declared 16 and wrongly passed, silently wrapping the signed radix.
+    let overflowing: Vec<Box<dyn Op>> = vec![Box::new(Linear {
+        weights: vec![vec![0i64; 129]],
+        bias: vec![32767],
+        weight_bits: 6,
+    })];
+    assert!(
+        check_bit_width_budget(&overflowing, 1, 8).is_err(),
+        "budget check must reject a 17-bit signed accumulator against a 16-bit radix"
+    );
+
+    // Positive control: the committed-fixture shape (weight_bits = 4, 64 inputs,
+    // bias = -1478, input_bits = 4, num_blocks = 8) must still fit, so the golden test stays
+    // green.
+    //   sum_growth = bit_length(63) = 6;  sum_bits = 4 + 4 + 6 = 14
+    //   bias_bits  = magnitude_bits(1478) = 11
+    // declared = max(14, 11) + 2 = 16 ≤ capacity 16.
+    let fits: Vec<Box<dyn Op>> = vec![Box::new(Linear {
+        weights: vec![vec![0i64; 64]],
+        bias: vec![-1478],
+        weight_bits: 4,
+    })];
+    assert!(
+        check_bit_width_budget(&fits, 4, 8).is_ok(),
+        "fixture-shaped Linear (declared 16 bits) must fit a 16-bit radix"
+    );
+}
+
 /// Golden exactness for the `Activation(LUT)` op on its narrow domain: the PBS output must
 /// match the cleartext table for every input value (the `hello_fhe` LUT discipline, now
 /// through the op interface). The binary decision doesn't use this LUT, so it is proven

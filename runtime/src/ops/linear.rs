@@ -11,9 +11,11 @@
 //! output, an accumulator of about `b + w + ceil(log2(N))` bits (the `+ceil(log2 N)` is
 //! the carry from summing `N` terms). The plaintext bias is a *separate* contributor sized
 //! from its own magnitude — it can exceed the summed products after rescaling — so the
-//! accumulator width is `max(sum_bits, bias_bits) + 1`, not `sum_bits + 1`. This growth is
-//! why a later `Requant` (Phase 4) is needed before feeding a narrow LUT — in Phase 2 we
-//! simply size the radix (`num_blocks`) to hold the result.
+//! accumulator width is `max(sum_bits, bias_bits) + 2`, not `sum_bits + 1`: adding two
+//! magnitude-sized signed quantities (the summed products and the bias) can produce one
+//! carry bit, and the result is signed so it needs a sign bit on top — two distinct `+1`s.
+//! This growth is why a later `Requant` (Phase 4) is needed before feeding a narrow LUT —
+//! in Phase 2 we simply size the radix (`num_blocks`) to hold the result.
 
 use tfhe::integer::SignedRadixCiphertext;
 
@@ -82,7 +84,6 @@ impl Op for Linear {
         //     (especially after rescaling), so it must be sized from its actual magnitude —
         //     assuming "+1 guard bit" under-counts and would let the budget check miss a
         //     real overflow (`AGENTS.md` §1.3).
-        // The final `+1` is sign headroom plus the carry from adding the bias to the sum.
         let n = self.weights.first().map_or(0, Vec::len);
         let sum_growth = if n <= 1 {
             0
@@ -91,14 +92,24 @@ impl Op for Linear {
         };
         let sum_bits = input_bits + self.weight_bits + sum_growth;
 
+        // A zero bias contributes 0 magnitude bits, which is correct here — it adds nothing
+        // to the accumulator, so we want it to vanish from the `max` (the `.max(1)` clamp
+        // used for LUT entries would be wrong in this arithmetic context).
         let max_bias = self
             .bias
             .iter()
             .map(|b| b.unsigned_abs())
             .max()
             .unwrap_or(0);
-        let bias_bits = (u64::BITS - max_bias.leading_zeros()) as usize;
+        let bias_bits = crate::keys::magnitude_bits(max_bias);
 
-        sum_bits.max(bias_bits) + 1
+        // The accumulator is `sum_of_products + bias`, a *signed* quantity. `sum_bits` and
+        // `bias_bits` are magnitude widths; adding two magnitude-sized values can produce a
+        // carry into one extra bit (`+1`), and a signed radix needs a dedicated sign bit on
+        // top (`+1`). These are two independent guard bits — collapsing them into a single
+        // `+1` under-counts by exactly one bit whenever `sum_bits` and `bias_bits` are
+        // comparable, letting a model pass the budget check yet silently wrap the signed
+        // radix at eval time (a §1.1/§1.3 violation). Hence `+ 2`.
+        sum_bits.max(bias_bits) + 2
     }
 }

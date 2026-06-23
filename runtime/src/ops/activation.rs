@@ -33,8 +33,10 @@ use crate::keys::MESSAGE_BITS;
 /// Minimum bits needed to represent every entry of a LUT (its true output width).
 fn lut_output_bits(lut: &[u64]) -> usize {
     let max = lut.iter().copied().max().unwrap_or(0);
-    // `0` still occupies a 1-bit value; otherwise it's the position of the top set bit.
-    ((u64::BITS - max.leading_zeros()) as usize).max(1)
+    // A LUT whose largest entry is `0` still occupies a 1-bit representable value, so clamp
+    // the magnitude width up to 1 at the call site here (unlike the bias case in `Linear`,
+    // where a zero contributor must vanish to 0 bits).
+    crate::keys::magnitude_bits(max).max(1)
 }
 
 /// Single-input activation realized as a LUT over a narrow integer domain.
@@ -68,6 +70,36 @@ impl Op for Activation {
             self.lut.len()
         );
 
+        // The PBS writes the LUT output into a *single* shortint block, and
+        // `apply_lookup_table` reduces the output modulo the message modulus. An entry that
+        // doesn't fit `MESSAGE_BITS` would silently wrap (e.g. 5 → 1) — wrong-but-confident
+        // ciphertext. Cap it loudly (`AGENTS.md` §1.4, #4).
+        if let Some((idx, &bad)) = self
+            .lut
+            .iter()
+            .enumerate()
+            .find(|&(_, &e)| e >= (1u64 << MESSAGE_BITS))
+        {
+            panic!(
+                "Activation LUT entry lut[{idx}] = {bad} does not fit one shortint block: \
+                 every output must be < {} (the {MESSAGE_BITS}-bit message space). \
+                 apply_lookup_table reduces modulo the message modulus, so a larger value \
+                 would silently wrap.",
+                1u64 << MESSAGE_BITS
+            );
+        }
+
+        // num_blocks == 1 means block[0] *is* the sign block of the signed radix: a LUT
+        // output of 2 or 3 would then decrypt negative (2 → -2, 3 → -1) under the 2-bit
+        // signed top block. Phase-2 Activation needs at least one value block plus a block
+        // above it so the LUT output block is never the sign block (`AGENTS.md` §1.4, #3).
+        assert!(
+            ctx.num_blocks > 1,
+            "Phase-2 Activation requires num_blocks > 1 so the LUT output lands in a value \
+             block, not the radix sign block (got num_blocks = {})",
+            ctx.num_blocks
+        );
+
         let table = self.lut.clone();
         let lut = shortint_sk.generate_lookup_table(move |v| {
             // Indexing is total over the message space by the assert above; the fallback is
@@ -91,7 +123,23 @@ impl Op for Activation {
             .collect()
     }
 
-    fn output_bits(&self, _input_bits: usize) -> usize {
+    fn output_bits(&self, input_bits: usize) -> usize {
+        // Phase-2 single-block domain constraint (#2). `eval` applies the PBS to `blocks()[0]`
+        // only and discards the higher blocks, so this op's true input domain is a *single*
+        // radix block: `[0, 2^MESSAGE_BITS)`. We cannot assert the encrypted value's range at
+        // runtime, but we *can* make the contract loud at the bit-width-tracker level: if a
+        // wider value (e.g. a Linear accumulator) were ever chained into an Activation, its
+        // high blocks would be silently dropped and the LUT would map `value mod 2^bits`.
+        // Asserting here makes `check_bit_width_budget` fail loudly at load time, naming the
+        // op, instead of producing wrong-but-confident output. Wider activation domains await
+        // a Requant in front (Phase 4), which narrows the value back to one block first.
+        assert!(
+            input_bits <= MESSAGE_BITS,
+            "Activation input is wider ({input_bits} bits) than the single {MESSAGE_BITS}-bit \
+             block it consumes; Phase-2 activations need a Requant (Phase 4) in front to narrow \
+             the value first"
+        );
+
         // An activation's output width is set by its table, independent of input width —
         // and must stay small (≤ MESSAGE_BITS) to remain a single-block, LUT-able value.
         //
@@ -107,6 +155,16 @@ impl Op for Activation {
              the declared width must not under-count the table",
             self.output_bits,
             derived
+        );
+
+        // `eval` writes the LUT output into a single shortint block, so a declared width
+        // above MESSAGE_BITS is internally inconsistent — the block physically cannot hold
+        // it (#4). Fail loudly rather than propagate a width the ciphertext can't carry.
+        assert!(
+            self.output_bits <= MESSAGE_BITS,
+            "Activation output_bits ({}) exceeds MESSAGE_BITS ({MESSAGE_BITS}); the eval writes \
+             a single shortint block, which cannot hold a wider value",
+            self.output_bits
         );
         self.output_bits
     }

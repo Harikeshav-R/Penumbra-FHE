@@ -63,6 +63,17 @@ pub fn radix_capacity_bits(num_blocks: usize) -> usize {
     num_blocks * MESSAGE_BITS
 }
 
+/// Minimum number of bits to represent the magnitude of `x` (0 for `x == 0`).
+///
+/// This is the position of the top set bit — the unsigned/magnitude width every bit-width
+/// growth rule is built on (`PROJECT.md` §9, `AGENTS.md` §1.3). It is the single source of
+/// truth for "how many bits does this nonnegative integer occupy"; callers add their own
+/// sign/carry headroom and decide how to treat the zero case (a zero bias contributes 0
+/// magnitude bits, whereas a LUT entry of 0 still occupies a 1-bit representable value).
+pub fn magnitude_bits(x: u64) -> usize {
+    (u64::BITS - x.leading_zeros()) as usize
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
