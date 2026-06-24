@@ -1,8 +1,115 @@
 {
-  "_comment": "Phase-2 golden-test fixture. Pure data; the Rust runtime assembles the op graph. FHE output must equal these quantized-cleartext labels bit-for-bit. Synthetic dataset stand-in (see train_quantize_export.py).",
-  "num_blocks": 8,
-  "input_bits": 4,
-  "weight_bits": 4,
+  "_comment": "Phase-3 golden-test fixture. The model is the serializable IR graph under 'graph' (the Rust runtime deserializes and walks it). Sibling keys are test metadata. FHE output must equal these quantized-cleartext labels bit-for-bit. Synthetic dataset stand-in (see train_quantize_export.py).",
+  "graph": {
+    "schema_version": "0.3.0",
+    "num_blocks": 8,
+    "input_bits": 4,
+    "inputs": [
+      "x"
+    ],
+    "outputs": [
+      "label"
+    ],
+    "nodes": [
+      {
+        "name": "fc",
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "logit"
+        ],
+        "op": {
+          "op_type": "Linear",
+          "weights": [
+            [
+              7,
+              7,
+              7,
+              7,
+              6,
+              7,
+              7,
+              6,
+              7,
+              7,
+              7,
+              6,
+              6,
+              7,
+              7,
+              7,
+              7,
+              7,
+              7,
+              7,
+              7,
+              7,
+              7,
+              6,
+              6,
+              7,
+              6,
+              7,
+              7,
+              7,
+              7,
+              6,
+              0,
+              0,
+              2,
+              0,
+              0,
+              -1,
+              0,
+              0,
+              0,
+              1,
+              0,
+              -1,
+              0,
+              0,
+              -1,
+              1,
+              -1,
+              0,
+              -1,
+              0,
+              -1,
+              1,
+              -2,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              -1,
+              1
+            ]
+          ],
+          "bias": [
+            -1478
+          ],
+          "weight_bits": 4
+        }
+      },
+      {
+        "name": "head",
+        "inputs": [
+          "logit"
+        ],
+        "outputs": [
+          "label"
+        ],
+        "op": {
+          "op_type": "Argmax",
+          "threshold": 0
+        }
+      }
+    ]
+  },
   "scales": {
     "input": 0.9563878677603824,
     "weight": 0.015270714278549929,
@@ -11,82 +118,6 @@
   "accuracy": {
     "float": 1.0,
     "quantized": 1.0
-  },
-  "linear": {
-    "weights": [
-      [
-        7,
-        7,
-        7,
-        7,
-        6,
-        7,
-        7,
-        6,
-        7,
-        7,
-        7,
-        6,
-        6,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-        6,
-        6,
-        7,
-        6,
-        7,
-        7,
-        7,
-        7,
-        6,
-        0,
-        0,
-        2,
-        0,
-        0,
-        -1,
-        0,
-        0,
-        0,
-        1,
-        0,
-        -1,
-        0,
-        0,
-        -1,
-        1,
-        -1,
-        0,
-        -1,
-        0,
-        -1,
-        1,
-        -2,
-        1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        -1,
-        1
-      ]
-    ],
-    "bias": [
-      -1478
-    ]
-  },
-  "argmax": {
-    "threshold": 0
   },
   "activation": {
     "lut": [

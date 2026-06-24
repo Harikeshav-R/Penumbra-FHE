@@ -20,10 +20,10 @@
 //! A new *use case* never edits this crate — it only adds a Python-side graph/adapter.
 //! Backend edits are reserved for genuinely new primitive ops (`AGENTS.md` §1.2).
 //!
-//! Phase 2 implements the minimal narrow waist — `Linear`, `Activation(LUT)`, `Argmax` —
-//! end to end (keygen → encrypt → evaluate → decrypt), gated by the golden exactness test
-//! in `tests/golden_logreg.rs`. The IR ([`ir`]) is still a stub; Phase-2 models are
-//! assembled in-code from a quantized-weights fixture (real serializable IR is Phase 3).
+//! The minimal narrow waist — `Linear`, `Activation(LUT)`, `Argmax` — runs end to end
+//! (keygen → encrypt → evaluate → decrypt), gated by the golden exactness test in
+//! `tests/golden_logreg.rs`. As of Phase 3 the model is no longer hardcoded: it is a
+//! serializable IR graph ([`ir`]) that Python emits and [`eval::evaluate_graph`] walks.
 
 pub mod encrypt;
 pub mod eval;
@@ -32,8 +32,12 @@ pub mod keys;
 pub mod ops;
 
 // Public API surface (`PROJECT.md` §12): keys, the client-side encrypt/decrypt boundary,
-// the op-eval interface, and the graph walker.
+// the op-eval interface, the serializable IR, and the graph walker.
 pub use encrypt::{decrypt_label, encrypt};
-pub use eval::{check_bit_width_budget, evaluate};
+pub use eval::{
+    check_bit_width_budget, check_graph_bit_width_budget, evaluate, evaluate_graph,
+    propagate_bit_widths,
+};
+pub use ir::{Graph, Node, OpSpec, SCHEMA_VERSION};
 pub use keys::keygen;
 pub use ops::{Activation, Argmax, CtVec, EvalCtx, Linear, Op};

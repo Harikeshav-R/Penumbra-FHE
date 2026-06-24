@@ -13,16 +13,20 @@
 //! path first" (`AGENTS.md` §1.1). The fixture's `expected_labels` are additionally
 //! checked against this Rust reference, guarding against fixture drift.
 //!
-//! Cross-language IR conformance (Python emits IR, Rust consumes it) is Phase 3; Phase 2's
-//! gate is self-contained in Rust.
+//! As of Phase 3 the model is **not hardcoded**: the test deserializes the IR graph from
+//! the fixture's `"graph"` key and runs it through `evaluate_graph`. The oracle's
+//! parameters are recovered *from that same deserialized graph* (not a separate hardcoded
+//! copy), so there is one source of model truth. Cross-language IR conformance lives in
+//! `ir_conformance.rs`.
 //!
 //! Run with `cargo test --release` — debug FHE is impractically slow (`docs/DEVELOPMENT.md`).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use penumbra_fhe_runtime::{
-    check_bit_width_budget, decrypt_label, encrypt, evaluate, keygen, Activation, Argmax, EvalCtx,
-    Linear, Op,
+    check_bit_width_budget, check_graph_bit_width_budget, decrypt_label, encrypt, evaluate_graph,
+    keygen, Activation, EvalCtx, Graph, Linear, Op, OpSpec,
 };
 use serde_json::Value;
 
@@ -49,20 +53,44 @@ fn cleartext_label(weights: &[i64], bias: i64, input: &[i64], threshold: i64) ->
     i64::from(logit >= threshold)
 }
 
-/// The headline gate: encrypted `Linear → Argmax` equals the quantized-cleartext label,
-/// bit-for-bit, over the whole committed test batch.
+/// Recover the oracle's parameters from the deserialized IR graph itself, so the executed
+/// model and the cleartext oracle share a single source of truth (no re-hardcoded copy).
+/// Phase-2 model is `Linear → Argmax` with one weight row / bias / threshold.
+fn oracle_params_from_graph(graph: &Graph) -> (Vec<i64>, i64, i64) {
+    let mut weights = None;
+    let mut bias = None;
+    let mut threshold = None;
+    for node in &graph.nodes {
+        match &node.op {
+            OpSpec::Linear {
+                weights: w,
+                bias: b,
+                ..
+            } => {
+                assert_eq!(w.len(), 1, "Phase-2 logreg has a single weight row");
+                weights = Some(w[0].clone());
+                bias = Some(b[0]);
+            }
+            OpSpec::Argmax { threshold: t } => threshold = Some(*t),
+            OpSpec::Activation { .. } => {}
+        }
+    }
+    (
+        weights.expect("graph must contain a Linear node"),
+        bias.expect("graph must contain a Linear node"),
+        threshold.expect("graph must contain an Argmax node"),
+    )
+}
+
+/// The headline gate: the encrypted IR graph (`Linear → Argmax`) equals the
+/// quantized-cleartext label, bit-for-bit, over the whole committed test batch — run
+/// entirely from the serialized IR, no hardcoded model (ROADMAP Phase 3 exit criterion).
 #[test]
 fn fhe_matches_quantized_cleartext_logreg() {
     let fx = load_fixture();
 
-    let num_blocks = fx["num_blocks"].as_u64().unwrap() as usize;
-    let input_bits = fx["input_bits"].as_u64().unwrap() as usize;
-    let weight_bits = fx["weight_bits"].as_u64().unwrap() as usize;
-
-    // Single-logit binary classifier: one weight row, one bias, one threshold.
-    let weights = as_i64_vec(&fx["linear"]["weights"][0]);
-    let bias = fx["linear"]["bias"][0].as_i64().unwrap();
-    let threshold = fx["argmax"]["threshold"].as_i64().unwrap();
+    // The model is the serialized IR graph. Deserialize it; no in-code op assembly.
+    let graph = Graph::from_json(&fx["graph"].to_string()).expect("fixture graph deserializes");
 
     let test_inputs: Vec<Vec<i64>> = fx["test_inputs"]
         .as_array()
@@ -72,23 +100,18 @@ fn fhe_matches_quantized_cleartext_logreg() {
         .collect();
     let expected_labels = as_i64_vec(&fx["expected_labels"]);
 
-    // Build the op graph in-code from the fixture data (real IR is Phase 3).
-    let ops: Vec<Box<dyn Op>> = vec![
-        Box::new(Linear {
-            weights: vec![weights.clone()],
-            bias: vec![bias],
-            weight_bits,
-        }),
-        Box::new(Argmax { threshold }),
-    ];
+    // Oracle parameters come from the same graph, not a separate hardcoded copy.
+    let (weights, bias, threshold) = oracle_params_from_graph(&graph);
+    let input_name = graph.inputs[0].clone();
+    let output_name = graph.outputs[0].clone();
 
     // Fail loudly before any crypto if the budget can't hold the accumulator.
-    check_bit_width_budget(&ops, input_bits, num_blocks).expect("bit-width budget must fit");
+    check_graph_bit_width_budget(&graph).expect("bit-width budget must fit");
 
-    let (ck, sk) = keygen(num_blocks);
+    let (ck, sk) = keygen(graph.num_blocks);
     let ctx = EvalCtx {
         sk: &sk,
-        num_blocks,
+        num_blocks: graph.num_blocks,
     };
 
     for (i, input) in test_inputs.iter().enumerate() {
@@ -99,10 +122,11 @@ fn fhe_matches_quantized_cleartext_logreg() {
             "fixture expected_labels[{i}] disagrees with the Rust cleartext oracle"
         );
 
-        // FHE path: encrypt -> evaluate -> decrypt.
-        let ct = encrypt(&ck, input);
-        let out = evaluate(&ctx, &ops, &ct);
-        let label = decrypt_label(&ck, &out);
+        // FHE path: encrypt -> walk the IR graph -> decrypt the named output tensor.
+        let mut env = HashMap::new();
+        env.insert(input_name.clone(), encrypt(&ck, input));
+        let out = evaluate_graph(&ctx, &graph, env).expect("graph evaluates");
+        let label = decrypt_label(&ck, &out[&output_name]);
 
         assert_eq!(
             label, reference,
@@ -158,7 +182,8 @@ fn budget_rejects_bias_sum_carry_overflow() {
 #[test]
 fn fhe_activation_lut_matches_table() {
     let fx = load_fixture();
-    let num_blocks = fx["num_blocks"].as_u64().unwrap() as usize;
+    // num_blocks now lives in the IR graph; the activation LUT is sibling test data.
+    let num_blocks = fx["graph"]["num_blocks"].as_u64().unwrap() as usize;
     let output_bits = fx["activation"]["output_bits"].as_u64().unwrap() as usize;
 
     let lut: Vec<u64> = fx["activation"]["lut"]

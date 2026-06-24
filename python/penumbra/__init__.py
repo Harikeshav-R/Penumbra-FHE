@@ -22,9 +22,30 @@ This package is currently a scaffold (ROADMAP.md Phase 0); the API above is buil
 later phases.
 """
 
+from penumbra.ir import (
+    SCHEMA_VERSION,
+    ActivationSpec,
+    ArgmaxSpec,
+    Graph,
+    LinearSpec,
+    Node,
+    OpSpec,
+    build_linear_argmax_graph,
+)
+
 __version__ = "0.0.0"
 
-__all__ = ["__version__"]
+__all__ = [
+    "__version__",
+    # IR (the Python ↔ Rust bridge, PROJECT.md §7)
+    "SCHEMA_VERSION",
+    "Graph",
+    "Node",
+    "OpSpec",
+    "LinearSpec",
+    "ActivationSpec",
+    "ArgmaxSpec",
+    "build_linear_argmax_graph",
+]
 
 # TODO(phase-6): re-export `load_onnx`.
-# TODO(phase-3): re-export IR builders (`Model`, `Conv2d`, `Linear`, `Activation`, ...).

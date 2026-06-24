@@ -2,10 +2,12 @@
 
 This is the Layer-3 producer side of the Phase-2 golden slice (ROADMAP Phase 2). It trains
 a logistic-regression classifier on a **2-class** problem, quantizes it by hand (Phase 5
-automates this), and writes ``phase2_fixture.json`` — pure data (quantized weights, bias,
-threshold, an activation LUT, and a batch of quantized test inputs with expected labels).
-The Rust runtime hand-assembles the op graph from this fixture and the golden test asserts
-FHE output == quantized-cleartext output, bit-for-bit (``AGENTS.md`` §1.1).
+automates this), and writes ``phase2_fixture.json``. As of Phase 3 the model is emitted as
+a **serializable IR graph** (``penumbra.ir``) under the ``"graph"`` key — the Rust runtime
+deserializes and walks it rather than hand-assembling ops. The sibling keys carry test
+metadata (quantized test inputs + expected labels, scales, a standalone activation LUT).
+The golden test asserts FHE output == quantized-cleartext output, bit-for-bit
+(``AGENTS.md`` §1.1).
 
 The fixture is **committed**, so CI never needs to retrain or hit the network — it just
 reads the integers. Regenerate it only when the example changes::
@@ -20,6 +22,11 @@ hand-rolled logistic-regression trainer (gradient descent). The op graph
 identical to what a real MNIST 0-vs-1 model would produce; swapping in a real dataset +
 trained model is a drop-in change once the ML stack is installable. This is flagged so the
 synthetic stand-in is not mistaken for the eventual MNIST example (ROADMAP Phase 2/4).
+
+The activation LUT under ``"activation"`` is **not** part of the inference graph (the binary
+decision uses the threshold, not the LUT); it is committed sibling data so the golden test
+can exercise the ``Activation``/PBS path standalone (and as the forward-compat anchor for
+Phase-4 post-Requant activations).
 
 Bit-width budget (``PROJECT.md`` §9): 64 features, inputs 4-bit unsigned (max 15), weights
 4-bit signed (min -8). A single term reaches ``|15 * -8| = 120`` (~7 bits); summing 64 of
@@ -37,6 +44,7 @@ from pathlib import Path
 
 import numpy as np
 
+from penumbra.ir import build_linear_argmax_graph
 from penumbra.quantization import linear_logit_int, symmetric_spec
 
 # --- Configuration (the only knobs) -----------------------------------------------------
@@ -137,19 +145,28 @@ def main() -> None:
     message_space = 1 << 2  # PARAM_MESSAGE_2_CARRY_2 message modulus
     relu_lut = [min(v, 2) for v in range(message_space)]  # clamp at 2
 
+    # --- The serializable IR graph (Phase 3) --------------------------------------------
+    # `Linear → Argmax`. A single weight row / bias / threshold: the 2-class single-logit
+    # classifier. The Rust runtime deserializes and walks this; no hardcoded model anywhere.
+    graph = build_linear_argmax_graph(
+        num_blocks=NUM_BLOCKS,
+        input_bits=INPUT_BITS,
+        weights=[w_q.tolist()],
+        bias=[bias_q],
+        weight_bits=WEIGHT_BITS,
+        threshold=threshold,
+    )
+
     fixture = {
         "_comment": (
-            "Phase-2 golden-test fixture. Pure data; the Rust runtime assembles the op "
-            "graph. FHE output must equal these quantized-cleartext labels bit-for-bit. "
+            "Phase-3 golden-test fixture. The model is the serializable IR graph under "
+            "'graph' (the Rust runtime deserializes and walks it). Sibling keys are test "
+            "metadata. FHE output must equal these quantized-cleartext labels bit-for-bit. "
             "Synthetic dataset stand-in (see train_quantize_export.py)."
         ),
-        "num_blocks": NUM_BLOCKS,
-        "input_bits": INPUT_BITS,
-        "weight_bits": WEIGHT_BITS,
+        "graph": graph.to_dict(),
         "scales": {"input": x_spec.scale, "weight": w_spec.scale, "acc": acc_scale},
         "accuracy": {"float": acc_float, "quantized": acc_quant},
-        "linear": {"weights": [w_q.tolist()], "bias": [bias_q]},
-        "argmax": {"threshold": threshold},
         "activation": {
             "lut": relu_lut,
             "output_bits": 2,
@@ -164,9 +181,7 @@ def main() -> None:
     print(f"wrote {FIXTURE_PATH}")
     print(f"  float accuracy     = {acc_float:.4f}")
     print(f"  quantized accuracy = {acc_quant:.4f}")
-    print(
-        f"  test batch         = {len(labels_batch)} samples, num_blocks={NUM_BLOCKS}"
-    )
+    print(f"  test batch         = {len(labels_batch)} samples, num_blocks={NUM_BLOCKS}")
 
 
 if __name__ == "__main__":
