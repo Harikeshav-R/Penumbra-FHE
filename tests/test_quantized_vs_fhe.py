@@ -20,6 +20,7 @@ import numpy as np
 import pytest
 
 import penumbra
+from penumbra.ir import ArgmaxSpec, Graph, LinearSpec
 from penumbra.quantization import QuantSpec, linear_logit_int, symmetric_spec
 
 FIXTURE = Path(__file__).resolve().parent.parent / "examples" / "mnist" / "phase2_fixture.json"
@@ -30,12 +31,24 @@ def test_package_imports_and_has_version():
     assert penumbra.__version__
 
 
+def _linear_argmax_params(fx: dict) -> tuple[np.ndarray, int, int]:
+    """Recover (weights, bias, threshold) from the embedded IR graph (Phase 3).
+
+    The model lives under ``fx["graph"]`` as a ``Linear → Argmax`` op graph; pull the single
+    logit row, bias, and threshold from the typed spec so these tests and the runtime read
+    the same source of model truth (``AGENTS.md`` §5).
+    """
+    g = Graph.from_dict(fx["graph"])
+    fc, head = g.nodes
+    assert isinstance(fc.op, LinearSpec) and isinstance(head.op, ArgmaxSpec)
+    weights = np.array(fc.op.weights[0], dtype=np.int64)
+    return weights, int(fc.op.bias[0]), int(head.op.threshold)
+
+
 def test_fixture_labels_match_quantized_reference():
     fx = json.loads(FIXTURE.read_text())
 
-    weights = np.array(fx["linear"]["weights"][0], dtype=np.int64)
-    bias = int(fx["linear"]["bias"][0])
-    threshold = int(fx["argmax"]["threshold"])
+    weights, bias, threshold = _linear_argmax_params(fx)
     inputs = np.array(fx["test_inputs"], dtype=np.int64)
     expected = np.array(fx["expected_labels"], dtype=np.int64)
 
@@ -67,14 +80,17 @@ def test_fixture_fits_bit_width_budget():
         ``+2`` (carry from the bias add + sign).
     """
     fx = json.loads(FIXTURE.read_text())
-    num_blocks = int(fx["num_blocks"])
+    g = Graph.from_dict(fx["graph"])
+    num_blocks = g.num_blocks
     message_bits = 2  # PARAM_MESSAGE_2_CARRY_2 message space
     capacity = num_blocks * message_bits  # signed radix width
 
-    input_bits = int(fx["input_bits"])
-    weight_bits = int(fx["weight_bits"])
-    weights = np.array(fx["linear"]["weights"][0], dtype=np.int64)
-    bias = int(fx["linear"]["bias"][0])
+    input_bits = g.input_bits
+    fc = g.nodes[0]
+    assert isinstance(fc.op, LinearSpec)
+    weight_bits = fc.op.weight_bits
+    weights = np.array(fc.op.weights[0], dtype=np.int64)
+    bias = int(fc.op.bias[0])
 
     n = len(weights)
     # Magnitude-bit growth from summing n products; matches the Rust
