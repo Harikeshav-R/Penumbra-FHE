@@ -92,7 +92,7 @@ layer produces `logit`, the threshold produces the output `label`:
 
 ```json
 {
-  "schema_version": "0.3.0",
+  "schema_version": "0.4.0",
   "num_blocks": 8,
   "input_bits": 4,
   "inputs": ["x"],
