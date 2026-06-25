@@ -73,8 +73,9 @@ pub fn check_bit_width_budget(
 ///
 /// `inputs` maps each `graph.inputs` name to its encrypted [`CtVec`]. We build each node's
 /// op from its [`crate::ir::OpSpec`], walk the nodes **in their serialized order**, resolve
-/// each node's declared input tensors from a running environment, dispatch through
-/// [`Op::eval`], and store the outputs. The result holds every `graph.outputs` tensor.
+/// each node's declared input tensors (in order — the merge order for multi-input ops like
+/// `Add`) from a running environment, dispatch through [`Op::eval_n`], and store the output.
+/// The result holds every `graph.outputs` tensor.
 ///
 /// The serialized order is trusted but **validated** to be a real topological order, failing
 /// loudly (`AGENTS.md` §1.4) on any of: an input tensor not yet produced, an output name
@@ -103,27 +104,33 @@ pub fn evaluate_graph(
     for node in &graph.nodes {
         let op = node.op.build()?;
 
-        // Every Phase-2/3 op is single-input; reject a graph that wires several tensors into
-        // one (multi-input ops like Add/Concat are Phase 4/8 and need a defined merge order).
-        if node.inputs.len() != 1 {
+        // A node must read at least one tensor. The op decides how many it accepts:
+        // single-input ops assert exactly one via the `eval_n` default; `Add` takes two.
+        // Inputs are resolved in the node's declared order — that order *is* the defined
+        // merge order for multi-input ops (`AGENTS.md` §1.2 keeps this in the loop, not per op).
+        if node.inputs.is_empty() {
             return Err(format!(
-                "node '{}' ({}) has {} inputs; the current ops are single-input",
+                "node '{}' ({}) has no inputs",
                 node.name,
-                node.op.op_type(),
-                node.inputs.len()
+                node.op.op_type()
             ));
         }
 
-        let input_name = &node.inputs[0];
-        let input_ct = env.get(input_name).ok_or_else(|| {
-            format!(
-                "node '{}' reads tensor '{input_name}', which no earlier node produced and is \
-                 not a graph input — node order is not a valid topological order",
-                node.name
-            )
-        })?;
+        let input_cts: Vec<&CtVec> = node
+            .inputs
+            .iter()
+            .map(|input_name| {
+                env.get(input_name).ok_or_else(|| {
+                    format!(
+                        "node '{}' reads tensor '{input_name}', which no earlier node produced \
+                         and is not a graph input — node order is not a valid topological order",
+                        node.name
+                    )
+                })
+            })
+            .collect::<Result<_, _>>()?;
 
-        let result = op.eval(ctx, input_ct);
+        let result = op.eval_n(ctx, &input_cts);
 
         // A node with multiple declared outputs needs a defined split of `result`; the
         // current ops each produce one output tensor. Enforce the 1:1 mapping loudly.
@@ -181,22 +188,29 @@ pub fn propagate_bit_widths(graph: &Graph) -> Result<HashMap<String, usize>, Str
 
     for node in &graph.nodes {
         let op = node.op.build()?;
-        if node.inputs.len() != 1 || node.outputs.len() != 1 {
+        // Inputs are op-defined (single-input ops assert one; `Add` takes two); every op
+        // still produces exactly one output tensor (multi-output split is Phase 8).
+        if node.inputs.is_empty() || node.outputs.len() != 1 {
             return Err(format!(
-                "node '{}' ({}) must have exactly one input and one output for the current ops",
+                "node '{}' ({}) must have at least one input and exactly one output",
                 node.name,
                 node.op.op_type()
             ));
         }
-        let input_name = &node.inputs[0];
-        let in_bits = *widths.get(input_name).ok_or_else(|| {
-            format!(
-                "node '{}' reads tensor '{input_name}', which no earlier node produced and is \
-                 not a graph input — node order is not a valid topological order",
-                node.name
-            )
-        })?;
-        let out_bits = op.output_bits(in_bits);
+        let in_bits: Vec<usize> = node
+            .inputs
+            .iter()
+            .map(|input_name| {
+                widths.get(input_name).copied().ok_or_else(|| {
+                    format!(
+                        "node '{}' reads tensor '{input_name}', which no earlier node produced \
+                         and is not a graph input — node order is not a valid topological order",
+                        node.name
+                    )
+                })
+            })
+            .collect::<Result<_, _>>()?;
+        let out_bits = op.output_bits_n(&in_bits);
         let output_name = &node.outputs[0];
         if widths.contains_key(output_name) {
             return Err(format!(
