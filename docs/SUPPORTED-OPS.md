@@ -31,13 +31,14 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
   wide-domain LUT and no `Requant`. A true `>2`-class argmax (pairwise `max`/`gt`) is a
   later phase.
 - **`Activation` operates on a narrow value.** A PBS over a wide accumulator is infeasible
-  (`PROJECT.md` §9); a wide accumulator must be `Requant`-ed down first. `Requant` is Phase
-  4, so in Phase 2 activations are applied only on small values.
-- **Bit-width budget is checked, not yet auto-managed.** `eval::check_graph_bit_width_budget`
-  propagates per-tensor widths through the IR graph (via `propagate_bit_widths`) and refuses
-  to run a model whose declared accumulator exceeds the radix capacity, naming the offending
-  node (`AGENTS.md` §1.3, §1.4). Automatic `Requant` *insertion* that would prevent the
-  overflow is Phase 4.
+  (`PROJECT.md` §9); a wide accumulator must be `Requant`-ed down first (see `Requant` below).
+- **Bit-width budget is checked _and_ auto-managed (as of Phase 4).** The runtime's
+  `eval::check_graph_bit_width_budget` propagates per-tensor widths through the IR graph (via
+  `propagate_bit_widths`) and refuses to run a model whose declared accumulator exceeds the
+  radix capacity, naming the offending node (`AGENTS.md` §1.3, §1.4). The Python compile pass
+  `penumbra.insert_requants` (mirroring those width rules, kept in lockstep by the bit-width
+  conformance test) now **automatically inserts `Requant` nodes** between accumulator layers so
+  multi-layer models stay within budget.
 
 ## Phase 4 — multi-layer CNN ops (`Add`, `Requant`, `Pool`, `Conv2d`)
 
