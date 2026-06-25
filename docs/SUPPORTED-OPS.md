@@ -43,6 +43,7 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
 
 | Op | Covers | TFHE realization | Bit-width rule (`output_bits`) |
 |---|---|---|---|
+| `Conv2d` | convolutional layers in CNNs | `Σ (ciphertext × plaintext kernel weight) + bias` at every spatial position — scalar-mul + adds, **no PBS** (the `Linear` pattern shared across positions) | `max(sum_bits, bias_bits) + 2` with fan-in `N = in_channels·kernel_h·kernel_w` (same form as `Linear`) |
 | `Requant` | rescale a wide accumulator → small int (enables multi-layer models) | `clamp(max(x >> shift, 0), 0, 2^out_bits-1)`: arithmetic shift + ReLU + radix-level saturate, then a single-block **PBS** (resets noise) | `out_bits` (≤ `MESSAGE_BITS`, independent of input width; must not under-count the clamp LUT) |
 | `Pool` | average / max pooling in CNNs | per-channel window reduction over the flat map: `avg` = sum (`add_parallelized`, **no PBS**); `max` = pairwise `max` (comparison PBSs, expensive) | `avg`: `input_bits + ceil(log2 k)` (k = window size); `max`: `input_bits` (selection never grows magnitude) |
 | `Add` | residuals / skip connections | element-wise ciphertext addition of **two** input tensors — `add_parallelized`, **no PBS** | `max(a_bits, b_bits) + 1` (one carry; the wider operand's sign bit covers the result) |
@@ -56,11 +57,16 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
   fits one `MESSAGE_BITS`-wide block, then passed through a single-block clamp LUT. It is a
   **fused ReLU+requant**: the output is non-negative (what the single-block PBS path
   requires, and what conv→ReLU produces anyway). Non-power-of-two scales are Phase 5.
-- **`Pool` shares the spatial layout convention.** The flat `CtVec` is read as a
+- **`Conv2d` and `Pool` share one spatial layout.** The flat `CtVec` is read as a
   channel-major, row-major `[channels][in_h][in_w]` tensor — element `(c, y, x)` at
-  `c*in_h*in_w + y*in_w + x`. `Conv2d` emits this same layout, so `Conv2d → Pool` needs no
-  reshape. `avg` mode emits the window **sum** and leaves the `1/k` to the next `Requant`'s
-  shift, keeping pooling PBS-free; the headline CNN uses `avg`. No padding in Phase 4.
+  `c*in_h*in_w + y*in_w + x`. `Conv2d` produces this layout and `Pool` consumes it, so
+  `Conv2d → Pool` needs no reshape. `Conv2d` weights are row-major
+  `[out_channels][in_channels*kernel_h*kernel_w]` (one flattened kernel per output channel)
+  and its zero padding is *virtual* (padded taps contribute nothing, no ciphertext zeros are
+  materialized).
+- **`Pool` `avg` mode emits the window sum** and leaves the `1/k` to the next `Requant`'s
+  shift, keeping pooling PBS-free; the headline CNN uses `avg`. `Pool` has no padding in
+  Phase 4.
 - **`Add` is the first multi-input op.** Its node carries **two** entries in `inputs`; the
   list order is the merge order (addition is commutative, so order is immaterial to the
   result, but the contract is uniform with future multi-input ops). The eval loop resolves a
@@ -71,6 +77,5 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
 
 | Op | Phase | Notes |
 |---|---|---|
-| `Pool` | 4 | average pool (window sum, rescale deferred to `Requant`); max pool (LUT/compare) |
-| `Conv2d` | 4 | MACs vs plaintext kernel weights; reuses the `Linear` cheap pattern |
 | `Concat` / branching | 8 | multi-input graphs; true topological eval |
+| `>2`-class `Argmax` (in-FHE) | later | pairwise `max`/`gt` over a score vector; Phase 4 decrypts the logits and argmaxes client-side |

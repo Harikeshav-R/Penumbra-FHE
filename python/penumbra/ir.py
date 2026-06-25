@@ -60,6 +60,19 @@ class OpSpec:
                 bias=[int(b) for b in d["bias"]],
                 weight_bits=int(d["weight_bits"]),
             )
+        if op_type == "Conv2d":
+            return Conv2dSpec(
+                weights=[[int(w) for w in row] for row in d["weights"]],
+                bias=[int(b) for b in d["bias"]],
+                weight_bits=int(d["weight_bits"]),
+                in_h=int(d["in_h"]),
+                in_w=int(d["in_w"]),
+                in_channels=int(d["in_channels"]),
+                kernel_h=int(d["kernel_h"]),
+                kernel_w=int(d["kernel_w"]),
+                stride=int(d["stride"]),
+                padding=int(d["padding"]),
+            )
         if op_type == "Activation":
             return ActivationSpec(
                 lut=[int(v) for v in d["lut"]],
@@ -86,7 +99,7 @@ class OpSpec:
         if op_type == "Add":
             return AddSpec()
         raise ValueError(
-            f"unknown op_type {op_type!r}; expected one of 'Linear', 'Activation', "
+            f"unknown op_type {op_type!r}; expected one of 'Linear', 'Conv2d', 'Activation', "
             "'Argmax', 'Requant', 'Pool', 'Add'"
         )
 
@@ -129,6 +142,68 @@ class LinearSpec(OpSpec):
             "weights": self.weights,
             "bias": self.bias,
             "weight_bits": self.weight_bits,
+        }
+
+
+@dataclass(frozen=True)
+class Conv2dSpec(OpSpec):
+    """2-D convolution against plaintext kernel weights.
+
+    ``weights`` is row-major ``[out_channels][in_channels*kernel_h*kernel_w]`` (one flattened
+    kernel per output channel, with the in-channel / kernel-row / kernel-col index running
+    fastest in that order — how a PyTorch/ONNX ``[out_c][in_c][kh][kw]`` kernel flattens);
+    ``bias`` has one entry per output channel. The input/output flat tensors use the
+    channel-major, row-major layout shared with :class:`PoolSpec`. ``weight_bits`` feeds the
+    bit-width growth rule (same as Linear, with fan-in ``in_channels*kernel_h*kernel_w``).
+    """
+
+    weights: list[list[int]]
+    bias: list[int]
+    weight_bits: int
+    in_h: int
+    in_w: int
+    in_channels: int
+    kernel_h: int
+    kernel_w: int
+    stride: int
+    padding: int
+
+    op_type: str = field(init=False, default="Conv2d")
+
+    def __post_init__(self) -> None:
+        # Mirror ``OpSpec::build`` in Rust: fail loudly on a malformed layer at construction.
+        if not self.weights:
+            raise ValueError("Conv2dSpec has no output channels (empty weights)")
+        if len(self.weights) != len(self.bias):
+            raise ValueError(
+                f"Conv2dSpec has {len(self.weights)} kernels but {len(self.bias)} biases; "
+                "need one bias per output channel"
+            )
+        if min(self.in_h, self.in_w, self.in_channels, self.kernel_h, self.kernel_w) < 1:
+            raise ValueError("Conv2dSpec dims/kernel must be positive")
+        if self.stride < 1:
+            raise ValueError("Conv2dSpec stride must be positive")
+        fan_in = self.in_channels * self.kernel_h * self.kernel_w
+        for i, row in enumerate(self.weights):
+            if len(row) != fan_in:
+                raise ValueError(
+                    f"Conv2dSpec kernel row {i} has width {len(row)} but "
+                    f"in_channels*kernel_h*kernel_w = {fan_in}"
+                )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "op_type": self.op_type,
+            "weights": self.weights,
+            "bias": self.bias,
+            "weight_bits": self.weight_bits,
+            "in_h": self.in_h,
+            "in_w": self.in_w,
+            "in_channels": self.in_channels,
+            "kernel_h": self.kernel_h,
+            "kernel_w": self.kernel_w,
+            "stride": self.stride,
+            "padding": self.padding,
         }
 
 

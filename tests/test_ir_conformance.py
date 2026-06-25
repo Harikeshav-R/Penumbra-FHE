@@ -27,6 +27,7 @@ from penumbra.ir import (
     SCHEMA_VERSION,
     AddSpec,
     ArgmaxSpec,
+    Conv2dSpec,
     Graph,
     LinearSpec,
     Node,
@@ -182,6 +183,51 @@ def test_pool_spec_round_trips():
         PoolSpec(mode="max", in_h=2, in_w=2, channels=1, pool_h=3, pool_w=3, stride=1)
 
 
+def test_conv2d_spec_round_trips():
+    """The ``Conv2d`` op round-trips, and a kernel/fan-in mismatch fails at construction."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=4,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[
+            Node(
+                name="conv",
+                inputs=["x"],
+                outputs=["y"],
+                op=Conv2dSpec(
+                    weights=[[0] * 9],
+                    bias=[0],
+                    weight_bits=4,
+                    in_h=5,
+                    in_w=5,
+                    in_channels=1,
+                    kernel_h=3,
+                    kernel_w=3,
+                    stride=1,
+                    padding=0,
+                ),
+            )
+        ],
+    )
+    assert Graph.from_json(g.to_json()) == g
+
+    with pytest.raises(ValueError, match="fan-in|width"):
+        Conv2dSpec(
+            weights=[[0] * 8],  # should be 1*3*3 = 9
+            bias=[0],
+            weight_bits=4,
+            in_h=5,
+            in_w=5,
+            in_channels=1,
+            kernel_h=3,
+            kernel_w=3,
+            stride=1,
+            padding=0,
+        )
+
+
 def test_from_dict_rejects_version_mismatch():
     bad = {
         "schema_version": "0.0.1",
@@ -202,7 +248,8 @@ def test_from_dict_rejects_unknown_op_type():
         "input_bits": 4,
         "inputs": ["x"],
         "outputs": ["y"],
-        "nodes": [{"name": "c", "inputs": ["x"], "outputs": ["y"], "op": {"op_type": "Conv2d"}}],
+        # BatchNorm is still unsupported (Conv2d/Pool/Requant/Add became known in Phase 4).
+        "nodes": [{"name": "c", "inputs": ["x"], "outputs": ["y"], "op": {"op_type": "BatchNorm"}}],
     }
     with pytest.raises(ValueError, match="unknown op_type"):
         Graph.from_dict(bad)

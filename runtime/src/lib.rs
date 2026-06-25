@@ -40,4 +40,6 @@ pub use eval::{
 };
 pub use ir::{Graph, Node, OpSpec, SCHEMA_VERSION};
 pub use keys::keygen;
-pub use ops::{Activation, Add, Argmax, CtVec, EvalCtx, Linear, Op, Pool, PoolMode, Requant};
+pub use ops::{
+    Activation, Add, Argmax, Conv2d, CtVec, EvalCtx, Linear, Op, Pool, PoolMode, Requant,
+};

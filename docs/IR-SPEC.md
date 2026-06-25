@@ -55,8 +55,8 @@ implementing (`AGENTS.md` §3.2). Do **not** add a binary format or compression 
 The op payload is a **nested, internally-tagged object** keyed on `op_type` — the JSON the
 Rust `#[serde(tag = "op_type")]` enum expects. It is deliberately *not* `serde(flatten)`ed
 into the node: flatten disables `deny_unknown_fields` and has round-trip bugs with
-internally-tagged enums. An unknown `op_type` fails loudly (`unknown variant 'Conv2d',
-expected one of 'Linear', 'Activation', 'Argmax', 'Requant', 'Pool', 'Add'`).
+internally-tagged enums. An unknown `op_type` fails loudly (`unknown variant 'BatchNorm',
+expected one of 'Linear', 'Conv2d', 'Activation', 'Argmax', 'Requant', 'Pool', 'Add'`).
 
 The supported ops match [`docs/SUPPORTED-OPS.md`](./SUPPORTED-OPS.md) (kept in sync, and
 tested via the conformance test). The op fields mirror the runtime ops but live in IR-land
@@ -65,6 +65,7 @@ so the ops themselves stay serialization-free.
 | `op_type` | Fields | Notes |
 |---|---|---|
 | `"Linear"` | `weights: [[int]]` (row-major `[out][in]`), `bias: [int]` (one per row), `weight_bits: int` | Dense layer / logistic-regression head. `weights.len() == bias.len()` and all rows equal width, validated at load. |
+| `"Conv2d"` | `weights: [[int]]` (row-major `[out_channels][in_channels*kernel_h*kernel_w]`), `bias: [int]` (one per output channel), `weight_bits: int`, `in_h, in_w, in_channels, kernel_h, kernel_w, stride, padding: int` | 2-D convolution vs plaintext kernel. Input/output flat tensors use the channel-major, row-major layout (shared with `Pool`); zero padding is virtual. Kernel-width = fan-in and one-bias-per-channel validated at load. |
 | `"Activation"` | `lut: [int]` (indexed by input value), `output_bits: int` | Single-input LUT via PBS over a narrow domain. |
 | `"Argmax"` | `threshold: int` | 2-class threshold: label `1` iff `z ≥ threshold`. |
 | `"Requant"` | `shift: int` (power-of-two rescale), `out_bits: int` (≤ `MESSAGE_BITS`), `clamp_lut: [int]` (`2^MESSAGE_BITS` entries, each `< 2^MESSAGE_BITS`) | Rescale a wide accumulator → narrow non-negative value: `clamp(max(x >> shift, 0), 0, 2^out_bits - 1)` (fused ReLU+requant). LUT length / range and `out_bits ≤ MESSAGE_BITS` validated at load. |

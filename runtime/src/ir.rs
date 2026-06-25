@@ -28,7 +28,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ops::{Activation, Add, Argmax, Linear, Op, Pool, PoolMode, Requant};
+use crate::ops::{Activation, Add, Argmax, Conv2d, Linear, Op, Pool, PoolMode, Requant};
 
 /// IR wire-format version. Hardcoded identically in `python/penumbra/ir.py`; a mismatch is
 /// a breaking change caught loudly at load time (`AGENTS.md` §5, §8).
@@ -72,6 +72,21 @@ pub enum OpSpec {
         weights: Vec<Vec<i64>>,
         bias: Vec<i64>,
         weight_bits: usize,
+    },
+    /// 2-D convolution against plaintext kernel weights. `weights` is row-major
+    /// `[out_channels][in_channels*kernel_h*kernel_w]`; the input/output flat tensors use the
+    /// channel-major, row-major layout shared with `Pool`. See [`crate::ops::Conv2d`].
+    Conv2d {
+        weights: Vec<Vec<i64>>,
+        bias: Vec<i64>,
+        weight_bits: usize,
+        in_h: usize,
+        in_w: usize,
+        in_channels: usize,
+        kernel_h: usize,
+        kernel_w: usize,
+        stride: usize,
+        padding: usize,
     },
     Activation {
         lut: Vec<u64>,
@@ -173,6 +188,66 @@ impl OpSpec {
                     weights: weights.clone(),
                     bias: bias.clone(),
                     weight_bits: *weight_bits,
+                }))
+            }
+            OpSpec::Conv2d {
+                weights,
+                bias,
+                weight_bits,
+                in_h,
+                in_w,
+                in_channels,
+                kernel_h,
+                kernel_w,
+                stride,
+                padding,
+            } => {
+                // Load-time validation mirroring `Conv2d::eval`'s asserts (`AGENTS.md` §1.4).
+                if weights.is_empty() {
+                    return Err("Conv2d op has no output channels (empty weights)".to_string());
+                }
+                if weights.len() != bias.len() {
+                    return Err(format!(
+                        "Conv2d has {} kernels but {} biases; need one bias per output channel",
+                        weights.len(),
+                        bias.len()
+                    ));
+                }
+                if *in_h == 0 || *in_w == 0 || *in_channels == 0 {
+                    return Err("Conv2d in_h/in_w/in_channels must be positive".to_string());
+                }
+                if *kernel_h == 0 || *kernel_w == 0 || *stride == 0 {
+                    return Err("Conv2d kernel_h/kernel_w/stride must be positive".to_string());
+                }
+                let fan_in = in_channels * kernel_h * kernel_w;
+                if let Some((i, row)) = weights.iter().enumerate().find(|(_, r)| r.len() != fan_in)
+                {
+                    return Err(format!(
+                        "Conv2d kernel row {i} has width {} but in_channels*kernel_h*kernel_w \
+                         = {fan_in}; every kernel must match the fan-in",
+                        row.len()
+                    ));
+                }
+                // The padded kernel must fit the padded input, or `out_dims` underflows.
+                if kernel_h > &(in_h + 2 * padding) || kernel_w > &(in_w + 2 * padding) {
+                    return Err(format!(
+                        "Conv2d kernel ({kernel_h}x{kernel_w}) does not fit the padded input \
+                         ({}x{})",
+                        in_h + 2 * padding,
+                        in_w + 2 * padding
+                    ));
+                }
+                Ok(Box::new(Conv2d {
+                    weights: weights.clone(),
+                    bias: bias.clone(),
+                    weight_bits: *weight_bits,
+                    in_h: *in_h,
+                    in_w: *in_w,
+                    in_channels: *in_channels,
+                    kernel_h: *kernel_h,
+                    kernel_w: *kernel_w,
+                    stride: *stride,
+                    padding: *padding,
                 }))
             }
             // Activation/Argmax own their remaining invariants in `eval`/`output_bits`. The
@@ -278,6 +353,7 @@ impl OpSpec {
     pub fn op_type(&self) -> &'static str {
         match self {
             OpSpec::Linear { .. } => "Linear",
+            OpSpec::Conv2d { .. } => "Conv2d",
             OpSpec::Activation { .. } => "Activation",
             OpSpec::Argmax { .. } => "Argmax",
             OpSpec::Requant { .. } => "Requant",
@@ -343,6 +419,53 @@ mod tests {
         let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
         assert_eq!(graph, restored);
         assert_eq!(graph.nodes[0].op.op_type(), "Add");
+    }
+
+    /// A `Conv2d` node round-trips, and `build` rejects a kernel row whose width disagrees
+    /// with `in_channels*kernel_h*kernel_w`.
+    #[test]
+    fn conv2d_op_round_trip_and_validation() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 8,
+            input_bits: 4,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["y".to_string()],
+            nodes: vec![Node {
+                name: "conv".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["y".to_string()],
+                op: OpSpec::Conv2d {
+                    weights: vec![vec![0i64; 9]], // 1 in-channel * 3 * 3
+                    bias: vec![0],
+                    weight_bits: 4,
+                    in_h: 5,
+                    in_w: 5,
+                    in_channels: 1,
+                    kernel_h: 3,
+                    kernel_w: 3,
+                    stride: 1,
+                    padding: 0,
+                },
+            }],
+        };
+        let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
+        assert_eq!(graph, restored);
+
+        // Kernel width (8) disagrees with fan-in 1*3*3 = 9.
+        let bad = OpSpec::Conv2d {
+            weights: vec![vec![0i64; 8]],
+            bias: vec![0],
+            weight_bits: 4,
+            in_h: 5,
+            in_w: 5,
+            in_channels: 1,
+            kernel_h: 3,
+            kernel_w: 3,
+            stride: 1,
+            padding: 0,
+        };
+        assert!(bad.build().is_err(), "kernel/fan-in mismatch must fail");
     }
 
     /// A `Requant` node round-trips through JSON, and `build` rejects a malformed clamp LUT
@@ -455,14 +578,16 @@ mod tests {
 
     #[test]
     fn from_json_rejects_unknown_op_type() {
+        // `BatchNorm` is a still-unsupported op (Conv2d/Pool/Requant/Add became known in
+        // Phase 4); use it as the negative case so the test exercises a genuine rejection.
         let bad = format!(
             r#"{{"schema_version":"{SCHEMA_VERSION}","num_blocks":8,"input_bits":4,
             "inputs":["x"],"outputs":["y"],"nodes":[{{"name":"c","inputs":["x"],
-            "outputs":["y"],"op":{{"op_type":"Conv2d"}}}}]}}"#
+            "outputs":["y"],"op":{{"op_type":"BatchNorm"}}}}]}}"#
         );
         let err = Graph::from_json(&bad).expect_err("unknown op must fail");
         assert!(
-            err.contains("Conv2d") || err.contains("unknown variant"),
+            err.contains("BatchNorm") || err.contains("unknown variant"),
             "got: {err}"
         );
     }
