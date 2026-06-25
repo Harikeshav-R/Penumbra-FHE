@@ -72,7 +72,7 @@ fn oracle_params_from_graph(graph: &Graph) -> (Vec<i64>, i64, i64) {
                 bias = Some(b[0]);
             }
             OpSpec::Argmax { threshold: t } => threshold = Some(*t),
-            OpSpec::Activation { .. } => {}
+            OpSpec::Activation { .. } | OpSpec::Add {} => {}
         }
     }
     (

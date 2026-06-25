@@ -20,7 +20,7 @@ implementing (`AGENTS.md` §3.2). Do **not** add a binary format or compression 
 ## Versioning
 
 `SCHEMA_VERSION` is a string constant hardcoded identically in `ir.py` and `ir.rs`
-(currently **`"0.3.0"`**). On load, both sides check it and **fail loudly** on a mismatch
+(currently **`"0.4.0"`**). On load, both sides check it and **fail loudly** on a mismatch
 (`AGENTS.md` §1.4) — the version field is the forward-compatibility gate.
 
 > **Forward-compat note.** Neither side uses `deny_unknown_fields` on the graph/node
@@ -46,8 +46,8 @@ implementing (`AGENTS.md` §3.2). Do **not** add a binary format or compression 
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | string | Human-readable node label (used in error messages and `inspect`). |
-| `inputs` | [string] | Tensor names this node reads. (Current ops are single-input.) |
-| `outputs` | [string] | Tensor names this node writes. (Current ops are single-output.) |
+| `inputs` | [string] | Tensor names this node reads, **in order**. Most ops are single-input; `Add` is multi-input (two operands) and the list order *is* the merge order. |
+| `outputs` | [string] | Tensor names this node writes. (All current ops are single-output.) |
 | `op` | OpSpec | The op payload — see below. |
 
 ### `OpSpec` (op payload)
@@ -56,7 +56,7 @@ The op payload is a **nested, internally-tagged object** keyed on `op_type` — 
 Rust `#[serde(tag = "op_type")]` enum expects. It is deliberately *not* `serde(flatten)`ed
 into the node: flatten disables `deny_unknown_fields` and has round-trip bugs with
 internally-tagged enums. An unknown `op_type` fails loudly (`unknown variant 'Conv2d',
-expected one of 'Linear', 'Activation', 'Argmax'`).
+expected one of 'Linear', 'Activation', 'Argmax', 'Add'`).
 
 The supported ops match [`docs/SUPPORTED-OPS.md`](./SUPPORTED-OPS.md) (kept in sync, and
 tested via the conformance test). The op fields mirror the runtime ops but live in IR-land
@@ -67,6 +67,7 @@ so the ops themselves stay serialization-free.
 | `"Linear"` | `weights: [[int]]` (row-major `[out][in]`), `bias: [int]` (one per row), `weight_bits: int` | Dense layer / logistic-regression head. `weights.len() == bias.len()` and all rows equal width, validated at load. |
 | `"Activation"` | `lut: [int]` (indexed by input value), `output_bits: int` | Single-input LUT via PBS over a narrow domain. |
 | `"Argmax"` | `threshold: int` | 2-class threshold: label `1` iff `z ≥ threshold`. |
+| `"Add"` | *(none)* | Element-wise addition of **two** input tensors (residuals). The node carries two `inputs`; the payload is the bare `{"op_type": "Add"}`. Multi-input — see [Node](#node). |
 
 ## Node ordering
 

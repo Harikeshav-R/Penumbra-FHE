@@ -39,12 +39,25 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
   node (`AGENTS.md` §1.3, §1.4). Automatic `Requant` *insertion* that would prevent the
   overflow is Phase 4.
 
+## Phase 4 — multi-layer CNN ops (`Add`, `Requant`, `Pool`, `Conv2d`)
+
+| Op | Covers | TFHE realization | Bit-width rule (`output_bits`) |
+|---|---|---|---|
+| `Add` | residuals / skip connections | element-wise ciphertext addition of **two** input tensors — `add_parallelized`, **no PBS** | `max(a_bits, b_bits) + 1` (one carry; the wider operand's sign bit covers the result) |
+
+### Notes — Phase 4
+
+- **`Add` is the first multi-input op.** Its node carries **two** entries in `inputs`; the
+  list order is the merge order (addition is commutative, so order is immaterial to the
+  result, but the contract is uniform with future multi-input ops). The eval loop resolves a
+  node's inputs in declared order and dispatches `Op::eval_n`; single-input ops keep working
+  through the default `eval_n` (`AGENTS.md` §1.2 — the loop never special-cases an op).
+
 ## Planned (later phases)
 
 | Op | Phase | Notes |
 |---|---|---|
+| `Requant` | 4 | rescale a wide accumulator → small int via shift + clamp LUT; enables multi-layer models |
+| `Pool` | 4 | average pool (window sum, rescale deferred to `Requant`); max pool (LUT/compare) |
 | `Conv2d` | 4 | MACs vs plaintext kernel weights; reuses the `Linear` cheap pattern |
-| `Pool` | 4 | average pool (adds); max pool (LUT/compare) |
-| `Requant` | 4 | rescale a wide accumulator → small int via LUT; enables multi-layer models |
-| `Add` | 4 | ciphertext addition (residuals) |
 | `Concat` / branching | 8 | multi-input graphs; true topological eval |

@@ -34,7 +34,7 @@ from typing import Any
 
 # IR wire-format version. Hardcoded identically in ``runtime/src/ir.rs``; a mismatch is a
 # breaking change caught loudly at load time (``AGENTS.md`` §5, §8).
-SCHEMA_VERSION = "0.3.0"
+SCHEMA_VERSION = "0.4.0"
 
 
 @dataclass(frozen=True)
@@ -67,8 +67,11 @@ class OpSpec:
             )
         if op_type == "Argmax":
             return ArgmaxSpec(threshold=int(d["threshold"]))
+        if op_type == "Add":
+            return AddSpec()
         raise ValueError(
-            f"unknown op_type {op_type!r}; expected one of 'Linear', 'Activation', 'Argmax'"
+            f"unknown op_type {op_type!r}; expected one of 'Linear', 'Activation', "
+            "'Argmax', 'Add'"
         )
 
 
@@ -140,6 +143,21 @@ class ArgmaxSpec(OpSpec):
 
     def to_dict(self) -> dict[str, Any]:
         return {"op_type": self.op_type, "threshold": self.threshold}
+
+
+@dataclass(frozen=True)
+class AddSpec(OpSpec):
+    """Element-wise addition of two input tensors (residuals).
+
+    The first **multi-input** op: the carrying ``Node`` has two entries in ``inputs`` (the
+    operands, in their declared merge order). There is no payload — the operands come from
+    the graph wiring, so the serialized object is just ``{"op_type": "Add"}``.
+    """
+
+    op_type: str = field(init=False, default="Add")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"op_type": self.op_type}
 
 
 @dataclass(frozen=True)

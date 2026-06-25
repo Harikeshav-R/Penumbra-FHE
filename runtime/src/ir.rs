@@ -28,11 +28,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ops::{Activation, Argmax, Linear, Op};
+use crate::ops::{Activation, Add, Argmax, Linear, Op};
 
 /// IR wire-format version. Hardcoded identically in `python/penumbra/ir.py`; a mismatch is
 /// a breaking change caught loudly at load time (`AGENTS.md` §5, §8).
-pub const SCHEMA_VERSION: &str = "0.3.0";
+pub const SCHEMA_VERSION: &str = "0.4.0";
 
 /// The root IR object: a directed graph of op nodes in a valid topological order.
 ///
@@ -80,6 +80,10 @@ pub enum OpSpec {
     Argmax {
         threshold: i64,
     },
+    /// Element-wise addition of two input tensors (residuals). The first **multi-input** op:
+    /// its node carries two entries in `inputs`. No payload fields — the operands come from
+    /// the graph wiring, not the spec.
+    Add {},
 }
 
 impl Graph {
@@ -164,6 +168,10 @@ impl OpSpec {
             OpSpec::Argmax { threshold } => Ok(Box::new(Argmax {
                 threshold: *threshold,
             })),
+            // `Add` has no payload to validate here; its operand-count and equal-length
+            // invariants are enforced in `Add::eval_n` (the wiring is the graph's job). The
+            // two-input requirement is checked by the eval loop / bit-width tracker.
+            OpSpec::Add {} => Ok(Box::new(Add)),
         }
     }
 
@@ -173,6 +181,7 @@ impl OpSpec {
             OpSpec::Linear { .. } => "Linear",
             OpSpec::Activation { .. } => "Activation",
             OpSpec::Argmax { .. } => "Argmax",
+            OpSpec::Add {} => "Add",
         }
     }
 }
@@ -211,6 +220,28 @@ mod tests {
         };
         let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
         assert_eq!(graph, restored);
+    }
+
+    /// The multi-input `Add` op (two `inputs`, empty payload) round-trips unchanged and
+    /// serializes to the bare `{"op_type":"Add"}` the Python `AddSpec` emits.
+    #[test]
+    fn add_op_json_round_trip() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 4,
+            input_bits: 4,
+            inputs: vec!["a".to_string(), "b".to_string()],
+            outputs: vec!["sum".to_string()],
+            nodes: vec![Node {
+                name: "add".to_string(),
+                inputs: vec!["a".to_string(), "b".to_string()],
+                outputs: vec!["sum".to_string()],
+                op: OpSpec::Add {},
+            }],
+        };
+        let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
+        assert_eq!(graph, restored);
+        assert_eq!(graph.nodes[0].op.op_type(), "Add");
     }
 
     #[test]

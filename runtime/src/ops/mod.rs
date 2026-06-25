@@ -37,10 +37,12 @@
 use tfhe::integer::{ServerKey, SignedRadixCiphertext};
 
 pub mod activation;
+pub mod add;
 pub mod argmax;
 pub mod linear;
 
 pub use activation::Activation;
+pub use add::Add;
 pub use argmax::Argmax;
 pub use linear::Linear;
 

@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from penumbra.ir import SCHEMA_VERSION, ArgmaxSpec, Graph, LinearSpec
+from penumbra.ir import SCHEMA_VERSION, AddSpec, ArgmaxSpec, Graph, LinearSpec, Node
 
 FIXTURE = Path(__file__).resolve().parent.parent / "examples" / "mnist" / "phase2_fixture.json"
 
@@ -95,6 +95,22 @@ def test_committed_graph_is_linear_argmax():
 
     assert head.inputs == ["logit"] and head.outputs == ["label"]
     assert isinstance(head.op, ArgmaxSpec)
+
+
+def test_add_spec_round_trips():
+    """The multi-input ``Add`` op (two `inputs`, no payload) round-trips through ir.py."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=4,
+        input_bits=4,
+        inputs=["a", "b"],
+        outputs=["sum"],
+        nodes=[Node(name="add", inputs=["a", "b"], outputs=["sum"], op=AddSpec())],
+    )
+    restored = Graph.from_json(g.to_json())
+    assert restored == g
+    assert restored.nodes[0].op.to_dict() == {"op_type": "Add"}
+    assert restored.nodes[0].inputs == ["a", "b"], "Add carries two operands (merge order)"
 
 
 def test_from_dict_rejects_version_mismatch():

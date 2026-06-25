@@ -25,6 +25,7 @@ later phases.
 from penumbra.ir import (
     SCHEMA_VERSION,
     ActivationSpec,
+    AddSpec,
     ArgmaxSpec,
     Graph,
     LinearSpec,
@@ -45,6 +46,7 @@ __all__ = [
     "LinearSpec",
     "ActivationSpec",
     "ArgmaxSpec",
+    "AddSpec",
     "build_linear_argmax_graph",
 ]
 
