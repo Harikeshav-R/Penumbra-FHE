@@ -31,20 +31,52 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
   wide-domain LUT and no `Requant`. A true `>2`-class argmax (pairwise `max`/`gt`) is a
   later phase.
 - **`Activation` operates on a narrow value.** A PBS over a wide accumulator is infeasible
-  (`PROJECT.md` §9); a wide accumulator must be `Requant`-ed down first. `Requant` is Phase
-  4, so in Phase 2 activations are applied only on small values.
-- **Bit-width budget is checked, not yet auto-managed.** `eval::check_graph_bit_width_budget`
-  propagates per-tensor widths through the IR graph (via `propagate_bit_widths`) and refuses
-  to run a model whose declared accumulator exceeds the radix capacity, naming the offending
-  node (`AGENTS.md` §1.3, §1.4). Automatic `Requant` *insertion* that would prevent the
-  overflow is Phase 4.
+  (`PROJECT.md` §9); a wide accumulator must be `Requant`-ed down first (see `Requant` below).
+- **Bit-width budget is checked _and_ auto-managed (as of Phase 4).** The runtime's
+  `eval::check_graph_bit_width_budget` propagates per-tensor widths through the IR graph (via
+  `propagate_bit_widths`) and refuses to run a model whose declared accumulator exceeds the
+  radix capacity, naming the offending node (`AGENTS.md` §1.3, §1.4). The Python compile pass
+  `penumbra.insert_requants` (mirroring those width rules, kept in lockstep by the bit-width
+  conformance test) now **automatically inserts `Requant` nodes** between accumulator layers so
+  multi-layer models stay within budget.
+
+## Phase 4 — multi-layer CNN ops (`Add`, `Requant`, `Pool`, `Conv2d`)
+
+| Op | Covers | TFHE realization | Bit-width rule (`output_bits`) |
+|---|---|---|---|
+| `Conv2d` | convolutional layers in CNNs | `Σ (ciphertext × plaintext kernel weight) + bias` at every spatial position — scalar-mul + adds, **no PBS** (the `Linear` pattern shared across positions) | `max(sum_bits, bias_bits) + 2` with fan-in `N = in_channels·kernel_h·kernel_w` (same form as `Linear`) |
+| `Requant` | rescale a wide accumulator → small int (enables multi-layer models) | `clamp(max(x >> shift, 0), 0, 2^out_bits-1)`: arithmetic shift + ReLU + radix-level saturate, then a single-block **PBS** (resets noise) | `out_bits` (≤ `MESSAGE_BITS`, independent of input width; must not under-count the clamp LUT) |
+| `Pool` | average / max pooling in CNNs | per-channel window reduction over the flat map: `avg` = sum (`add_parallelized`, **no PBS**); `max` = pairwise `max` (comparison PBSs, expensive) | `avg`: `input_bits + ceil(log2 k)` (k = window size); `max`: `input_bits` (selection never grows magnitude) |
+| `Add` | residuals / skip connections | element-wise ciphertext addition of **two** input tensors — `add_parallelized`, **no PBS** | `max(a_bits, b_bits) + 1` (one carry; the wider operand's sign bit covers the result) |
+
+### Notes — Phase 4
+
+- **`Requant` is the primitive that unlocks multi-layer models** (`PROJECT.md` §9). A
+  `Linear`/`Conv2d` accumulator grows ~`log2(N)` bits per layer; a PBS is feasible only over
+  a narrow value, so the wide accumulator is shifted down (a **power-of-two** rescale chosen
+  by the quantization service), ReLU'd, saturated **at the radix level** so the value truly
+  fits one `MESSAGE_BITS`-wide block, then passed through a single-block clamp LUT. It is a
+  **fused ReLU+requant**: the output is non-negative (what the single-block PBS path
+  requires, and what conv→ReLU produces anyway). Non-power-of-two scales are Phase 5.
+- **`Conv2d` and `Pool` share one spatial layout.** The flat `CtVec` is read as a
+  channel-major, row-major `[channels][in_h][in_w]` tensor — element `(c, y, x)` at
+  `c*in_h*in_w + y*in_w + x`. `Conv2d` produces this layout and `Pool` consumes it, so
+  `Conv2d → Pool` needs no reshape. `Conv2d` weights are row-major
+  `[out_channels][in_channels*kernel_h*kernel_w]` (one flattened kernel per output channel)
+  and its zero padding is *virtual* (padded taps contribute nothing, no ciphertext zeros are
+  materialized).
+- **`Pool` `avg` mode emits the window sum** and leaves the `1/k` to the next `Requant`'s
+  shift, keeping pooling PBS-free; the headline CNN uses `avg`. `Pool` has no padding in
+  Phase 4.
+- **`Add` is the first multi-input op.** Its node carries **two** entries in `inputs`; the
+  list order is the merge order (addition is commutative, so order is immaterial to the
+  result, but the contract is uniform with future multi-input ops). The eval loop resolves a
+  node's inputs in declared order and dispatches `Op::eval_n`; single-input ops keep working
+  through the default `eval_n` (`AGENTS.md` §1.2 — the loop never special-cases an op).
 
 ## Planned (later phases)
 
 | Op | Phase | Notes |
 |---|---|---|
-| `Conv2d` | 4 | MACs vs plaintext kernel weights; reuses the `Linear` cheap pattern |
-| `Pool` | 4 | average pool (adds); max pool (LUT/compare) |
-| `Requant` | 4 | rescale a wide accumulator → small int via LUT; enables multi-layer models |
-| `Add` | 4 | ciphertext addition (residuals) |
 | `Concat` / branching | 8 | multi-input graphs; true topological eval |
+| `>2`-class `Argmax` (in-FHE) | later | pairwise `max`/`gt` over a score vector; Phase 4 decrypts the logits and argmaxes client-side |

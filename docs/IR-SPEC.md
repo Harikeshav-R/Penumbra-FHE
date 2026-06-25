@@ -20,7 +20,7 @@ implementing (`AGENTS.md` §3.2). Do **not** add a binary format or compression 
 ## Versioning
 
 `SCHEMA_VERSION` is a string constant hardcoded identically in `ir.py` and `ir.rs`
-(currently **`"0.3.0"`**). On load, both sides check it and **fail loudly** on a mismatch
+(currently **`"0.4.0"`**). On load, both sides check it and **fail loudly** on a mismatch
 (`AGENTS.md` §1.4) — the version field is the forward-compatibility gate.
 
 > **Forward-compat note.** Neither side uses `deny_unknown_fields` on the graph/node
@@ -46,8 +46,8 @@ implementing (`AGENTS.md` §3.2). Do **not** add a binary format or compression 
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | string | Human-readable node label (used in error messages and `inspect`). |
-| `inputs` | [string] | Tensor names this node reads. (Current ops are single-input.) |
-| `outputs` | [string] | Tensor names this node writes. (Current ops are single-output.) |
+| `inputs` | [string] | Tensor names this node reads, **in order**. Most ops are single-input; `Add` is multi-input (two operands) and the list order *is* the merge order. |
+| `outputs` | [string] | Tensor names this node writes. (All current ops are single-output.) |
 | `op` | OpSpec | The op payload — see below. |
 
 ### `OpSpec` (op payload)
@@ -55,8 +55,8 @@ implementing (`AGENTS.md` §3.2). Do **not** add a binary format or compression 
 The op payload is a **nested, internally-tagged object** keyed on `op_type` — the JSON the
 Rust `#[serde(tag = "op_type")]` enum expects. It is deliberately *not* `serde(flatten)`ed
 into the node: flatten disables `deny_unknown_fields` and has round-trip bugs with
-internally-tagged enums. An unknown `op_type` fails loudly (`unknown variant 'Conv2d',
-expected one of 'Linear', 'Activation', 'Argmax'`).
+internally-tagged enums. An unknown `op_type` fails loudly (`unknown variant 'BatchNorm',
+expected one of 'Linear', 'Conv2d', 'Activation', 'Argmax', 'Requant', 'Pool', 'Add'`).
 
 The supported ops match [`docs/SUPPORTED-OPS.md`](./SUPPORTED-OPS.md) (kept in sync, and
 tested via the conformance test). The op fields mirror the runtime ops but live in IR-land
@@ -65,8 +65,12 @@ so the ops themselves stay serialization-free.
 | `op_type` | Fields | Notes |
 |---|---|---|
 | `"Linear"` | `weights: [[int]]` (row-major `[out][in]`), `bias: [int]` (one per row), `weight_bits: int` | Dense layer / logistic-regression head. `weights.len() == bias.len()` and all rows equal width, validated at load. |
+| `"Conv2d"` | `weights: [[int]]` (row-major `[out_channels][in_channels*kernel_h*kernel_w]`), `bias: [int]` (one per output channel), `weight_bits: int`, `in_h, in_w, in_channels, kernel_h, kernel_w, stride, padding: int` | 2-D convolution vs plaintext kernel. Input/output flat tensors use the channel-major, row-major layout (shared with `Pool`); zero padding is virtual. Kernel-width = fan-in and one-bias-per-channel validated at load. |
 | `"Activation"` | `lut: [int]` (indexed by input value), `output_bits: int` | Single-input LUT via PBS over a narrow domain. |
 | `"Argmax"` | `threshold: int` | 2-class threshold: label `1` iff `z ≥ threshold`. |
+| `"Requant"` | `shift: int` (power-of-two rescale), `out_bits: int` (≤ `MESSAGE_BITS`), `clamp_lut: [int]` (`2^MESSAGE_BITS` entries, each `< 2^MESSAGE_BITS`) | Rescale a wide accumulator → narrow non-negative value: `clamp(max(x >> shift, 0), 0, 2^out_bits - 1)` (fused ReLU+requant). LUT length / range and `out_bits ≤ MESSAGE_BITS` validated at load. |
+| `"Pool"` | `mode: string` (`"avg"`\|`"max"`), `in_h, in_w, channels, pool_h, pool_w, stride: int` | Spatial pooling over a flattened **channel-major, row-major** `[channels][in_h][in_w]` map. `avg` emits the window sum (the `/k` is deferred to `Requant`); `max` is pairwise max. Mode and window-fits-input validated at load. |
+| `"Add"` | *(none)* | Element-wise addition of **two** input tensors (residuals). The node carries two `inputs`; the payload is the bare `{"op_type": "Add"}`. Multi-input — see [Node](#node). |
 
 ## Node ordering
 
@@ -88,7 +92,7 @@ layer produces `logit`, the threshold produces the output `label`:
 
 ```json
 {
-  "schema_version": "0.3.0",
+  "schema_version": "0.4.0",
   "num_blocks": 8,
   "input_bits": 4,
   "inputs": ["x"],

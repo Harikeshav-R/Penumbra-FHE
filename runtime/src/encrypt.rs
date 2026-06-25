@@ -23,7 +23,7 @@ pub fn encrypt(ck: &RadixClientKey, input: &[i64]) -> CtVec {
 
 /// Decrypt a single-element output [`CtVec`] (e.g. an `Argmax` class index) to an integer.
 ///
-/// Panics if `out` is not exactly one element — the Phase-2 ops all funnel to a single
+/// Panics if `out` is not exactly one element — the 2-class `Argmax` funnels to a single
 /// scalar output, and a shape mismatch is a bug worth surfacing loudly (`AGENTS.md` §1.4).
 pub fn decrypt_label(ck: &RadixClientKey, out: &CtVec) -> i64 {
     assert_eq!(
@@ -33,4 +33,13 @@ pub fn decrypt_label(ck: &RadixClientKey, out: &CtVec) -> i64 {
         out.len()
     );
     ck.decrypt_signed(&out[0])
+}
+
+/// Decrypt every element of an output [`CtVec`] to a vector of integers.
+///
+/// The client-side companion to a multi-element output — e.g. a multi-class logit vector the
+/// client then argmaxes locally (the Phase-4 10-class head: the graph emits the logits and the
+/// client picks the max, so no wide-domain in-FHE argmax is needed; `PROJECT.md` §11).
+pub fn decrypt_vec(ck: &RadixClientKey, out: &CtVec) -> Vec<i64> {
+    out.iter().map(|ct| ck.decrypt_signed(ct)).collect()
 }

@@ -34,7 +34,7 @@ from typing import Any
 
 # IR wire-format version. Hardcoded identically in ``runtime/src/ir.rs``; a mismatch is a
 # breaking change caught loudly at load time (``AGENTS.md`` §5, §8).
-SCHEMA_VERSION = "0.3.0"
+SCHEMA_VERSION = "0.4.0"
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,19 @@ class OpSpec:
                 bias=[int(b) for b in d["bias"]],
                 weight_bits=int(d["weight_bits"]),
             )
+        if op_type == "Conv2d":
+            return Conv2dSpec(
+                weights=[[int(w) for w in row] for row in d["weights"]],
+                bias=[int(b) for b in d["bias"]],
+                weight_bits=int(d["weight_bits"]),
+                in_h=int(d["in_h"]),
+                in_w=int(d["in_w"]),
+                in_channels=int(d["in_channels"]),
+                kernel_h=int(d["kernel_h"]),
+                kernel_w=int(d["kernel_w"]),
+                stride=int(d["stride"]),
+                padding=int(d["padding"]),
+            )
         if op_type == "Activation":
             return ActivationSpec(
                 lut=[int(v) for v in d["lut"]],
@@ -67,8 +80,27 @@ class OpSpec:
             )
         if op_type == "Argmax":
             return ArgmaxSpec(threshold=int(d["threshold"]))
+        if op_type == "Requant":
+            return RequantSpec(
+                shift=int(d["shift"]),
+                out_bits=int(d["out_bits"]),
+                clamp_lut=[int(v) for v in d["clamp_lut"]],
+            )
+        if op_type == "Pool":
+            return PoolSpec(
+                mode=str(d["mode"]),
+                in_h=int(d["in_h"]),
+                in_w=int(d["in_w"]),
+                channels=int(d["channels"]),
+                pool_h=int(d["pool_h"]),
+                pool_w=int(d["pool_w"]),
+                stride=int(d["stride"]),
+            )
+        if op_type == "Add":
+            return AddSpec()
         raise ValueError(
-            f"unknown op_type {op_type!r}; expected one of 'Linear', 'Activation', 'Argmax'"
+            f"unknown op_type {op_type!r}; expected one of 'Linear', 'Conv2d', 'Activation', "
+            "'Argmax', 'Requant', 'Pool', 'Add'"
         )
 
 
@@ -114,6 +146,68 @@ class LinearSpec(OpSpec):
 
 
 @dataclass(frozen=True)
+class Conv2dSpec(OpSpec):
+    """2-D convolution against plaintext kernel weights.
+
+    ``weights`` is row-major ``[out_channels][in_channels*kernel_h*kernel_w]`` (one flattened
+    kernel per output channel, with the in-channel / kernel-row / kernel-col index running
+    fastest in that order — how a PyTorch/ONNX ``[out_c][in_c][kh][kw]`` kernel flattens);
+    ``bias`` has one entry per output channel. The input/output flat tensors use the
+    channel-major, row-major layout shared with :class:`PoolSpec`. ``weight_bits`` feeds the
+    bit-width growth rule (same as Linear, with fan-in ``in_channels*kernel_h*kernel_w``).
+    """
+
+    weights: list[list[int]]
+    bias: list[int]
+    weight_bits: int
+    in_h: int
+    in_w: int
+    in_channels: int
+    kernel_h: int
+    kernel_w: int
+    stride: int
+    padding: int
+
+    op_type: str = field(init=False, default="Conv2d")
+
+    def __post_init__(self) -> None:
+        # Mirror ``OpSpec::build`` in Rust: fail loudly on a malformed layer at construction.
+        if not self.weights:
+            raise ValueError("Conv2dSpec has no output channels (empty weights)")
+        if len(self.weights) != len(self.bias):
+            raise ValueError(
+                f"Conv2dSpec has {len(self.weights)} kernels but {len(self.bias)} biases; "
+                "need one bias per output channel"
+            )
+        if min(self.in_h, self.in_w, self.in_channels, self.kernel_h, self.kernel_w) < 1:
+            raise ValueError("Conv2dSpec dims/kernel must be positive")
+        if self.stride < 1:
+            raise ValueError("Conv2dSpec stride must be positive")
+        fan_in = self.in_channels * self.kernel_h * self.kernel_w
+        for i, row in enumerate(self.weights):
+            if len(row) != fan_in:
+                raise ValueError(
+                    f"Conv2dSpec kernel row {i} has width {len(row)} but "
+                    f"in_channels*kernel_h*kernel_w = {fan_in}"
+                )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "op_type": self.op_type,
+            "weights": self.weights,
+            "bias": self.bias,
+            "weight_bits": self.weight_bits,
+            "in_h": self.in_h,
+            "in_w": self.in_w,
+            "in_channels": self.in_channels,
+            "kernel_h": self.kernel_h,
+            "kernel_w": self.kernel_w,
+            "stride": self.stride,
+            "padding": self.padding,
+        }
+
+
+@dataclass(frozen=True)
 class ActivationSpec(OpSpec):
     """Single-input activation realized as a LUT over a narrow integer domain.
 
@@ -140,6 +234,104 @@ class ArgmaxSpec(OpSpec):
 
     def to_dict(self) -> dict[str, Any]:
         return {"op_type": self.op_type, "threshold": self.threshold}
+
+
+@dataclass(frozen=True)
+class RequantSpec(OpSpec):
+    """Rescale a wide accumulator down to a narrow, LUT-able value.
+
+    Exact semantics (matched bit-for-bit by the runtime, ``AGENTS.md`` §1.1)::
+
+        requant(x) = clamp(max(x >> shift, 0), 0, 2**out_bits - 1)
+
+    ``shift`` is a non-negative power-of-two rescale; the op is a fused ReLU+requant so its
+    output is non-negative (required by the single-block PBS path). ``clamp_lut[v]`` is the
+    output for the already-saturated input block value ``v``; it must cover the whole
+    ``MESSAGE_BITS``-bit message space and saturate at ``2**out_bits - 1``. The quantization
+    service owns choosing ``shift`` and building ``clamp_lut`` (Phase 5 / the compile pass).
+    """
+
+    shift: int
+    out_bits: int
+    clamp_lut: list[int]
+
+    op_type: str = field(init=False, default="Requant")
+
+    def __post_init__(self) -> None:
+        # Fail loudly at construction (mirrors Rust ``OpSpec::build``), not later (§1.4).
+        if self.shift < 0:
+            raise ValueError(f"RequantSpec shift must be non-negative, got {self.shift}")
+        if self.out_bits < 1:
+            raise ValueError(f"RequantSpec out_bits must be >= 1, got {self.out_bits}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "op_type": self.op_type,
+            "shift": self.shift,
+            "out_bits": self.out_bits,
+            "clamp_lut": self.clamp_lut,
+        }
+
+
+@dataclass(frozen=True)
+class PoolSpec(OpSpec):
+    """Spatial pooling over a flattened ``[channels][in_h][in_w]`` feature map.
+
+    ``mode`` is ``"avg"`` (window **sum** — the ``1/k`` averaging is folded into the
+    downstream ``Requant`` so pooling stays PBS-free) or ``"max"`` (pairwise max, expensive).
+    The flat tensor is **channel-major, row-major**: element ``(c, y, x)`` is at
+    ``c*in_h*in_w + y*in_w + x`` — the same layout ``Conv2d`` produces, so a ``Conv2d → Pool``
+    chain needs no reshape. Output is ``[channels][out_h][out_w]`` in the same layout.
+    """
+
+    mode: str
+    in_h: int
+    in_w: int
+    channels: int
+    pool_h: int
+    pool_w: int
+    stride: int
+
+    op_type: str = field(init=False, default="Pool")
+
+    def __post_init__(self) -> None:
+        # Fail loudly at construction (mirrors Rust ``OpSpec::build``), not later (§1.4).
+        if self.mode not in ("avg", "max"):
+            raise ValueError(f'PoolSpec mode must be "avg" or "max"; got {self.mode!r}')
+        if min(self.in_h, self.in_w, self.channels, self.pool_h, self.pool_w, self.stride) < 1:
+            raise ValueError("PoolSpec dims/window/stride must all be positive")
+        if self.pool_h > self.in_h or self.pool_w > self.in_w:
+            raise ValueError(
+                f"PoolSpec window ({self.pool_h}x{self.pool_w}) must fit the input "
+                f"({self.in_h}x{self.in_w})"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "op_type": self.op_type,
+            "mode": self.mode,
+            "in_h": self.in_h,
+            "in_w": self.in_w,
+            "channels": self.channels,
+            "pool_h": self.pool_h,
+            "pool_w": self.pool_w,
+            "stride": self.stride,
+        }
+
+
+@dataclass(frozen=True)
+class AddSpec(OpSpec):
+    """Element-wise addition of two input tensors (residuals).
+
+    The first **multi-input** op: the carrying ``Node`` has two entries in ``inputs`` (the
+    operands, in their declared merge order). There is no payload — the operands come from
+    the graph wiring, so the serialized object is just ``{"op_type": "Add"}``.
+    """
+
+    op_type: str = field(init=False, default="Add")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"op_type": self.op_type}
 
 
 @dataclass(frozen=True)

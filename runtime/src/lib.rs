@@ -33,11 +33,13 @@ pub mod ops;
 
 // Public API surface (`PROJECT.md` §12): keys, the client-side encrypt/decrypt boundary,
 // the op-eval interface, the serializable IR, and the graph walker.
-pub use encrypt::{decrypt_label, encrypt};
+pub use encrypt::{decrypt_label, decrypt_vec, encrypt};
 pub use eval::{
     check_bit_width_budget, check_graph_bit_width_budget, evaluate, evaluate_graph,
     propagate_bit_widths,
 };
 pub use ir::{Graph, Node, OpSpec, SCHEMA_VERSION};
 pub use keys::keygen;
-pub use ops::{Activation, Argmax, CtVec, EvalCtx, Linear, Op};
+pub use ops::{
+    Activation, Add, Argmax, Conv2d, CtVec, EvalCtx, Linear, Op, Pool, PoolMode, Requant,
+};
