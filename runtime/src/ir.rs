@@ -28,7 +28,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ops::{Activation, Add, Argmax, Linear, Op};
+use crate::ops::{Activation, Add, Argmax, Linear, Op, Requant};
 
 /// IR wire-format version. Hardcoded identically in `python/penumbra/ir.py`; a mismatch is
 /// a breaking change caught loudly at load time (`AGENTS.md` §5, §8).
@@ -79,6 +79,13 @@ pub enum OpSpec {
     },
     Argmax {
         threshold: i64,
+    },
+    /// Rescale a wide accumulator down to a narrow, LUT-able value: arithmetic right-shift by
+    /// `shift`, ReLU, clamp to `2^out_bits - 1` via `clamp_lut`. See [`crate::ops::Requant`].
+    Requant {
+        shift: u32,
+        out_bits: usize,
+        clamp_lut: Vec<u64>,
     },
     /// Element-wise addition of two input tensors (residuals). The first **multi-input** op:
     /// its node carries two entries in `inputs`. No payload fields — the operands come from
@@ -168,6 +175,46 @@ impl OpSpec {
             OpSpec::Argmax { threshold } => Ok(Box::new(Argmax {
                 threshold: *threshold,
             })),
+            OpSpec::Requant {
+                shift,
+                out_bits,
+                clamp_lut,
+            } => {
+                // Mirror the asserts in `Requant::eval`/`output_bits` as load-time errors so a
+                // malformed table fails before keygen (`AGENTS.md` §1.4), not deep in eval.
+                let domain = 1usize << crate::keys::MESSAGE_BITS;
+                if clamp_lut.len() != domain {
+                    return Err(format!(
+                        "Requant clamp_lut must have {domain} entries (the \
+                         {}-bit message space); got {}",
+                        crate::keys::MESSAGE_BITS,
+                        clamp_lut.len()
+                    ));
+                }
+                if let Some((i, &e)) = clamp_lut
+                    .iter()
+                    .enumerate()
+                    .find(|&(_, &e)| e >= (1u64 << crate::keys::MESSAGE_BITS))
+                {
+                    return Err(format!(
+                        "Requant clamp_lut[{i}] = {e} does not fit one shortint block \
+                         (must be < {})",
+                        1u64 << crate::keys::MESSAGE_BITS
+                    ));
+                }
+                if *out_bits > crate::keys::MESSAGE_BITS {
+                    return Err(format!(
+                        "Requant out_bits ({out_bits}) exceeds MESSAGE_BITS ({}); the narrowed \
+                         value must fit a single shortint block",
+                        crate::keys::MESSAGE_BITS
+                    ));
+                }
+                Ok(Box::new(Requant {
+                    shift: *shift,
+                    out_bits: *out_bits,
+                    clamp_lut: clamp_lut.clone(),
+                }))
+            }
             // `Add` has no payload to validate here; its operand-count and equal-length
             // invariants are enforced in `Add::eval_n` (the wiring is the graph's job). The
             // two-input requirement is checked by the eval loop / bit-width tracker.
@@ -181,6 +228,7 @@ impl OpSpec {
             OpSpec::Linear { .. } => "Linear",
             OpSpec::Activation { .. } => "Activation",
             OpSpec::Argmax { .. } => "Argmax",
+            OpSpec::Requant { .. } => "Requant",
             OpSpec::Add {} => "Add",
         }
     }
@@ -242,6 +290,53 @@ mod tests {
         let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
         assert_eq!(graph, restored);
         assert_eq!(graph.nodes[0].op.op_type(), "Add");
+    }
+
+    /// A `Requant` node round-trips through JSON, and `build` rejects a malformed clamp LUT
+    /// (wrong length / out-of-range entry) at load time rather than panicking deep in eval.
+    #[test]
+    fn requant_op_round_trip_and_validation() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 6,
+            input_bits: 10,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["y".to_string()],
+            nodes: vec![Node {
+                name: "rq".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["y".to_string()],
+                op: OpSpec::Requant {
+                    shift: 4,
+                    out_bits: 2,
+                    clamp_lut: vec![0, 1, 2, 3],
+                },
+            }],
+        };
+        let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
+        assert_eq!(graph, restored);
+
+        // Wrong LUT length fails to build (must cover the whole 2-bit message space).
+        let bad_len = OpSpec::Requant {
+            shift: 1,
+            out_bits: 2,
+            clamp_lut: vec![0, 1, 2],
+        };
+        assert!(
+            bad_len.build().is_err(),
+            "short clamp_lut must fail to build"
+        );
+
+        // An entry that doesn't fit one block fails to build.
+        let bad_entry = OpSpec::Requant {
+            shift: 1,
+            out_bits: 2,
+            clamp_lut: vec![0, 1, 2, 9],
+        };
+        assert!(
+            bad_entry.build().is_err(),
+            "out-of-range clamp_lut entry must fail to build"
+        );
     }
 
     #[test]

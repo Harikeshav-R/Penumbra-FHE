@@ -56,7 +56,7 @@ The op payload is a **nested, internally-tagged object** keyed on `op_type` — 
 Rust `#[serde(tag = "op_type")]` enum expects. It is deliberately *not* `serde(flatten)`ed
 into the node: flatten disables `deny_unknown_fields` and has round-trip bugs with
 internally-tagged enums. An unknown `op_type` fails loudly (`unknown variant 'Conv2d',
-expected one of 'Linear', 'Activation', 'Argmax', 'Add'`).
+expected one of 'Linear', 'Activation', 'Argmax', 'Requant', 'Add'`).
 
 The supported ops match [`docs/SUPPORTED-OPS.md`](./SUPPORTED-OPS.md) (kept in sync, and
 tested via the conformance test). The op fields mirror the runtime ops but live in IR-land
@@ -67,6 +67,7 @@ so the ops themselves stay serialization-free.
 | `"Linear"` | `weights: [[int]]` (row-major `[out][in]`), `bias: [int]` (one per row), `weight_bits: int` | Dense layer / logistic-regression head. `weights.len() == bias.len()` and all rows equal width, validated at load. |
 | `"Activation"` | `lut: [int]` (indexed by input value), `output_bits: int` | Single-input LUT via PBS over a narrow domain. |
 | `"Argmax"` | `threshold: int` | 2-class threshold: label `1` iff `z ≥ threshold`. |
+| `"Requant"` | `shift: int` (power-of-two rescale), `out_bits: int` (≤ `MESSAGE_BITS`), `clamp_lut: [int]` (`2^MESSAGE_BITS` entries, each `< 2^MESSAGE_BITS`) | Rescale a wide accumulator → narrow non-negative value: `clamp(max(x >> shift, 0), 0, 2^out_bits - 1)` (fused ReLU+requant). LUT length / range and `out_bits ≤ MESSAGE_BITS` validated at load. |
 | `"Add"` | *(none)* | Element-wise addition of **two** input tensors (residuals). The node carries two `inputs`; the payload is the bare `{"op_type": "Add"}`. Multi-input — see [Node](#node). |
 
 ## Node ordering

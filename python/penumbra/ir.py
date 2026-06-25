@@ -67,11 +67,17 @@ class OpSpec:
             )
         if op_type == "Argmax":
             return ArgmaxSpec(threshold=int(d["threshold"]))
+        if op_type == "Requant":
+            return RequantSpec(
+                shift=int(d["shift"]),
+                out_bits=int(d["out_bits"]),
+                clamp_lut=[int(v) for v in d["clamp_lut"]],
+            )
         if op_type == "Add":
             return AddSpec()
         raise ValueError(
             f"unknown op_type {op_type!r}; expected one of 'Linear', 'Activation', "
-            "'Argmax', 'Add'"
+            "'Argmax', 'Requant', 'Add'"
         )
 
 
@@ -143,6 +149,43 @@ class ArgmaxSpec(OpSpec):
 
     def to_dict(self) -> dict[str, Any]:
         return {"op_type": self.op_type, "threshold": self.threshold}
+
+
+@dataclass(frozen=True)
+class RequantSpec(OpSpec):
+    """Rescale a wide accumulator down to a narrow, LUT-able value.
+
+    Exact semantics (matched bit-for-bit by the runtime, ``AGENTS.md`` §1.1)::
+
+        requant(x) = clamp(max(x >> shift, 0), 0, 2**out_bits - 1)
+
+    ``shift`` is a non-negative power-of-two rescale; the op is a fused ReLU+requant so its
+    output is non-negative (required by the single-block PBS path). ``clamp_lut[v]`` is the
+    output for the already-saturated input block value ``v``; it must cover the whole
+    ``MESSAGE_BITS``-bit message space and saturate at ``2**out_bits - 1``. The quantization
+    service owns choosing ``shift`` and building ``clamp_lut`` (Phase 5 / the compile pass).
+    """
+
+    shift: int
+    out_bits: int
+    clamp_lut: list[int]
+
+    op_type: str = field(init=False, default="Requant")
+
+    def __post_init__(self) -> None:
+        # Fail loudly at construction (mirrors Rust ``OpSpec::build``), not later (§1.4).
+        if self.shift < 0:
+            raise ValueError(f"RequantSpec shift must be non-negative, got {self.shift}")
+        if self.out_bits < 1:
+            raise ValueError(f"RequantSpec out_bits must be >= 1, got {self.out_bits}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "op_type": self.op_type,
+            "shift": self.shift,
+            "out_bits": self.out_bits,
+            "clamp_lut": self.clamp_lut,
+        }
 
 
 @dataclass(frozen=True)

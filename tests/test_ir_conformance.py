@@ -23,7 +23,15 @@ from pathlib import Path
 
 import pytest
 
-from penumbra.ir import SCHEMA_VERSION, AddSpec, ArgmaxSpec, Graph, LinearSpec, Node
+from penumbra.ir import (
+    SCHEMA_VERSION,
+    AddSpec,
+    ArgmaxSpec,
+    Graph,
+    LinearSpec,
+    Node,
+    RequantSpec,
+)
 
 FIXTURE = Path(__file__).resolve().parent.parent / "examples" / "mnist" / "phase2_fixture.json"
 
@@ -111,6 +119,41 @@ def test_add_spec_round_trips():
     assert restored == g
     assert restored.nodes[0].op.to_dict() == {"op_type": "Add"}
     assert restored.nodes[0].inputs == ["a", "b"], "Add carries two operands (merge order)"
+
+
+def test_requant_spec_round_trips():
+    """The ``Requant`` op (shift + out_bits + clamp_lut) round-trips through ir.py."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=6,
+        input_bits=10,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[
+            Node(
+                name="rq",
+                inputs=["x"],
+                outputs=["y"],
+                op=RequantSpec(shift=4, out_bits=2, clamp_lut=[0, 1, 2, 3]),
+            )
+        ],
+    )
+    restored = Graph.from_json(g.to_json())
+    assert restored == g
+    assert restored.nodes[0].op.to_dict() == {
+        "op_type": "Requant",
+        "shift": 4,
+        "out_bits": 2,
+        "clamp_lut": [0, 1, 2, 3],
+    }
+
+
+def test_requant_spec_rejects_invalid():
+    """RequantSpec fails loudly at construction on a negative shift / zero out_bits."""
+    with pytest.raises(ValueError, match="shift"):
+        RequantSpec(shift=-1, out_bits=2, clamp_lut=[0, 1, 2, 3])
+    with pytest.raises(ValueError, match="out_bits"):
+        RequantSpec(shift=1, out_bits=0, clamp_lut=[0, 1, 2, 3])
 
 
 def test_from_dict_rejects_version_mismatch():

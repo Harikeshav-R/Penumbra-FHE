@@ -43,10 +43,18 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
 
 | Op | Covers | TFHE realization | Bit-width rule (`output_bits`) |
 |---|---|---|---|
+| `Requant` | rescale a wide accumulator → small int (enables multi-layer models) | `clamp(max(x >> shift, 0), 0, 2^out_bits-1)`: arithmetic shift + ReLU + radix-level saturate, then a single-block **PBS** (resets noise) | `out_bits` (≤ `MESSAGE_BITS`, independent of input width; must not under-count the clamp LUT) |
 | `Add` | residuals / skip connections | element-wise ciphertext addition of **two** input tensors — `add_parallelized`, **no PBS** | `max(a_bits, b_bits) + 1` (one carry; the wider operand's sign bit covers the result) |
 
 ### Notes — Phase 4
 
+- **`Requant` is the primitive that unlocks multi-layer models** (`PROJECT.md` §9). A
+  `Linear`/`Conv2d` accumulator grows ~`log2(N)` bits per layer; a PBS is feasible only over
+  a narrow value, so the wide accumulator is shifted down (a **power-of-two** rescale chosen
+  by the quantization service), ReLU'd, saturated **at the radix level** so the value truly
+  fits one `MESSAGE_BITS`-wide block, then passed through a single-block clamp LUT. It is a
+  **fused ReLU+requant**: the output is non-negative (what the single-block PBS path
+  requires, and what conv→ReLU produces anyway). Non-power-of-two scales are Phase 5.
 - **`Add` is the first multi-input op.** Its node carries **two** entries in `inputs`; the
   list order is the merge order (addition is commutative, so order is immaterial to the
   result, but the contract is uniform with future multi-input ops). The eval loop resolves a
@@ -57,7 +65,6 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
 
 | Op | Phase | Notes |
 |---|---|---|
-| `Requant` | 4 | rescale a wide accumulator → small int via shift + clamp LUT; enables multi-layer models |
 | `Pool` | 4 | average pool (window sum, rescale deferred to `Requant`); max pool (LUT/compare) |
 | `Conv2d` | 4 | MACs vs plaintext kernel weights; reuses the `Linear` cheap pattern |
 | `Concat` / branching | 8 | multi-input graphs; true topological eval |

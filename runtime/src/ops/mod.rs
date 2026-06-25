@@ -40,11 +40,13 @@ pub mod activation;
 pub mod add;
 pub mod argmax;
 pub mod linear;
+pub mod requant;
 
 pub use activation::Activation;
 pub use add::Add;
 pub use argmax::Argmax;
 pub use linear::Linear;
+pub use requant::Requant;
 
 /// An encrypted tensor flowing between ops. Phase 2 is a flat vector of signed radix
 /// integers; shaped tensors (for conv) are a later concern layered on top, not a change
