@@ -31,6 +31,7 @@ from penumbra.ir import (
     LinearSpec,
     Node,
     OpSpec,
+    PoolSpec,
     RequantSpec,
     build_linear_argmax_graph,
 )
@@ -48,6 +49,7 @@ __all__ = [
     "ActivationSpec",
     "ArgmaxSpec",
     "RequantSpec",
+    "PoolSpec",
     "AddSpec",
     "build_linear_argmax_graph",
 ]

@@ -30,6 +30,7 @@ from penumbra.ir import (
     Graph,
     LinearSpec,
     Node,
+    PoolSpec,
     RequantSpec,
 )
 
@@ -154,6 +155,31 @@ def test_requant_spec_rejects_invalid():
         RequantSpec(shift=-1, out_bits=2, clamp_lut=[0, 1, 2, 3])
     with pytest.raises(ValueError, match="out_bits"):
         RequantSpec(shift=1, out_bits=0, clamp_lut=[0, 1, 2, 3])
+
+
+def test_pool_spec_round_trips():
+    """The ``Pool`` op round-trips, and invalid modes/windows fail at construction."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=6,
+        input_bits=5,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[
+            Node(
+                name="pool",
+                inputs=["x"],
+                outputs=["y"],
+                op=PoolSpec(mode="avg", in_h=4, in_w=4, channels=2, pool_h=2, pool_w=2, stride=2),
+            )
+        ],
+    )
+    assert Graph.from_json(g.to_json()) == g
+
+    with pytest.raises(ValueError, match="mode"):
+        PoolSpec(mode="median", in_h=4, in_w=4, channels=1, pool_h=2, pool_w=2, stride=2)
+    with pytest.raises(ValueError, match="must fit"):
+        PoolSpec(mode="max", in_h=2, in_w=2, channels=1, pool_h=3, pool_w=3, stride=1)
 
 
 def test_from_dict_rejects_version_mismatch():

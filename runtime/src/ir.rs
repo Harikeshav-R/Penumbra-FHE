@@ -28,7 +28,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ops::{Activation, Add, Argmax, Linear, Op, Requant};
+use crate::ops::{Activation, Add, Argmax, Linear, Op, Pool, PoolMode, Requant};
 
 /// IR wire-format version. Hardcoded identically in `python/penumbra/ir.py`; a mismatch is
 /// a breaking change caught loudly at load time (`AGENTS.md` §5, §8).
@@ -86,6 +86,17 @@ pub enum OpSpec {
         shift: u32,
         out_bits: usize,
         clamp_lut: Vec<u64>,
+    },
+    /// Spatial pooling over a flattened `[channels][in_h][in_w]` feature map. `mode` is
+    /// `"avg"` (window sum, rescale deferred to `Requant`) or `"max"`. See [`crate::ops::Pool`].
+    Pool {
+        mode: String,
+        in_h: usize,
+        in_w: usize,
+        channels: usize,
+        pool_h: usize,
+        pool_w: usize,
+        stride: usize,
     },
     /// Element-wise addition of two input tensors (residuals). The first **multi-input** op:
     /// its node carries two entries in `inputs`. No payload fields — the operands come from
@@ -215,6 +226,47 @@ impl OpSpec {
                     clamp_lut: clamp_lut.clone(),
                 }))
             }
+            OpSpec::Pool {
+                mode,
+                in_h,
+                in_w,
+                channels,
+                pool_h,
+                pool_w,
+                stride,
+            } => {
+                // Parse the mode string into the typed enum, failing loudly on a typo rather
+                // than silently picking a default (`AGENTS.md` §1.4).
+                let mode = match mode.as_str() {
+                    "avg" => PoolMode::Avg,
+                    "max" => PoolMode::Max,
+                    other => {
+                        return Err(format!(
+                            "Pool mode must be \"avg\" or \"max\"; got {other:?}"
+                        ))
+                    }
+                };
+                if *in_h == 0 || *in_w == 0 || *channels == 0 {
+                    return Err("Pool in_h/in_w/channels must be positive".to_string());
+                }
+                if *pool_h == 0 || *pool_w == 0 || *stride == 0 {
+                    return Err("Pool pool_h/pool_w/stride must be positive".to_string());
+                }
+                if pool_h > in_h || pool_w > in_w {
+                    return Err(format!(
+                        "Pool window ({pool_h}x{pool_w}) must fit the input ({in_h}x{in_w})"
+                    ));
+                }
+                Ok(Box::new(Pool {
+                    mode,
+                    in_h: *in_h,
+                    in_w: *in_w,
+                    channels: *channels,
+                    pool_h: *pool_h,
+                    pool_w: *pool_w,
+                    stride: *stride,
+                }))
+            }
             // `Add` has no payload to validate here; its operand-count and equal-length
             // invariants are enforced in `Add::eval_n` (the wiring is the graph's job). The
             // two-input requirement is checked by the eval loop / bit-width tracker.
@@ -229,6 +281,7 @@ impl OpSpec {
             OpSpec::Activation { .. } => "Activation",
             OpSpec::Argmax { .. } => "Argmax",
             OpSpec::Requant { .. } => "Requant",
+            OpSpec::Pool { .. } => "Pool",
             OpSpec::Add {} => "Add",
         }
     }
@@ -336,6 +389,59 @@ mod tests {
         assert!(
             bad_entry.build().is_err(),
             "out-of-range clamp_lut entry must fail to build"
+        );
+    }
+
+    /// A `Pool` node round-trips, and `build` rejects an unknown mode / oversized window.
+    #[test]
+    fn pool_op_round_trip_and_validation() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 6,
+            input_bits: 5,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["y".to_string()],
+            nodes: vec![Node {
+                name: "pool".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["y".to_string()],
+                op: OpSpec::Pool {
+                    mode: "avg".to_string(),
+                    in_h: 4,
+                    in_w: 4,
+                    channels: 2,
+                    pool_h: 2,
+                    pool_w: 2,
+                    stride: 2,
+                },
+            }],
+        };
+        let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
+        assert_eq!(graph, restored);
+
+        let bad_mode = OpSpec::Pool {
+            mode: "median".to_string(),
+            in_h: 4,
+            in_w: 4,
+            channels: 1,
+            pool_h: 2,
+            pool_w: 2,
+            stride: 2,
+        };
+        assert!(bad_mode.build().is_err(), "unknown Pool mode must fail");
+
+        let too_big = OpSpec::Pool {
+            mode: "max".to_string(),
+            in_h: 2,
+            in_w: 2,
+            channels: 1,
+            pool_h: 3,
+            pool_w: 3,
+            stride: 1,
+        };
+        assert!(
+            too_big.build().is_err(),
+            "window larger than the input must fail"
         );
     }
 

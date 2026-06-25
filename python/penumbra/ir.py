@@ -73,11 +73,21 @@ class OpSpec:
                 out_bits=int(d["out_bits"]),
                 clamp_lut=[int(v) for v in d["clamp_lut"]],
             )
+        if op_type == "Pool":
+            return PoolSpec(
+                mode=str(d["mode"]),
+                in_h=int(d["in_h"]),
+                in_w=int(d["in_w"]),
+                channels=int(d["channels"]),
+                pool_h=int(d["pool_h"]),
+                pool_w=int(d["pool_w"]),
+                stride=int(d["stride"]),
+            )
         if op_type == "Add":
             return AddSpec()
         raise ValueError(
             f"unknown op_type {op_type!r}; expected one of 'Linear', 'Activation', "
-            "'Argmax', 'Requant', 'Add'"
+            "'Argmax', 'Requant', 'Pool', 'Add'"
         )
 
 
@@ -185,6 +195,52 @@ class RequantSpec(OpSpec):
             "shift": self.shift,
             "out_bits": self.out_bits,
             "clamp_lut": self.clamp_lut,
+        }
+
+
+@dataclass(frozen=True)
+class PoolSpec(OpSpec):
+    """Spatial pooling over a flattened ``[channels][in_h][in_w]`` feature map.
+
+    ``mode`` is ``"avg"`` (window **sum** — the ``1/k`` averaging is folded into the
+    downstream ``Requant`` so pooling stays PBS-free) or ``"max"`` (pairwise max, expensive).
+    The flat tensor is **channel-major, row-major**: element ``(c, y, x)`` is at
+    ``c*in_h*in_w + y*in_w + x`` — the same layout ``Conv2d`` produces, so a ``Conv2d → Pool``
+    chain needs no reshape. Output is ``[channels][out_h][out_w]`` in the same layout.
+    """
+
+    mode: str
+    in_h: int
+    in_w: int
+    channels: int
+    pool_h: int
+    pool_w: int
+    stride: int
+
+    op_type: str = field(init=False, default="Pool")
+
+    def __post_init__(self) -> None:
+        # Fail loudly at construction (mirrors Rust ``OpSpec::build``), not later (§1.4).
+        if self.mode not in ("avg", "max"):
+            raise ValueError(f'PoolSpec mode must be "avg" or "max"; got {self.mode!r}')
+        if min(self.in_h, self.in_w, self.channels, self.pool_h, self.pool_w, self.stride) < 1:
+            raise ValueError("PoolSpec dims/window/stride must all be positive")
+        if self.pool_h > self.in_h or self.pool_w > self.in_w:
+            raise ValueError(
+                f"PoolSpec window ({self.pool_h}x{self.pool_w}) must fit the input "
+                f"({self.in_h}x{self.in_w})"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "op_type": self.op_type,
+            "mode": self.mode,
+            "in_h": self.in_h,
+            "in_w": self.in_w,
+            "channels": self.channels,
+            "pool_h": self.pool_h,
+            "pool_w": self.pool_w,
+            "stride": self.stride,
         }
 
 

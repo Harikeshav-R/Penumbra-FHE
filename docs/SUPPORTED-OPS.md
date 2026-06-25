@@ -44,6 +44,7 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
 | Op | Covers | TFHE realization | Bit-width rule (`output_bits`) |
 |---|---|---|---|
 | `Requant` | rescale a wide accumulator → small int (enables multi-layer models) | `clamp(max(x >> shift, 0), 0, 2^out_bits-1)`: arithmetic shift + ReLU + radix-level saturate, then a single-block **PBS** (resets noise) | `out_bits` (≤ `MESSAGE_BITS`, independent of input width; must not under-count the clamp LUT) |
+| `Pool` | average / max pooling in CNNs | per-channel window reduction over the flat map: `avg` = sum (`add_parallelized`, **no PBS**); `max` = pairwise `max` (comparison PBSs, expensive) | `avg`: `input_bits + ceil(log2 k)` (k = window size); `max`: `input_bits` (selection never grows magnitude) |
 | `Add` | residuals / skip connections | element-wise ciphertext addition of **two** input tensors — `add_parallelized`, **no PBS** | `max(a_bits, b_bits) + 1` (one carry; the wider operand's sign bit covers the result) |
 
 ### Notes — Phase 4
@@ -55,6 +56,11 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
   fits one `MESSAGE_BITS`-wide block, then passed through a single-block clamp LUT. It is a
   **fused ReLU+requant**: the output is non-negative (what the single-block PBS path
   requires, and what conv→ReLU produces anyway). Non-power-of-two scales are Phase 5.
+- **`Pool` shares the spatial layout convention.** The flat `CtVec` is read as a
+  channel-major, row-major `[channels][in_h][in_w]` tensor — element `(c, y, x)` at
+  `c*in_h*in_w + y*in_w + x`. `Conv2d` emits this same layout, so `Conv2d → Pool` needs no
+  reshape. `avg` mode emits the window **sum** and leaves the `1/k` to the next `Requant`'s
+  shift, keeping pooling PBS-free; the headline CNN uses `avg`. No padding in Phase 4.
 - **`Add` is the first multi-input op.** Its node carries **two** entries in `inputs`; the
   list order is the merge order (addition is commutative, so order is immaterial to the
   result, but the contract is uniform with future multi-input ops). The eval loop resolves a
