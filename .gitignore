@@ -33,3 +33,6 @@ data/             # downloaded datasets (MNIST, faces, ...)
 .vscode/
 *.swp
 .DS_Store
+
+# ---- Agent / session scaffolding (local only, never tracked) ----
+.claude/

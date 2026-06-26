@@ -59,19 +59,32 @@ def insert_requants(
     graph: Graph,
     *,
     shifts: dict[str, int] | None = None,
+    mults: dict[str, int] | None = None,
+    round_biases: dict[str, int] | None = None,
     out_bits: int = MESSAGE_BITS,
 ) -> Graph:
     """Return a copy of ``graph`` with ``Requant`` nodes auto-inserted between layers.
 
     A ``Requant`` is spliced after each ``Conv2d``/``Linear`` whose output feeds a downstream
-    op. ``shifts`` optionally maps a producer node's name to a calibrated shift; absent an
-    entry, the shift falls back to ``max(0, producer_output_bits - out_bits)``. After
-    insertion the graph is re-checked against the radix budget (raises, naming the layer, if a
-    tensor still overflows — e.g. a single accumulator too wide even before narrowing).
+    op. The rescale params are looked up per producer node name (all optional, all defaulting
+    to the legacy pure power-of-two shift):
+
+    - ``shifts[name]`` — the calibrated right-shift; absent, falls back to
+      ``max(0, producer_output_bits - out_bits)`` (exactness-safe but coarse).
+    - ``mults[name]`` — the fixed-point multiplier (numerator of the rescale); default ``1``.
+    - ``round_biases[name]`` — the round-to-nearest bias; default ``0`` (truncation).
+
+    The quantization service calibrates ``(mult, shift, round_bias)`` together so the rescale
+    approximates the real scale ratio; passing only ``shifts`` keeps the Phase-4 behavior. After
+    insertion the graph is re-checked against the radix budget — including each ``Requant``'s
+    transient internal peak (`max(x,0)*mult + round_bias`) — raising and naming the layer on
+    overflow.
 
     Idempotent: requants are only added after accumulator ops, so re-running adds nothing.
     """
     shifts = shifts or {}
+    mults = mults or {}
+    round_biases = round_biases or {}
 
     # Which tensors are consumed at all, which are graph outputs, and which are *already* read
     # by a Requant. The last makes the pass idempotent: a producer whose output already feeds a
@@ -117,13 +130,21 @@ def insert_requants(
             )
 
         shift = shifts.get(node.name, max(0, incoming_bits - out_bits))
+        mult = mults.get(node.name, 1)
+        round_bias = round_biases.get(node.name, 0)
         rq_name = f"{out_name}__rq"
         new_nodes.append(
             Node(
                 name=f"{node.name}__requant",
                 inputs=[out_name],
                 outputs=[rq_name],
-                op=RequantSpec(shift=shift, out_bits=out_bits, clamp_lut=_clamp_lut(out_bits)),
+                op=RequantSpec(
+                    shift=shift,
+                    mult=mult,
+                    round_bias=round_bias,
+                    out_bits=out_bits,
+                    clamp_lut=_clamp_lut(out_bits),
+                ),
             )
         )
         rewire[out_name] = rq_name

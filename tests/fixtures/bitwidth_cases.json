@@ -47,13 +47,29 @@
       "name": "requant_to_two_bits",
       "op": {"op_type": "Requant", "shift": 6, "out_bits": 2, "clamp_lut": [0, 1, 2, 3]},
       "input_bits": [14],
-      "expected": 2
+      "expected": 2,
+      "expected_internal": 14
     },
     {
       "name": "requant_to_one_bit",
       "op": {"op_type": "Requant", "shift": 3, "out_bits": 1, "clamp_lut": [0, 1, 1, 1]},
       "input_bits": [10],
-      "expected": 1
+      "expected": 1,
+      "expected_internal": 10
+    },
+    {
+      "name": "requant_legacy_mult1_no_internal_growth",
+      "op": {"op_type": "Requant", "shift": 6, "mult": 1, "round_bias": 0, "out_bits": 2, "clamp_lut": [0, 1, 2, 3]},
+      "input_bits": [14],
+      "expected": 2,
+      "expected_internal": 14
+    },
+    {
+      "name": "requant_mult_widens_internal_peak",
+      "op": {"op_type": "Requant", "shift": 7, "mult": 5, "round_bias": 64, "out_bits": 2, "clamp_lut": [0, 1, 2, 3]},
+      "input_bits": [12],
+      "expected": 2,
+      "expected_internal": 15
     },
     {
       "name": "add_equal_widths",

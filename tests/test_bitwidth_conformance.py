@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from penumbra.bitwidth import output_bits
+from penumbra.bitwidth import internal_bits, output_bits
 from penumbra.ir import OpSpec
 
 CASES = Path(__file__).resolve().parent / "fixtures" / "bitwidth_cases.json"
@@ -37,6 +37,24 @@ def test_python_output_bits_matches_committed_table():
         assert got == case["expected"], (
             f"bit-width drift in case {case['name']!r}: Python output_bits gave {got}, "
             f"committed table expects {case['expected']} — Python and Rust rules disagree"
+        )
+
+
+def test_python_internal_bits_matches_committed_table():
+    """Cases declaring ``expected_internal`` are reproduced by the Python internal-peak rule.
+
+    The transient peak (e.g. Requant's pre-shift ``max(x,0)*mult + round_bias``) must match
+    Rust's ``Op::internal_bits_n`` so the multiply-then-shift budget cannot drift across
+    languages (`AGENTS.md` §1.3).
+    """
+    for case in _load_cases():
+        if "expected_internal" not in case:
+            continue
+        op = OpSpec.from_dict(case["op"])
+        got = internal_bits(op, list(case["input_bits"]))
+        assert got == case["expected_internal"], (
+            f"internal-bits drift in case {case['name']!r}: Python internal_bits gave {got}, "
+            f"committed table expects {case['expected_internal']}"
         )
 
 

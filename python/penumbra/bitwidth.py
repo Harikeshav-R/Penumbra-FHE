@@ -100,7 +100,7 @@ def output_bits(op: OpSpec, input_bits: list[int]) -> int:
     if isinstance(op, RequantSpec):
         # Requant consumes a *wide* input and emits out_bits, independent of input width.
         _expect_arity(op, input_bits, 1)
-        return op.out_bits
+        return op.out_bits  # internal peak is checked separately (requant_internal_bits)
 
     if isinstance(op, ActivationSpec):
         # Activation needs an already-narrowed (<= MESSAGE_BITS) single-block input; its output
@@ -124,6 +124,37 @@ def output_bits(op: OpSpec, input_bits: list[int]) -> int:
         return max(input_bits[0], input_bits[1]) + 1
 
     raise ValueError(f"output_bits: unsupported op {op.op_type!r}")
+
+
+def requant_internal_bits(input_bits: int, mult: int, round_bias: int) -> int:
+    """Peak transient width a ``Requant`` materializes before the shift narrows it.
+
+    Mirror of the Rust ``requant::requant_internal_bits`` (``AGENTS.md`` §1.3, §5). The op's
+    *output* is tiny (``out_bits``), but it first widens the value to ``max(x, 0) * mult +
+    round_bias``; that intermediate must fit the radix. For the legacy ``mult == 1,
+    round_bias == 0`` path this equals ``input_bits`` exactly (no growth), so existing models
+    keep fitting their radix. A too-large multiplier overflows *here* even when the input
+    accumulator and the narrowed output each fit — which is exactly the case the budget check
+    must catch loudly (``AGENTS.md`` §1.4).
+    """
+    # Largest positive value a signed ``input_bits``-wide accumulator holds, post-ReLU.
+    relu_max = (1 << (input_bits - 1)) - 1 if input_bits >= 1 else 0
+    intermediate_max = relu_max * mult + round_bias
+    # +1 for the sign bit (the intermediate lives in the signed radix); never below input width.
+    return max(magnitude_bits(intermediate_max) + 1, input_bits)
+
+
+def internal_bits(op: OpSpec, input_bits: list[int]) -> int:
+    """Peak transient width ``op`` materializes mid-computation (mirror of ``Op::internal_bits_n``).
+
+    For most ops this equals :func:`output_bits`; only ``Requant`` widens internally (its
+    fixed-point multiplier). The budget check verifies this peak fits the radix, not just the
+    output (``AGENTS.md`` §1.3).
+    """
+    if isinstance(op, RequantSpec):
+        _expect_arity(op, input_bits, 1)
+        return requant_internal_bits(input_bits[0], op.mult, op.round_bias)
+    return output_bits(op, input_bits)
 
 
 def _expect_arity(op: OpSpec, input_bits: list[int], n: int) -> None:
@@ -167,10 +198,14 @@ def propagate_bit_widths(graph: Graph) -> dict[str, int]:
 
 
 def check_bit_width_budget(graph: Graph) -> None:
-    """Raise if any tensor's propagated width exceeds the radix capacity (mirror of Rust).
+    """Raise if any tensor's width — or any op's transient internal peak — exceeds the radix.
 
     Names the offending node and the required-vs-available bits (`AGENTS.md` §1.3, §1.4). Used
-    by the compile pass to confirm a model fits *after* automatic ``Requant`` insertion.
+    by the compile pass to confirm a model fits *after* automatic ``Requant`` insertion. The
+    internal-peak check (via :func:`internal_bits`) matters for ``Requant``: its fixed-point
+    multiplier widens the value to ``max(x, 0) * mult + round_bias`` mid-op before the shift
+    narrows it, and that peak must fit the radix even though the output is tiny. Mirror of the
+    Rust ``eval::check_graph_bit_width_budget``.
     """
     capacity = radix_capacity_bits(graph.num_blocks)
     widths = propagate_bit_widths(graph)
@@ -182,4 +217,13 @@ def check_bit_width_budget(graph: Graph) -> None:
                 f"bit-width budget exceeded at node {node.name!r} (tensor {name!r}): requires "
                 f"{bits} bits but the radix holds only {capacity} ({graph.num_blocks} blocks x "
                 f"{MESSAGE_BITS} bits). Reduce precision, widen num_blocks, or requantize earlier."
+            )
+        in_bits = [widths[n] for n in node.inputs]
+        peak = internal_bits(node.op, in_bits)
+        if peak > capacity:
+            raise ValueError(
+                f"bit-width budget exceeded inside node {node.name!r} ({node.op.op_type}): its "
+                f"rescale needs {peak} transient bits (the multiply-then-shift intermediate) but "
+                f"the radix holds only {capacity} ({graph.num_blocks} blocks x {MESSAGE_BITS} "
+                "bits). Reduce the requant multiplier, reduce input precision, or widen num_blocks."
             )

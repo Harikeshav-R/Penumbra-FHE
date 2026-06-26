@@ -31,6 +31,7 @@ from penumbra.ir import (
     Graph,
     LinearSpec,
     Node,
+    OpSpec,
     PoolSpec,
     RequantSpec,
 )
@@ -142,20 +143,56 @@ def test_requant_spec_round_trips():
     )
     restored = Graph.from_json(g.to_json())
     assert restored == g
+    # Defaulted 0.5.0 fields (mult=1, round_bias=0) are emitted in the Rust struct field order.
     assert restored.nodes[0].op.to_dict() == {
         "op_type": "Requant",
         "shift": 4,
+        "mult": 1,
+        "round_bias": 0,
         "out_bits": 2,
         "clamp_lut": [0, 1, 2, 3],
     }
 
 
+def test_requant_spec_generalized_round_trips():
+    """A generalized Requant (mult != 1, round-to-nearest bias) round-trips through ir.py."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=10,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[
+            Node(
+                name="rq",
+                inputs=["x"],
+                outputs=["y"],
+                op=RequantSpec(shift=5, mult=3, round_bias=16, out_bits=2, clamp_lut=[0, 1, 2, 3]),
+            )
+        ],
+    )
+    assert Graph.from_json(g.to_json()) == g
+
+
+def test_requant_spec_defaults_when_fields_absent():
+    """A Requant payload without mult/round_bias loads with the legacy pure-shift defaults."""
+    spec = OpSpec.from_dict(
+        {"op_type": "Requant", "shift": 4, "out_bits": 2, "clamp_lut": [0, 1, 2, 3]}
+    )
+    assert isinstance(spec, RequantSpec)
+    assert spec.mult == 1 and spec.round_bias == 0
+
+
 def test_requant_spec_rejects_invalid():
-    """RequantSpec fails loudly at construction on a negative shift / zero out_bits."""
+    """RequantSpec fails loudly at construction on bad shift / out_bits / mult / round_bias."""
     with pytest.raises(ValueError, match="shift"):
         RequantSpec(shift=-1, out_bits=2, clamp_lut=[0, 1, 2, 3])
     with pytest.raises(ValueError, match="out_bits"):
         RequantSpec(shift=1, out_bits=0, clamp_lut=[0, 1, 2, 3])
+    with pytest.raises(ValueError, match="mult"):
+        RequantSpec(shift=1, out_bits=2, clamp_lut=[0, 1, 2, 3], mult=0)
+    with pytest.raises(ValueError, match="round_bias"):
+        RequantSpec(shift=1, out_bits=2, clamp_lut=[0, 1, 2, 3], round_bias=-1)
 
 
 def test_pool_spec_round_trips():

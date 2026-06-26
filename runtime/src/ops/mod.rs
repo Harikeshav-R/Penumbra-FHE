@@ -121,4 +121,18 @@ pub trait Op {
         );
         self.output_bits(input_bits[0])
     }
+
+    /// Peak *internal* bit-width this op materializes while computing, given its input widths.
+    ///
+    /// Most ops never exceed their own output width, so the default is [`Op::output_bits_n`].
+    /// [`Requant`](crate::ops::Requant) overrides it: its fixed-point multiplier widens the
+    /// value to `max(x,0) * mult + round_bias` *before* the shift narrows it back to
+    /// `out_bits`. That transient peak must still fit the radix — a too-large multiplier
+    /// overflows mid-op even when both the input accumulator and the narrowed output fit. The
+    /// budget check ([`crate::eval::check_graph_bit_width_budget`]) verifies this peak so the
+    /// overflow is caught loudly at load time, not as wrong-but-confident ciphertext
+    /// (`AGENTS.md` §1.3, §1.4).
+    fn internal_bits_n(&self, input_bits: &[usize]) -> usize {
+        self.output_bits_n(input_bits)
+    }
 }

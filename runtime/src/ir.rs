@@ -32,7 +32,17 @@ use crate::ops::{Activation, Add, Argmax, Conv2d, Linear, Op, Pool, PoolMode, Re
 
 /// IR wire-format version. Hardcoded identically in `python/penumbra/ir.py`; a mismatch is
 /// a breaking change caught loudly at load time (`AGENTS.md` §5, §8).
-pub const SCHEMA_VERSION: &str = "0.4.0";
+///
+/// 0.5.0 generalized `Requant` to a fixed-point multiply-then-round-shift rescale (the
+/// `mult`/`round_bias` fields below) — a breaking schema change (`AGENTS.md` §8).
+pub const SCHEMA_VERSION: &str = "0.5.0";
+
+/// Serde default for `Requant.mult`: `1` makes the rescale a pure power-of-two shift, the
+/// Phase-4 semantics. Defaulting lets a 0.5.0 reader accept a `Requant` node emitted without
+/// the field (and keeps the legacy-equivalent JSON minimal).
+fn default_requant_mult() -> u64 {
+    1
+}
 
 /// The root IR object: a directed graph of op nodes in a valid topological order.
 ///
@@ -95,10 +105,16 @@ pub enum OpSpec {
     Argmax {
         threshold: i64,
     },
-    /// Rescale a wide accumulator down to a narrow, LUT-able value: arithmetic right-shift by
-    /// `shift`, ReLU, clamp to `2^out_bits - 1` via `clamp_lut`. See [`crate::ops::Requant`].
+    /// Rescale a wide accumulator down to a narrow, LUT-able value:
+    /// `clamp((max(x,0) * mult + round_bias) >> shift, 0, 2^out_bits - 1)`. `mult`/`round_bias`
+    /// (serde-defaulted to `1`/`0` = the legacy pure-shift) implement a fixed-point
+    /// multiply-then-round-shift rescale. See [`crate::ops::Requant`].
     Requant {
         shift: u32,
+        #[serde(default = "default_requant_mult")]
+        mult: u64,
+        #[serde(default)]
+        round_bias: u64,
         out_bits: usize,
         clamp_lut: Vec<u64>,
     },
@@ -263,6 +279,8 @@ impl OpSpec {
             })),
             OpSpec::Requant {
                 shift,
+                mult,
+                round_bias,
                 out_bits,
                 clamp_lut,
             } => {
@@ -295,8 +313,18 @@ impl OpSpec {
                         crate::keys::MESSAGE_BITS
                     ));
                 }
+                // A zero multiplier would annihilate the value (every output 0); a non-positive
+                // rescale is never what the quantization service means. Catch it loudly here.
+                if *mult == 0 {
+                    return Err(
+                        "Requant mult must be >= 1 (a fixed-point multiplier; 1 is a pure shift)"
+                            .to_string(),
+                    );
+                }
                 Ok(Box::new(Requant {
                     shift: *shift,
+                    mult: *mult,
+                    round_bias: *round_bias,
                     out_bits: *out_bits,
                     clamp_lut: clamp_lut.clone(),
                 }))
@@ -484,6 +512,8 @@ mod tests {
                 outputs: vec!["y".to_string()],
                 op: OpSpec::Requant {
                     shift: 4,
+                    mult: 1,
+                    round_bias: 0,
                     out_bits: 2,
                     clamp_lut: vec![0, 1, 2, 3],
                 },
@@ -495,6 +525,8 @@ mod tests {
         // Wrong LUT length fails to build (must cover the whole 2-bit message space).
         let bad_len = OpSpec::Requant {
             shift: 1,
+            mult: 1,
+            round_bias: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2],
         };
@@ -506,6 +538,8 @@ mod tests {
         // An entry that doesn't fit one block fails to build.
         let bad_entry = OpSpec::Requant {
             shift: 1,
+            mult: 1,
+            round_bias: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2, 9],
         };
@@ -513,6 +547,65 @@ mod tests {
             bad_entry.build().is_err(),
             "out-of-range clamp_lut entry must fail to build"
         );
+
+        // mult == 0 (an annihilating rescale) fails to build.
+        let zero_mult = OpSpec::Requant {
+            shift: 1,
+            mult: 0,
+            round_bias: 0,
+            out_bits: 2,
+            clamp_lut: vec![0, 1, 2, 3],
+        };
+        assert!(zero_mult.build().is_err(), "mult == 0 must fail to build");
+    }
+
+    /// A `Requant` payload emitted *without* the 0.5.0 `mult`/`round_bias` fields deserializes
+    /// with their defaults (`mult = 1`, `round_bias = 0`) — the legacy pure-shift semantics.
+    /// This is the forward-compat path that keeps a minimal `Requant` JSON valid.
+    #[test]
+    fn requant_fields_default_when_absent() {
+        let json = format!(
+            r#"{{"schema_version":"{SCHEMA_VERSION}","num_blocks":6,"input_bits":10,
+            "inputs":["x"],"outputs":["y"],"nodes":[{{"name":"rq","inputs":["x"],
+            "outputs":["y"],"op":{{"op_type":"Requant","shift":4,"out_bits":2,
+            "clamp_lut":[0,1,2,3]}}}}]}}"#
+        );
+        let graph = Graph::from_json(&json).expect("legacy Requant JSON deserializes");
+        match &graph.nodes[0].op {
+            OpSpec::Requant {
+                mult, round_bias, ..
+            } => {
+                assert_eq!(*mult, 1, "absent mult must default to 1");
+                assert_eq!(*round_bias, 0, "absent round_bias must default to 0");
+            }
+            other => panic!("expected Requant, got {}", other.op_type()),
+        }
+    }
+
+    /// The generalized `Requant` (mult != 1, round-to-nearest bias) round-trips through JSON.
+    #[test]
+    fn requant_with_mult_round_trips() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 8,
+            input_bits: 10,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["y".to_string()],
+            nodes: vec![Node {
+                name: "rq".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["y".to_string()],
+                op: OpSpec::Requant {
+                    shift: 5,
+                    mult: 3,
+                    round_bias: 16,
+                    out_bits: 2,
+                    clamp_lut: vec![0, 1, 2, 3],
+                },
+            }],
+        };
+        let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
+        assert_eq!(graph, restored);
     }
 
     /// A `Pool` node round-trips, and `build` rejects an unknown mode / oversized window.

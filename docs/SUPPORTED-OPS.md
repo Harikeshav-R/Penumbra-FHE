@@ -45,7 +45,7 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
 | Op | Covers | TFHE realization | Bit-width rule (`output_bits`) |
 |---|---|---|---|
 | `Conv2d` | convolutional layers in CNNs | `Σ (ciphertext × plaintext kernel weight) + bias` at every spatial position — scalar-mul + adds, **no PBS** (the `Linear` pattern shared across positions) | `max(sum_bits, bias_bits) + 2` with fan-in `N = in_channels·kernel_h·kernel_w` (same form as `Linear`) |
-| `Requant` | rescale a wide accumulator → small int (enables multi-layer models) | `clamp(max(x >> shift, 0), 0, 2^out_bits-1)`: arithmetic shift + ReLU + radix-level saturate, then a single-block **PBS** (resets noise) | `out_bits` (≤ `MESSAGE_BITS`, independent of input width; must not under-count the clamp LUT) |
+| `Requant` | rescale a wide accumulator → small int (enables multi-layer models) | `clamp((max(x,0)·mult + round_bias) >> shift, 0, 2^out_bits-1)`: ReLU + fixed-point multiply-then-round-shift + radix-level saturate, then a single-block **PBS** (resets noise). `mult`/`round_bias` (default `1`/`0` = legacy pure shift) approximate an arbitrary scale ratio `mult/2^shift`; the multiply is a cheap plaintext scalar-mul (no extra PBS). | output: `out_bits` (≤ `MESSAGE_BITS`). **internal peak**: `max(x,0)·mult + round_bias` must also fit the radix (checked separately) — a too-large multiplier overflows mid-op even when input and output fit. |
 | `Pool` | average / max pooling in CNNs | per-channel window reduction over the flat map: `avg` = sum (`add_parallelized`, **no PBS**); `max` = pairwise `max` (comparison PBSs, expensive) | `avg`: `input_bits + ceil(log2 k)` (k = window size); `max`: `input_bits` (selection never grows magnitude) |
 | `Add` | residuals / skip connections | element-wise ciphertext addition of **two** input tensors — `add_parallelized`, **no PBS** | `max(a_bits, b_bits) + 1` (one carry; the wider operand's sign bit covers the result) |
 
@@ -53,11 +53,15 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
 
 - **`Requant` is the primitive that unlocks multi-layer models** (`PROJECT.md` §9). A
   `Linear`/`Conv2d` accumulator grows ~`log2(N)` bits per layer; a PBS is feasible only over
-  a narrow value, so the wide accumulator is shifted down (a **power-of-two** rescale chosen
-  by the quantization service), ReLU'd, saturated **at the radix level** so the value truly
-  fits one `MESSAGE_BITS`-wide block, then passed through a single-block clamp LUT. It is a
-  **fused ReLU+requant**: the output is non-negative (what the single-block PBS path
-  requires, and what conv→ReLU produces anyway). Non-power-of-two scales are Phase 5.
+  a narrow value, so the wide accumulator is ReLU'd, rescaled by a **fixed-point multiplier**
+  `mult/2^shift` (chosen by the quantization service to approximate the real scale ratio —
+  `mult = 1` recovers the original power-of-two shift), round-bias-added, then saturated **at
+  the radix level** so the value truly fits one `MESSAGE_BITS`-wide block and passed through a
+  single-block clamp LUT. It is a **fused ReLU+requant**: the output is non-negative (what the
+  single-block PBS path requires, and what conv→ReLU produces anyway). The `mult` multiply is a
+  cheap plaintext scalar-mul (no extra PBS), but it widens the value before the shift, so the
+  bit-width tracker enforces an **internal-peak** budget (`max(x,0)·mult + round_bias` must fit
+  the radix) in addition to the output-width budget.
 - **`Conv2d` and `Pool` share one spatial layout.** The flat `CtVec` is read as a
   channel-major, row-major `[channels][in_h][in_w]` tensor — element `(c, y, x)` at
   `c*in_h*in_w + y*in_w + x`. `Conv2d` produces this layout and `Pool` consumes it, so

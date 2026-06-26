@@ -34,7 +34,10 @@ from typing import Any
 
 # IR wire-format version. Hardcoded identically in ``runtime/src/ir.rs``; a mismatch is a
 # breaking change caught loudly at load time (``AGENTS.md`` §5, §8).
-SCHEMA_VERSION = "0.4.0"
+#
+# 0.5.0 generalized ``Requant`` to a fixed-point multiply-then-round-shift rescale (the
+# ``mult``/``round_bias`` fields on :class:`RequantSpec`) — a breaking schema change.
+SCHEMA_VERSION = "0.5.0"
 
 
 @dataclass(frozen=True)
@@ -83,6 +86,10 @@ class OpSpec:
         if op_type == "Requant":
             return RequantSpec(
                 shift=int(d["shift"]),
+                # mult/round_bias are 0.5.0 additions; default to the legacy pure-shift
+                # (mult=1, round_bias=0) when absent so a minimal Requant payload still loads.
+                mult=int(d.get("mult", 1)),
+                round_bias=int(d.get("round_bias", 0)),
                 out_bits=int(d["out_bits"]),
                 clamp_lut=[int(v) for v in d["clamp_lut"]],
             )
@@ -242,18 +249,43 @@ class RequantSpec(OpSpec):
 
     Exact semantics (matched bit-for-bit by the runtime, ``AGENTS.md`` §1.1)::
 
-        requant(x) = clamp(max(x >> shift, 0), 0, 2**out_bits - 1)
+        requant(x) = clamp((max(x, 0) * mult + round_bias) >> shift, 0, 2**out_bits - 1)
 
-    ``shift`` is a non-negative power-of-two rescale; the op is a fused ReLU+requant so its
-    output is non-negative (required by the single-block PBS path). ``clamp_lut[v]`` is the
-    output for the already-saturated input block value ``v``; it must cover the whole
-    ``MESSAGE_BITS``-bit message space and saturate at ``2**out_bits - 1``. The quantization
-    service owns choosing ``shift`` and building ``clamp_lut`` (Phase 5 / the compile pass).
+    This is the standard integer-quantization rescale (a fixed-point multiplier): an arbitrary
+    real rescale ``M = (s_in * s_w) / s_out`` is approximated by the ratio ``mult / 2**shift``.
+    It is bit-exact in both the FHE and cleartext domains — every step (multiply, add, shift)
+    has an exact integer counterpart (no true division). The op is a fused ReLU+requant, so its
+    output is non-negative (required by the single-block PBS path).
+
+    Fields:
+        ``shift``      — non-negative right-shift (the denominator ``2**shift``).
+        ``mult``       — non-negative fixed-point multiplier (the numerator); ``1`` is the
+                         legacy pure power-of-two shift.
+        ``round_bias`` — value added before the shift for round-to-nearest (``2**(shift-1)``
+                         rounds half-up); ``0`` truncates. Unambiguous because the value is
+                         non-negative after the ReLU.
+        ``out_bits``   — narrowed output width (``<= MESSAGE_BITS``).
+        ``clamp_lut``  — output for each already-saturated input block value ``v``; covers the
+                         whole ``MESSAGE_BITS``-bit message space and saturates at
+                         ``2**out_bits - 1``.
+
+    The quantization service owns choosing ``(mult, shift, round_bias)`` and building
+    ``clamp_lut`` (Phase 5 / the compile pass). ``mult``/``round_bias`` are 0.5.0 additions and
+    default to the legacy pure-shift (``1``/``0``), so a Phase-4-shaped Requant is unchanged.
+
+    The fixed-point multiplier widens the value to ``max(x, 0) * mult + round_bias`` *before*
+    the shift narrows it; that transient peak must still fit the radix. The bit-width tracker's
+    Requant rule checks this internal peak (:func:`penumbra.bitwidth.requant_internal_bits`),
+    mirroring the Rust ``Requant::internal_bits_n`` (``AGENTS.md`` §1.3).
     """
 
     shift: int
     out_bits: int
     clamp_lut: list[int]
+    # 0.5.0 additions; declared after the required fields (dataclass ordering) but emitted in
+    # the Rust struct's field order by `to_dict`. Defaults reproduce the legacy pure-shift.
+    mult: int = 1
+    round_bias: int = 0
 
     op_type: str = field(init=False, default="Requant")
 
@@ -263,11 +295,22 @@ class RequantSpec(OpSpec):
             raise ValueError(f"RequantSpec shift must be non-negative, got {self.shift}")
         if self.out_bits < 1:
             raise ValueError(f"RequantSpec out_bits must be >= 1, got {self.out_bits}")
+        if self.mult < 1:
+            raise ValueError(
+                f"RequantSpec mult must be >= 1 (a fixed-point multiplier; 1 is a pure shift), "
+                f"got {self.mult}"
+            )
+        if self.round_bias < 0:
+            raise ValueError(f"RequantSpec round_bias must be non-negative, got {self.round_bias}")
 
     def to_dict(self) -> dict[str, Any]:
+        # Key order matches the Rust struct declaration (shift, mult, round_bias, out_bits,
+        # clamp_lut) so the committed JSON diffs cleanly across languages.
         return {
             "op_type": self.op_type,
             "shift": self.shift,
+            "mult": self.mult,
+            "round_bias": self.round_bias,
             "out_bits": self.out_bits,
             "clamp_lut": self.clamp_lut,
         }
