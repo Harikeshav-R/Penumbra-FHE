@@ -31,6 +31,12 @@ The user-facing entry point is :meth:`penumbra.model.Model.quantize`, which comp
 
 from __future__ import annotations
 
+from penumbra.quantization.accuracy import (
+    AccuracyReport,
+    accuracy_report,
+    layer_sqnr_report,
+    sqnr_db,
+)
 from penumbra.quantization.calibration import (
     Calibrator,
     MinMaxObserver,
@@ -79,4 +85,9 @@ __all__ = [
     "identity_clamp_lut",
     "validate_lut",
     "lut_output_bits",
+    # Accuracy + sensitivity reporting (accuracy.py)
+    "AccuracyReport",
+    "accuracy_report",
+    "sqnr_db",
+    "layer_sqnr_report",
 ]
