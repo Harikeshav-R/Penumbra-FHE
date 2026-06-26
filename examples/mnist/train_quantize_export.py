@@ -46,7 +46,13 @@ from pathlib import Path
 import numpy as np
 
 from penumbra.ir import build_linear_argmax_graph
-from penumbra.quantization import linear_logit_int, symmetric_spec
+from penumbra.quantization import (
+    QuantSpec,
+    linear_logit_int,
+    make_activation_lut,
+    quantize_linear,
+    symmetric_spec,
+)
 
 # --- Configuration (the only knobs) -----------------------------------------------------
 N_FEATURES = 64  # 8x8, the MNIST-downsample feature count Phase 2 targets
@@ -108,16 +114,18 @@ def main() -> None:
 
     w_f, b_f = train_logreg(x_tr, y_tr)
 
-    # --- Quantize (symmetric per-tensor PTQ) --------------------------------------------
-    # Inputs are non-negative; calibrate the scale on the training data. Weights are
-    # signed. Both quantize into the same integer domain the FHE Linear op computes in.
+    # --- Quantize via the library quantization service (Phase 5) ------------------------
+    # Inputs are non-negative; calibrate the input scale on the training data. The per-layer
+    # quantizer then quantizes the (signed) weights and the bias into the same accumulator
+    # integer domain the FHE Linear op computes in — no hand-rolled scale math here. (This
+    # reproduces the former inline PTQ exactly; pinned by tests/test_quantization_ptq.py.)
     x_spec = symmetric_spec(x_tr, INPUT_BITS, signed=False)
-    w_spec = symmetric_spec(w_f, WEIGHT_BITS, signed=True)
-
-    w_q = w_spec.quantize(w_f)  # (64,) signed ints
-    # The accumulator lives in units of (input_scale * weight_scale); the bias must too.
-    acc_scale = x_spec.scale * w_spec.scale
-    bias_q = int(np.round(b_f / acc_scale))
+    w_q_rows, bias_q_rows, w_spec = quantize_linear(
+        w_f[None, :], np.array([b_f]), x_spec.scale, bits=WEIGHT_BITS
+    )
+    w_q = w_q_rows[0]  # (64,) signed ints
+    bias_q = int(bias_q_rows[0])
+    acc_scale = x_spec.scale * w_spec.scale  # for the committed `scales` metadata
 
     x_te_q = x_spec.quantize(x_te)  # (n_te, 64) ints
 
@@ -142,9 +150,12 @@ def main() -> None:
 
     # --- A narrow-domain activation LUT, exercised standalone by the golden test --------
     # ReLU-like clamp over the 2-bit message space (0..3): proves the Activation(LUT)/PBS
-    # path bit-exactly (the binary decision itself uses the threshold, not this LUT).
+    # path bit-exactly (the binary decision itself uses the threshold, not this LUT). Built
+    # by the library's LUT generator in the integer domain (Phase 5): a clamp-at-2 ReLU on
+    # unit input/output scales yields [0, 1, 2, 2] — the former hand-built `[min(v, 2) ...]`.
     message_space = 1 << 2  # PARAM_MESSAGE_2_CARRY_2 message modulus
-    relu_lut = [min(v, 2) for v in range(message_space)]  # clamp at 2
+    unit = QuantSpec(scale=1.0, bits=2, signed=False)
+    relu_lut = make_activation_lut(lambda v: min(max(v, 0.0), 2.0), unit, unit)
 
     # --- The serializable IR graph (Phase 3) --------------------------------------------
     # `Linear → Argmax`. A single weight row / bias / threshold: the 2-class single-logit

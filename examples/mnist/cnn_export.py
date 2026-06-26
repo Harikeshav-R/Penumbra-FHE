@@ -46,7 +46,11 @@ import numpy as np
 from penumbra import insert_requants, propagate_bit_widths, radix_capacity_bits
 from penumbra.bitwidth import MESSAGE_BITS
 from penumbra.ir import SCHEMA_VERSION, Conv2dSpec, Graph, LinearSpec, Node, PoolSpec
-from penumbra.quantization import symmetric_spec
+from penumbra.quantization import (
+    quantize_conv,
+    quantize_linear_integer_input,
+    symmetric_spec,
+)
 
 # --- Configuration (the only knobs) -----------------------------------------------------
 IN_H = IN_W = 6  # 6x6 single-channel input (small, to keep FHE latency feasible)
@@ -124,9 +128,7 @@ def avgpool_sum(feature: np.ndarray) -> np.ndarray:
     out = np.zeros((n, c, POOL_H, POOL_W))
     for py in range(POOL_H):
         for px in range(POOL_W):
-            window = feature[
-                :, :, py * POOL : py * POOL + POOL, px * POOL : px * POOL + POOL
-            ]
+            window = feature[:, :, py * POOL : py * POOL + POOL, px * POOL : px * POOL + POOL]
             out[:, :, py, px] = window.sum(axis=(2, 3))
     return out
 
@@ -165,10 +167,13 @@ def main() -> None:
     x_tr, y_tr = x[:N_TRAIN], y[:N_TRAIN]
     x_te, y_te = x[N_TRAIN:], y[N_TRAIN:]
 
-    # --- Quantize inputs and the fixed conv filters (symmetric per-tensor PTQ) ----------
+    # --- Quantize inputs and the fixed conv filters via the quantization service --------
+    # The conv quantizer takes (out_ch, in_ch, kh, kw) float kernels and returns the IR's flat
+    # [out_ch][in_ch*kh*kw] int layout; reshaped back to (CONV_CH, 3, 3) for the float-conv
+    # reference. (Reproduces the former inline symmetric PTQ; pinned by the ptq tests.)
     x_spec = symmetric_spec(x_tr, INPUT_BITS, signed=False)
-    w1_spec = symmetric_spec(CONV_FILTERS, WEIGHT_BITS, signed=True)
-    w1_q = w1_spec.quantize(CONV_FILTERS)  # (CONV_CH, 3, 3) signed ints
+    w1_q_flat, _, w1_spec = quantize_conv(CONV_FILTERS[:, None, :, :], bits=WEIGHT_BITS)
+    w1_q = w1_q_flat.reshape(CONV_CH, KERNEL, KERNEL)  # (CONV_CH, 3, 3) signed ints
 
     x_tr_q = x_spec.quantize(x_tr)  # (N_TRAIN, H, W) ints
     x_te_q = x_spec.quantize(x_te)
@@ -199,12 +204,11 @@ def main() -> None:
     pooled_te = avgpool_sum(act_te.astype(np.float64)).reshape(len(x_te), -1)
 
     # --- Train the float head on the integer pooled features, then quantize it ----------
+    # The head consumes the *integer* pooled features directly (effective input scale 1), so the
+    # integer-input quantizer shares the weight scale for the bias — argmax-preserving. One row
+    # per class: (N_CLASSES, N_FEATURES). (Reproduces the former inline math; ptq tests pin it.)
     w2_f, b2_f = softmax_train(pooled_tr, y_tr)
-    w2_spec = symmetric_spec(w2_f, WEIGHT_BITS, signed=True)
-    w2_q = w2_spec.quantize(w2_f.T)  # (N_CLASSES, N_FEATURES): one row per class
-    # The head consumes the *integer* pooled features directly, so the bias shares the weight
-    # scale: logit_q = w2_q . pooled + b2_q ~= (w2_f.pooled + b2_f) / w2_scale (argmax-preserving).
-    b2_q = np.round(b2_f / w2_spec.scale).astype(np.int64)
+    w2_q, b2_q, w2_spec = quantize_linear_integer_input(w2_f.T, b2_f, bits=WEIGHT_BITS)
 
     # --- Quantized-integer pipeline = the oracle. Compute labels on the test set. -------
     pooled_te_i = pooled_te.astype(np.int64)
@@ -263,9 +267,7 @@ def main() -> None:
                 name="head",
                 inputs=["pooled"],
                 outputs=["logits"],
-                op=LinearSpec(
-                    weights=w2_q.tolist(), bias=b2_q.tolist(), weight_bits=WEIGHT_BITS
-                ),
+                op=LinearSpec(weights=w2_q.tolist(), bias=b2_q.tolist(), weight_bits=WEIGHT_BITS),
             ),
         ],
     )
@@ -306,8 +308,10 @@ def main() -> None:
 
     FIXTURE_PATH.write_text(json.dumps(fixture, indent=2) + "\n")
     print(f"wrote {FIXTURE_PATH}")
-    print(f"  architecture       = Conv2d(1->{CONV_CH},{KERNEL}x{KERNEL}) -> Requant(shift={shift})"
-          f" -> avgPool{POOL}x{POOL} -> Linear({N_FEATURES}->{N_CLASSES})")
+    print(
+        f"  architecture       = Conv2d(1->{CONV_CH},{KERNEL}x{KERNEL}) -> Requant(shift={shift})"
+        f" -> avgPool{POOL}x{POOL} -> Linear({N_FEATURES}->{N_CLASSES})"
+    )
     print(f"  num_blocks         = {num_blocks} ({radix_capacity_bits(num_blocks)}-bit radix)")
     print(f"  float accuracy     = {acc_float:.4f}")
     print(f"  quantized accuracy = {acc_quant:.4f}")
