@@ -31,6 +31,25 @@ The user-facing entry point is :meth:`penumbra.model.Model.quantize`, which comp
 
 from __future__ import annotations
 
+from penumbra.quantization.calibration import (
+    Calibrator,
+    MinMaxObserver,
+    MSEObserver,
+    Observer,
+    PercentileObserver,
+)
+from penumbra.quantization.lut import (
+    identity_clamp_lut,
+    lut_output_bits,
+    make_activation_lut,
+    validate_lut,
+)
+from penumbra.quantization.ptq import (
+    choose_requant_params,
+    quantize_conv,
+    quantize_linear,
+    quantize_linear_integer_input,
+)
 from penumbra.quantization.spec import (
     QuantSpec,
     linear_logit_int,
@@ -39,8 +58,25 @@ from penumbra.quantization.spec import (
 )
 
 __all__ = [
+    # Specs + scale selection (spec.py)
     "QuantSpec",
     "symmetric_spec",
     "symmetric_spec_per_channel",
     "linear_logit_int",
+    # Calibration observers (calibration.py)
+    "Observer",
+    "MinMaxObserver",
+    "PercentileObserver",
+    "MSEObserver",
+    "Calibrator",
+    # Per-layer PTQ quantizers + requant calibration (ptq.py)
+    "quantize_linear",
+    "quantize_conv",
+    "quantize_linear_integer_input",
+    "choose_requant_params",
+    # LUT generation (lut.py)
+    "make_activation_lut",
+    "identity_clamp_lut",
+    "validate_lut",
+    "lut_output_bits",
 ]
