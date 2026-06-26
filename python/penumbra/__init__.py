@@ -22,6 +22,9 @@ This package is currently a scaffold (ROADMAP.md Phase 0); the API above is buil
 later phases.
 """
 
+# Float layer builders (Layer 3). Imported here so the public API reads `fhe.Conv2d(...)`,
+# matching the PROJECT.md §7 sketch. Named distinctly from the int `*Spec` IR payloads.
+from penumbra import layers
 from penumbra.bitwidth import (
     check_bit_width_budget,
     output_bits,
@@ -43,6 +46,9 @@ from penumbra.ir import (
     RequantSpec,
     build_linear_argmax_graph,
 )
+from penumbra.layers import Activation, Conv2d, Linear, Pool, QuantConfig
+from penumbra.model import Model
+from penumbra.reference import evaluate_graph_int
 
 __version__ = "0.0.0"
 
@@ -67,6 +73,15 @@ __all__ = [
     "check_bit_width_budget",
     "radix_capacity_bits",
     "insert_requants",
+    # Quantization service: float model -> int IR (Phase 5, PROJECT.md §7, §8, §12)
+    "Model",
+    "layers",
+    "Conv2d",
+    "Linear",
+    "Pool",
+    "Activation",
+    "QuantConfig",
+    "evaluate_graph_int",
 ]
 
 # TODO(phase-6): re-export `load_onnx`.

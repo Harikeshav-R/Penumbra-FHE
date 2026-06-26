@@ -42,11 +42,18 @@ from penumbra.bitwidth import (
     propagate_bit_widths,
     radix_capacity_bits,
 )
-from penumbra.ir import Conv2dSpec, Graph, LinearSpec, Node, RequantSpec
+from penumbra.ir import ArgmaxSpec, Conv2dSpec, Graph, LinearSpec, Node, RequantSpec
 
 # Ops after which a requant is inserted when their output is consumed downstream: the
 # accumulator-growing (wide-output) layers.
 _ACCUMULATOR_OPS = (Conv2dSpec, LinearSpec)
+
+# Consumers that operate on a *wide* value and therefore do NOT require their input to be
+# narrowed by a Requant. ``Argmax`` is a threshold comparison on a wide logit (the Phase-2
+# head); the client decrypts and argmaxes wide logits anyway (`PROJECT.md` §11), so an
+# accumulator feeding only an Argmax is effectively terminal and is left wide
+# (`docs/SUPPORTED-OPS.md`).
+_WIDE_INPUT_OPS = (ArgmaxSpec,)
 
 
 def _clamp_lut(out_bits: int) -> list[int]:
@@ -89,10 +96,16 @@ def insert_requants(
     # Which tensors are consumed at all, which are graph outputs, and which are *already* read
     # by a Requant. The last makes the pass idempotent: a producer whose output already feeds a
     # Requant must not get a second one (re-running, or a hand-authored graph, is left as-is).
+    # ``consumed_by_narrow`` is the subset of consumed tensors read by at least one op that
+    # genuinely needs a narrow input: a producer feeding *only* wide-input ops (e.g. Argmax) is
+    # effectively terminal and must stay wide (no Requant).
     consumed: set[str] = set()
+    consumed_by_narrow: set[str] = set()
     already_requantized: set[str] = set()
     for node in graph.nodes:
         consumed.update(node.inputs)
+        if not isinstance(node.op, _WIDE_INPUT_OPS):
+            consumed_by_narrow.update(node.inputs)
         if isinstance(node.op, RequantSpec):
             already_requantized.update(node.inputs)
     graph_outputs = set(graph.outputs)
@@ -114,9 +127,11 @@ def insert_requants(
 
         out_name = node.outputs[0]
         is_accumulator = isinstance(node.op, _ACCUMULATOR_OPS)
-        feeds_downstream = out_name in consumed and out_name not in graph_outputs
+        # Only requant when the output feeds a *narrow-input* op (not just any consumer): a
+        # terminal accumulator, or one feeding only wide-input ops like Argmax, stays wide.
+        feeds_narrow = out_name in consumed_by_narrow and out_name not in graph_outputs
         # Skip if already requantized (idempotency) — see `already_requantized` above.
-        if not (is_accumulator and feeds_downstream) or out_name in already_requantized:
+        if not (is_accumulator and feeds_narrow) or out_name in already_requantized:
             continue
 
         incoming_bits = widths[out_name]
