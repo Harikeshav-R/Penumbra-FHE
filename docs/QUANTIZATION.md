@@ -98,6 +98,24 @@ is feasible only over a narrow single-block value, so between accumulator layers
 must be **requantized back down**. The library does this automatically (`penumbra.insert_requants`)
 and **errors loudly, naming the layer**, if a model cannot fit its radix.
 
+## Symmetric vs asymmetric (why activations stay symmetric here)
+
+All quantization in Penumbra is **symmetric** (zero-point free). Asymmetric quantization adds a
+zero-point `z` so a value is `s·(q − z)`, which lets a quantizer capture a one-sided range without
+wasting codes — most useful for post-ReLU activations, which are non-negative.
+
+It is deliberately **not** implemented, for an evidence-backed reason specific to this design:
+activations here are produced by the **fused-ReLU Requant**, whose output is already a
+*non-negative* value saturated into the full `[0, 2^act_bits − 1]` block (measured on the
+real-digit example: the post-Requant values span exactly `0..3` and pile up at `0`). A zero-point
+cannot expand a range that is already maximal and already starts at zero, so it would recover
+essentially no accuracy — the loss is the coarse 4-level (2-bit) resolution, which a zero-point
+does not change. Adding asymmetric activations would also fold a `−z·Σw` correction into each
+downstream `Linear`/`Conv` bias, a cross-term that is easy to get subtly wrong and would risk the
+golden invariant for ~no gain. It becomes worthwhile only alongside a *non-ReLU / signed*
+activation path (which does not exist yet); it is deferred until then. **Weights** are symmetric
+unconditionally (the standard choice; asymmetric weights have no benefit).
+
 ## The Requant rescale (multiply-then-round-shift)
 
 `Requant` realizes the rescale as a **fixed-point multiplier**:
