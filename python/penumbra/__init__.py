@@ -8,18 +8,23 @@ This is the Python front end (Layer 3 + quantization + ONNX loader + IR emitter)
 TFHE backend (Layers 1 + 2) lives in the ``runtime/`` Rust crate; the two are bridged by
 the IR file format (``ir.py`` <-> ``runtime/src/ir.rs``). See ``PROJECT.md`` §4, §13.
 
-The public API is intentionally small (``PROJECT.md`` §12)::
+The public API is intentionally small (``PROJECT.md`` §12). As of Phase 5 the quantization
+service is live — assemble a float model, quantize it with calibration data (no manual scale
+math), and export the IR the runtime walks::
 
     import penumbra as fhe
 
-    model = fhe.load_onnx("model.onnx")
-    model.quantize(calibration_data, n_bits=6)
-    model.compile()
-    model.export("model.fhe")
-    pred = model.predict_encrypted(x)
+    model = fhe.Model([
+        fhe.Conv2d(weight=w1, in_h=8, in_w=8, in_channels=1, stride=2),
+        fhe.Activation(lambda v: max(v, 0.0)),   # ReLU, fused into the conv's Requant
+        fhe.Linear(weight=w2, bias=b2),
+    ])
+    model.quantize(calibration_data, n_bits=4)   # float graph -> int IR + scales + LUTs
+    model.export("model.fhe")                     # serialize for the Rust runtime
 
-This package is currently a scaffold (ROADMAP.md Phase 0); the API above is built out in
-later phases.
+The ONNX front door (``fhe.load_onnx("model.onnx")``) and the one-call
+``model.predict_encrypted(x)`` round trip are later phases (ROADMAP Phase 6 / Phase 9); they
+build on the same ``Model`` / IR objects.
 """
 
 # Float layer builders (Layer 3). Imported here so the public API reads `fhe.Conv2d(...)`,

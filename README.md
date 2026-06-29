@@ -18,10 +18,25 @@ computes on ciphertext and never sees your input or output.
 ```python
 import penumbra as fhe
 
-model = fhe.load_onnx("model.onnx")
+model = fhe.load_onnx("model.onnx")           # ONNX front door (roadmap Phase 6)
 model.quantize(calibration_data, n_bits=6)   # float graph → int graph + lookup tables
 model.compile()                               # map ONNX ops → internal op registry
 pred = model.predict_encrypted(x)             # client encrypts → server evaluates → client decrypts
+```
+
+The **quantization service works today** (Phase 5) — assemble a model from the op vocabulary,
+quantize it with calibration data (no manual scale math), and export the IR the runtime walks:
+
+```python
+import penumbra as fhe
+
+model = fhe.Model([
+    fhe.Conv2d(weight=w1, in_h=8, in_w=8, in_channels=1, stride=2),
+    fhe.Activation(lambda v: max(v, 0.0)),   # ReLU, fused into the conv's requantization
+    fhe.Linear(weight=w2, bias=b2),
+])
+model.quantize(calibration_data, n_bits=4)   # PTQ (or QAT) → int weights, scales, lookup tables
+model.export("model.fhe")                     # serialize for the Rust runtime
 ```
 
 Built directly on [`tfhe-rs`](https://github.com/zama-ai/tfhe-rs) (the TFHE scheme), it
@@ -53,6 +68,10 @@ practical.
 
 - [`PROJECT.md`](PROJECT.md) — architecture, rationale, and the full design.
 - [`ROADMAP.md`](ROADMAP.md) — the task-level build plan (phases P0–P11).
+- [`docs/QUANTIZATION.md`](docs/QUANTIZATION.md) — the quantization service: PTQ/QAT, `n_bits`,
+  per-channel scales, the bit-width budget, and the accuracy/speed tradeoff.
+- [`docs/SUPPORTED-OPS.md`](docs/SUPPORTED-OPS.md) — the operators the runtime implements.
+- [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) — accuracy and latency for the example models.
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — toolchain, build, and test instructions.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute (and the canonical "add an op" path).
 - [`AGENTS.md`](AGENTS.md) — guidelines for AI agents working in this repo.
