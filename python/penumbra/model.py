@@ -121,6 +121,16 @@ class Model:
         ``(N, feature_len)`` per the input tensor's layout). Returns the IR :class:`Graph` and
         stores it on :attr:`graph`. See the module docstring for the pipeline.
         """
+        # A Requant output (post-activation value) must fit a SINGLE radix block, so act_bits
+        # cannot exceed MESSAGE_BITS — the Rust runtime rejects a wider Requant at load, and the
+        # integer oracle's single-block clamp would otherwise disagree with FHE. Fail loudly here
+        # (`AGENTS.md` §1.4) rather than emit a graph that silently violates the golden invariant.
+        if not 1 <= act_bits <= MESSAGE_BITS:
+            raise ValueError(
+                f"act_bits must be in [1, MESSAGE_BITS={MESSAGE_BITS}]; got {act_bits}. A "
+                "post-Requant activation must fit one shortint block — wider activations are not "
+                "representable (raise n_bits for weights/inputs instead, which is independent)."
+            )
         cfg = QuantConfig(
             n_bits=n_bits, act_bits=act_bits, per_channel=per_channel, max_mult_bits=max_mult_bits
         )
