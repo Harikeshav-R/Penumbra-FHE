@@ -115,7 +115,8 @@ fn cleartext_logits(graph: &Graph, input: &[i64]) -> Vec<i64> {
         };
         env.insert(node.outputs[0].clone(), out);
     }
-    env.remove(&graph.outputs[0]).expect("graph produces logits")
+    env.remove(&graph.outputs[0])
+        .expect("graph produces logits")
 }
 
 fn argmax(logits: &[i64]) -> usize {
