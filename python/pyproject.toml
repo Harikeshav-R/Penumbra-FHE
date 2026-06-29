@@ -36,6 +36,20 @@ ml = [
 Homepage = "https://github.com/Harikeshav-R/Penumbra-FHE"
 Repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
 
+# ---------------------------------------------------------------------------
+# Pin the `ml` extra's torch to the CPU build. The example generators only need a CPU
+# forward pass to produce the committed integer fixtures; the multi-GB CUDA wheels are
+# pure bloat here. CI never installs the `ml` extra (the fixtures are plain data), so this
+# only affects a developer running the generators locally.
+# ---------------------------------------------------------------------------
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
