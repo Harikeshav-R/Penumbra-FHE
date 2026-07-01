@@ -117,3 +117,95 @@ def test_activation_without_accumulator_fails():
     model = Model([Activation(_relu), Linear(weight=np.ones((1, 4)), bias=np.zeros(1))])
     with pytest.raises(ValueError, match="does not follow an accumulator"):
         model.quantize(np.random.default_rng(0).uniform(0, 16, size=(8, 4)), n_bits=4)
+
+
+def _float_forward(layers, x):
+    """Plain float forward through a list of penumbra float layers (the reference to track)."""
+    acts = x
+    for layer in layers:
+        if isinstance(layer, Activation):
+            acts = np.maximum(acts, 0.0)
+        else:
+            acts = layer.forward(acts)
+    return acts
+
+
+def test_head_quantized_against_post_requant_scale():
+    """Regression guard: a post-Requant head must be quantized in the *activation* scale.
+
+    The bug this pins: Model.quantize once threaded the wide *pre-Requant accumulator* scale into
+    the head that consumes a fused-ReLU Requant output, mis-scaling the head bias by the requant
+    ratio (~89x on the digit example) and swamping the logits.
+
+    We assert the mechanism directly rather than via a noisy accuracy threshold: the head's int
+    bias, dequantized back to floats, must be **within a small factor of the true float bias**. If
+    the head were quantized against the pre-Requant accumulator scale, ``b_q`` would be off by the
+    requant ratio (many tens x), so its dequantized magnitude would be wildly wrong. A non-trivial
+    head bias is essential (else there is nothing to mis-scale), so this would actually bite.
+    """
+    rng = np.random.default_rng(7)
+    conv_w = rng.normal(scale=0.5, size=(6, 1, 3, 3))
+    head_w = rng.normal(scale=0.3, size=(5, 6 * 3 * 3))  # 6ch * 3x3 (stride-2 on 8x8) = 54 feats
+    head_b = rng.normal(scale=2.0, size=5)  # deliberately non-trivial bias — the bug's target
+
+    layers = [
+        Conv2d(weight=conv_w, in_h=8, in_w=8, in_channels=1, stride=2),
+        Activation(_relu),
+        Linear(weight=head_w, bias=head_b),
+    ]
+    model = Model(list(layers), input_bits=4)
+    cal = rng.uniform(0.0, 16.0, size=(128, 64))
+    graph = model.quantize(cal, n_bits=6, act_bits=2, per_channel=True)
+
+    head = next(n for n in graph.nodes if n.op.op_type == "Linear")
+    b_q = np.array(head.op.bias, dtype=np.float64)
+
+    # Recover the head's bias scale from the model's threaded scales: the head consumes
+    # post-Requant activations at ``act_scale`` and multiplies by per-channel weight scales, so
+    # its bias lives in units of ``act_scale * weight_scale`` (per output row for per-channel).
+    # We reconstruct act_scale the same way quantize() did — from the calibrated post-ReLU peak —
+    # and confirm the dequantized bias ``b_q * act_scale * w_scale`` matches the float bias.
+    conv_out = _float_forward(layers[:1], cal)  # pre-ReLU conv accumulator (float)
+    from penumbra.quantization.calibration import MinMaxObserver
+    from penumbra.quantization.spec import symmetric_spec
+
+    obs = MinMaxObserver()  # default calibration
+    obs.update(np.maximum(conv_out, 0.0))
+    act_scale = obs.magnitude() / ((1 << 2) - 1)  # peak -> top of the 2-bit activation domain
+    head_w_specs = symmetric_spec(head_w, 6, signed=True)  # per-tensor scale for magnitude check
+    deq_bias = b_q * act_scale * head_w_specs.scale
+
+    # The dequantized bias must be within a modest factor of the true float bias. A pre-Requant
+    # mis-scale would blow this up by the requant ratio (tens x), so a 3x tolerance cleanly
+    # separates "correct" from "buggy" while allowing per-channel-vs-per-tensor scale slack.
+    ratio = np.abs(deq_bias) / (np.abs(head_b) + 1e-9)
+    assert np.median(ratio) < 3.0, (
+        f"dequantized head bias is {np.median(ratio):.1f}x the float bias (median) — the head is "
+        "likely quantized against the pre-Requant accumulator scale, not the activation scale"
+    )
+
+
+def test_calibration_strategies_all_produce_valid_graphs():
+    """minmax / percentile / mse calibration each yield a budget-fitting, evaluable graph."""
+    rng = np.random.default_rng(8)
+    layers = [
+        Conv2d(weight=rng.normal(size=(4, 1, 3, 3)), in_h=8, in_w=8, in_channels=1, stride=2),
+        Activation(_relu),
+        Linear(weight=rng.normal(size=(10, 4 * 3 * 3)), bias=rng.normal(size=10)),
+    ]
+    cal = rng.uniform(0.0, 16.0, size=(64, 64))
+    for strategy in ("minmax", "percentile", "mse"):
+        # Layers are stateless w.r.t. quantization (they only hold float weights), so one fresh
+        # Model per strategy over the shared layer list is fine.
+        model = Model(layers)
+        graph = model.quantize(cal, n_bits=6, act_bits=2, per_channel=True, calibration=strategy)
+        check_bit_width_budget(graph)
+        xq = np.clip(np.round(cal[0] / model.input_scale), 0, 15).astype(np.int64)
+        out = evaluate_graph_int(graph, {"x": xq.tolist()})
+        assert len(out[graph.outputs[0]]) == 10, strategy
+
+
+def test_unknown_calibration_rejected():
+    model = Model([Linear(weight=np.ones((2, 4)), bias=np.zeros(2))])
+    with pytest.raises(ValueError, match="calibration must be one of"):
+        model.quantize(np.random.default_rng(0).uniform(0, 16, size=(8, 4)), calibration="bogus")

@@ -66,7 +66,23 @@ loses accuracy; the bit-width budget (below) caps how large it can be.
   *single radix block* (`≤ MESSAGE_BITS = 2` bits), because a programmable bootstrap is only
   feasible over a narrow value. This is the central reason multi-layer models need requantization.
 - If accuracy is unacceptable, raise `n_bits` (watch the budget), enable **per-channel** weight
-  scales, or move to **QAT** — in that order of effort.
+  scales, switch the **activation calibration** to `"mse"`, or move to **QAT** — in that order of
+  effort.
+
+## Activation calibration (`calibration=`)
+
+`Model.quantize` calibrates each accumulator's post-ReLU activation range to choose its Requant
+rescale. The `calibration=` argument picks the strategy:
+
+- **`"minmax"`** (default) — the raw peak, no clipping. Reproducible and safe; the right default.
+- **`"percentile"`** — clip the extreme tail (a high quantile of `|x|`); outlier-robust.
+- **`"mse"`** — the clip that minimizes round-trip quantization MSE at `act_bits`. On the
+  real-digit example this alone lifted PTQ from ~0.90 to ~0.93, because it spends the scarce 4
+  activation levels where the mass is instead of on rare large values.
+
+```python
+model.quantize(calibration_data, n_bits=6, per_channel=True, calibration="mse")
+```
 
 Use the **accuracy + SQNR harness** to decide:
 

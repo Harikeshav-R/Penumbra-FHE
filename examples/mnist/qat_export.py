@@ -122,7 +122,9 @@ def main() -> None:
         input_bits=INPUT_BITS,
     )
     cal = x_tr.reshape(len(x_tr), -1).astype(np.float64)
-    graph = fmodel.quantize(cal, n_bits=WEIGHT_BITS, act_bits=ACT_BITS, per_channel=True)
+    graph = fmodel.quantize(
+        cal, n_bits=WEIGHT_BITS, act_bits=ACT_BITS, per_channel=True, calibration="mse"
+    )
 
     in_scale = fmodel.input_scale
     x_te_q = np.clip(

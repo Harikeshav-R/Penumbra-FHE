@@ -51,13 +51,27 @@ from penumbra.bitwidth import (
 from penumbra.compile import insert_requants
 from penumbra.ir import SCHEMA_VERSION, Graph
 from penumbra.layers import Activation, Conv2d, Layer, LayerContext, Linear, QuantConfig
-from penumbra.quantization.calibration import MinMaxObserver
+from penumbra.quantization.calibration import (
+    MinMaxObserver,
+    MSEObserver,
+    Observer,
+    PercentileObserver,
+)
 from penumbra.quantization.ptq import choose_requant_params
 from penumbra.quantization.spec import symmetric_spec
 from penumbra.reference import evaluate_graph_int
 
 # Accumulator layer types whose output is rescaled by a (possibly ReLU-fused) Requant.
 _ACCUMULATOR_LAYERS = (Conv2d, Linear)
+
+# Named calibration strategies for the post-ReLU activation range an accumulator's Requant
+# targets. MinMax (no clipping) is the reproducible default; percentile/MSE clip outliers, which
+# can materially help accuracy when activations are heavy-tailed (``PROJECT.md`` §8).
+_OBSERVERS: dict[str, type[Observer]] = {
+    "minmax": MinMaxObserver,
+    "percentile": PercentileObserver,
+    "mse": MSEObserver,
+}
 
 
 class Model:
@@ -83,22 +97,32 @@ class Model:
         """Symmetric input scale from the calibration batch (unsigned: pixel-like inputs)."""
         return symmetric_spec(x, self.input_bits, signed=False).scale
 
-    def _calibrate_accumulators(self, x: np.ndarray) -> dict[int, float]:
-        """Observe each accumulator layer's float output range over the calibration batch.
+    def _calibrate_accumulators(
+        self, x: np.ndarray, observer_cls: type[Observer], act_bits: int
+    ) -> dict[int, float]:
+        """Observe each accumulator layer's post-ReLU output magnitude over the calibration batch.
 
-        Returns ``{layer_index: post_relu_peak}`` — the largest non-negative accumulator value
-        each Conv/Linear produces, which sets how aggressively its following Requant must rescale
-        (the calibrated magnitude, not the worst-case bit-width — ``penumbra.compile`` docstring).
+        Returns ``{layer_index: clip_magnitude}`` — the clipping magnitude the layer's following
+        Requant should map to the top of the activation domain (the calibrated magnitude, not the
+        worst-case bit-width — ``penumbra.compile`` docstring). ``observer_cls`` selects the
+        strategy: :class:`MinMaxObserver` (the peak, no clipping — reproducible default),
+        :class:`PercentileObserver`, or :class:`MSEObserver` (both clip outliers, which helps when
+        activations are heavy-tailed). The magnitude is read at ``act_bits`` (MSE's optimal clip
+        is bit-width dependent); a signed=False spec matches the non-negative post-ReLU domain.
         """
         peaks: dict[int, float] = {}
         acts = x
         for i, layer in enumerate(self.layers):
             out = layer.forward(acts)
             if isinstance(layer, _ACCUMULATOR_LAYERS):
-                obs = MinMaxObserver()
+                obs = observer_cls()
                 # Post-ReLU magnitude: the Requant fuses a ReLU, so only non-negative values
                 # survive to the activation domain. Observe max(out, 0).
                 obs.update(np.maximum(out, 0.0))
+                # spec(act_bits) drives MSE's bit-width-dependent clip search and updates the
+                # observer's chosen magnitude; magnitude() then returns the clip (== peak for
+                # MinMax, so the default path is unchanged and the committed fixtures reproduce).
+                obs.spec(act_bits, signed=False)
                 peaks[i] = obs.magnitude()
             acts = out
         return peaks
@@ -113,13 +137,18 @@ class Model:
         act_bits: int = MESSAGE_BITS,
         per_channel: bool = False,
         max_mult_bits: int = 5,
+        calibration: str = "minmax",
         verify: bool = True,
     ) -> Graph:
         """Quantize the float model to an IR graph using ``calibration_data`` (no manual scales).
 
         ``calibration_data`` is a float batch ``(N, ...)`` of representative inputs (flattened to
-        ``(N, feature_len)`` per the input tensor's layout). Returns the IR :class:`Graph` and
-        stores it on :attr:`graph`. See the module docstring for the pipeline.
+        ``(N, feature_len)`` per the input tensor's layout). ``calibration`` selects the
+        activation-range strategy: ``"minmax"`` (the peak, no clipping — the default, reproducible
+        and safe), ``"percentile"`` (clip the extreme tail — outlier-robust), or ``"mse"`` (the
+        clip minimizing round-trip quantization MSE at ``act_bits``). Percentile/MSE can help
+        accuracy when activations are heavy-tailed (``PROJECT.md`` §8). Returns the IR
+        :class:`Graph` and stores it on :attr:`graph`. See the module docstring for the pipeline.
         """
         # A Requant output (post-activation value) must fit a SINGLE radix block, so act_bits
         # cannot exceed MESSAGE_BITS — the Rust runtime rejects a wider Requant at load, and the
@@ -131,6 +160,11 @@ class Model:
                 "post-Requant activation must fit one shortint block — wider activations are not "
                 "representable (raise n_bits for weights/inputs instead, which is independent)."
             )
+        if calibration not in _OBSERVERS:
+            raise ValueError(
+                f"calibration must be one of {sorted(_OBSERVERS)}; got {calibration!r}"
+            )
+        observer_cls = _OBSERVERS[calibration]
         cfg = QuantConfig(
             n_bits=n_bits, act_bits=act_bits, per_channel=per_channel, max_mult_bits=max_mult_bits
         )
@@ -139,7 +173,7 @@ class Model:
             x = x[None, :]
 
         self.input_scale = self._calibrate_input(x)
-        acc_peaks = self._calibrate_accumulators(x)
+        acc_peaks = self._calibrate_accumulators(x, observer_cls, cfg.act_bits)
 
         # Walk layers, emitting natural IR nodes (no Requant yet). An accumulator (Conv2d/Linear)
         # immediately followed by a ReLU Activation is **requantized**: the fused-ReLU Requant

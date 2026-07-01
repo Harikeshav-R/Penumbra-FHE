@@ -66,17 +66,20 @@ The first example on a **real dataset** and a **real trained PyTorch model**: sc
 | Metric | Value |
 |---|---|
 | Float accuracy | ~0.96 |
-| Quantized accuracy | ~0.90 |
-| Quantization gap | ~0.06 |
+| Quantized accuracy | ~0.93 |
+| Quantization gap | ~0.03 |
 | Weight / activation bits | 6-bit weights, 2-bit activations |
-| Radix | 10 blocks (20-bit signed) |
+| Calibration | MSE (clip minimizing round-trip error), per-channel weights |
+| Radix | 11 blocks (22-bit signed) |
 | Bootstraps / sample | ~108 (one `Requant` PBS per post-conv activation, 12 ch × 3×3) |
 | Latency / sample (encrypted) | minutes (the golden test is `#[ignore]`d; see below) |
 
-The remaining ~0.06 gap is the cost of capping activations at a single 2-bit block
-(`MESSAGE_BITS`) — the hard backend limit. Accuracy comes from having *many* low-precision
-features (12 channels) plus 6-bit weights, and — crucially — from quantizing the head against the
-**post-Requant activation scale** (not the wide pre-Requant accumulator scale). The FHE golden
+The remaining ~0.03 gap is the cost of capping activations at a single 2-bit block
+(`MESSAGE_BITS`) — the hard backend limit. Three service levers close most of the naive gap:
+6-bit **per-channel** weights, **MSE** activation calibration (the clip minimizing round-trip
+quantization error, not the raw peak), and — the big one — quantizing the head against the
+**post-Requant activation scale** (not the wide pre-Requant accumulator scale; getting that wrong
+mis-scales the head bias by the requant ratio and was worth ~0.22 accuracy alone). The FHE golden
 test (`golden_digits.rs`) is `#[ignore]`d because at ~108 bootstraps/sample it is minutes per
 sample; the fast Python guard (`tests/test_real_digits_fixture.py`) checks fixture
 self-consistency on every CI run.
@@ -92,7 +95,8 @@ exported through the same PTQ service (so the int graph and the golden gate are 
 | Quantized accuracy | ~0.94 |
 | Quantization gap | ~0.00 |
 | Weight / activation bits | 6-bit weights, 2-bit activations |
-| Radix | 11 blocks (22-bit signed) |
+| Calibration | MSE, per-channel weights |
+| Radix | 10 blocks (20-bit signed) |
 | Latency / sample (encrypted) | minutes (`golden_qat.rs` is `#[ignore]`d) |
 
 With the head correctly quantized against the post-Requant scale, QAT closes the gap essentially

@@ -27,11 +27,12 @@ The fixture is **committed**, so CI never retrains or imports torch — it just 
 
     cd python && uv run --extra ml --system-certs python ../examples/mnist/real_digits_export.py
 
-Accuracy is honest, not headline: ~0.96 float, ~0.90 quantized. The gap is the cost of capping
-activations at a single 2-bit block (``MESSAGE_BITS``) — the hard backend limit; weights use
-6 bits and the head is quantized against the *post-Requant* activation scale (getting that scale
-right is what closes most of the gap). The QAT example (``qat_export.py``) trains with the
-quantization simulated in the loop.
+Accuracy is honest, not headline: ~0.96 float, ~0.94 quantized. The small remaining gap is the
+cost of capping activations at a single 2-bit block (``MESSAGE_BITS``) — the hard backend limit.
+Closing most of the gap took three levers, all in the service: 6-bit per-channel weights, MSE
+activation calibration (clip minimizing round-trip error, not the raw peak), and quantizing the
+head against the *post-Requant* activation scale. The QAT example (``qat_export.py``) trains with
+the quantization simulated in the loop.
 
 Quantization is the library's job here: after training the float CNN, ``Model.quantize`` calibrates
 on the training set, quantizes weights/bias, fuses the ReLU into the conv's Requant, sizes the
@@ -150,8 +151,12 @@ def main() -> None:
 
     # Calibration data: the training images, flattened to the model's input layout.
     cal = x_tr.reshape(len(x_tr), -1).astype(np.float64)
-    # per_channel weight scales recover meaningful accuracy at 2-bit activations (ROADMAP P5).
-    graph = fmodel.quantize(cal, n_bits=WEIGHT_BITS, act_bits=ACT_BITS, per_channel=True)
+    # per_channel weight scales + MSE-calibrated activation clipping both recover accuracy at
+    # 2-bit activations (ROADMAP P5): MSE picks the clip that minimizes round-trip quantization
+    # error rather than the raw peak, which matters when the post-ReLU distribution is skewed.
+    graph = fmodel.quantize(
+        cal, n_bits=WEIGHT_BITS, act_bits=ACT_BITS, per_channel=True, calibration="mse"
+    )
 
     # --- Quantized-integer oracle = what FHE must match. Compute over the test set. --------
     in_scale = fmodel.input_scale
