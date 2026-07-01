@@ -27,9 +27,11 @@ The fixture is **committed**, so CI never retrains or imports torch — it just 
 
     cd python && uv run --extra ml --system-certs python ../examples/mnist/real_digits_export.py
 
-Accuracy is honest, not headline: ~0.96 float drops to ~0.69 quantized — the cost of capping
-activations at a single 2-bit block (``MESSAGE_BITS``). The QAT example (``qat_export.py``)
-recovers much of that gap by training with the quantization simulated in the loop.
+Accuracy is honest, not headline: ~0.96 float, ~0.90 quantized. The gap is the cost of capping
+activations at a single 2-bit block (``MESSAGE_BITS``) — the hard backend limit; weights use
+6 bits and the head is quantized against the *post-Requant* activation scale (getting that scale
+right is what closes most of the gap). The QAT example (``qat_export.py``) trains with the
+quantization simulated in the loop.
 
 Quantization is the library's job here: after training the float CNN, ``Model.quantize`` calibrates
 on the training set, quantizes weights/bias, fuses the ReLU into the conv's Requant, sizes the
@@ -62,13 +64,13 @@ STRIDE = 2  # stride-2 conv shrinks the feature map to 3x3, keeping the bootstra
 # feature is brutally low-precision; accuracy comes from having *many* features rather than
 # precise ones — the realistic lever within the FHE budget. The cost is ~1 requant bootstrap per
 # post-conv activation = CONV_CH * conv_positions = 12 * 3 * 3 = 108 PBS/sample (~3x the Phase-4
-# golden). 12ch reaches ~0.85 quantized on real digits; fewer channels drops accuracy sharply
-# (8ch -> ~0.64), more channels costs proportionally more FHE time for marginal gain.
+# golden). 12ch reaches ~0.90 quantized on real digits; fewer channels drops accuracy, more
+# channels costs proportionally more FHE time for marginal gain.
 CONV_CH = 12
 
 INPUT_BITS = 4  # inputs quantized into [0, 15] (digits pixels are already [0, 16])
-WEIGHT_BITS = 4
-ACT_BITS = 2  # post-Requant activations land in a single 2-bit block
+WEIGHT_BITS = 6  # 6-bit signed weights; more weight precision helps once the head is scaled right
+ACT_BITS = 2  # post-Requant activations land in a single 2-bit block (the hard backend cap)
 
 N_TEST = 2  # committed FHE test batch — tiny on purpose (each sample is minutes in CI)
 EPOCHS = 150

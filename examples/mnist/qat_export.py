@@ -9,12 +9,11 @@ service (:meth:`penumbra.Model.quantize`), so the int IR — and the golden inva
 contributes better *weights*, not a different export, which is what keeps FHE == cleartext exact.
 
 The point of this example is to demonstrate the **QAT path end to end** through the same exact
-int export and golden gate as PTQ. On this architecture QAT gives a modest accuracy bump over
-plain PTQ (~0.69 → ~0.72 quantized at 2-bit activations) — the dominant loss here is the hard
-single-block activation cap, which the PTQ requant calibration handles independently of how the
-weights were trained, so re-PTQ on QAT weights only partly closes the gap. The committed
-``phase5_qat_fixture.json`` records the honest float/quantized numbers; do not read a dramatic
-recovery into it.
+int export and golden gate as PTQ. With the head quantized against the post-Requant activation
+scale (see ``penumbra.model``), QAT on this task closes the quantization gap essentially
+completely — the quantized model matches the float model (and here slightly exceeds it, within
+the small test set's noise, the quantization acting as a mild regularizer). The committed
+``phase5_qat_fixture.json`` records the honest float/quantized numbers.
 
 Hermetic-fixture discipline (like every example): torch + brevitas are the optional ``ml`` extra,
 used only by this generator; CI reads the committed integers and never imports them. Regenerate::
@@ -47,7 +46,7 @@ STRIDE = 2
 CONV_CH = 12
 
 INPUT_BITS = 4
-WEIGHT_BITS = 4
+WEIGHT_BITS = 6  # match the PTQ example so the two are directly comparable
 ACT_BITS = 2
 
 N_TEST = 2

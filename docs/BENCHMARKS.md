@@ -66,18 +66,20 @@ The first example on a **real dataset** and a **real trained PyTorch model**: sc
 | Metric | Value |
 |---|---|
 | Float accuracy | ~0.96 |
-| Quantized accuracy | ~0.69 |
-| Quantization gap | ~0.28 |
+| Quantized accuracy | ~0.90 |
+| Quantization gap | ~0.06 |
+| Weight / activation bits | 6-bit weights, 2-bit activations |
 | Radix | 10 blocks (20-bit signed) |
 | Bootstraps / sample | ~108 (one `Requant` PBS per post-conv activation, 12 ch × 3×3) |
 | Latency / sample (encrypted) | minutes (the golden test is `#[ignore]`d; see below) |
 
-The large quantization gap is **honest, not a bug**: capping activations at a single 2-bit block
-(`MESSAGE_BITS`) is aggressive, and on real 10-class digits it costs real accuracy. Accuracy comes
-from having *many* low-precision features (12 channels) rather than precise ones — the realistic
-lever within the FHE budget. The FHE golden test (`golden_digits.rs`) is `#[ignore]`d because at
-~108 bootstraps/sample it is minutes per sample; the fast Python guard
-(`tests/test_real_digits_fixture.py`) checks fixture self-consistency on every CI run.
+The remaining ~0.06 gap is the cost of capping activations at a single 2-bit block
+(`MESSAGE_BITS`) — the hard backend limit. Accuracy comes from having *many* low-precision
+features (12 channels) plus 6-bit weights, and — crucially — from quantizing the head against the
+**post-Requant activation scale** (not the wide pre-Requant accumulator scale). The FHE golden
+test (`golden_digits.rs`) is `#[ignore]`d because at ~108 bootstraps/sample it is minutes per
+sample; the fast Python guard (`tests/test_real_digits_fixture.py`) checks fixture
+self-consistency on every CI run.
 
 ### Phase-5 — real handwritten digits, QAT (`examples/mnist/phase5_qat_fixture.json`)
 
@@ -86,17 +88,18 @@ exported through the same PTQ service (so the int graph and the golden gate are 
 
 | Metric | Value |
 |---|---|
-| Float accuracy | ~0.95 |
-| Quantized accuracy | ~0.72 |
-| Quantization gap | ~0.23 |
-| Radix | 10 blocks (20-bit signed) |
+| Float accuracy | ~0.94 |
+| Quantized accuracy | ~0.94 |
+| Quantization gap | ~0.00 |
+| Weight / activation bits | 6-bit weights, 2-bit activations |
+| Radix | 11 blocks (22-bit signed) |
 | Latency / sample (encrypted) | minutes (`golden_qat.rs` is `#[ignore]`d) |
 
-QAT gives a **modest** bump over PTQ here (~0.69 → ~0.72): the dominant loss is the hard
-single-block activation cap, which the requant calibration handles independently of how the
-weights were trained, so re-PTQ on QAT weights only partly closes the gap. The example's value is
-proving the QAT path runs end to end through the exact int export and golden invariant — not a
-dramatic accuracy recovery.
+With the head correctly quantized against the post-Requant scale, QAT closes the gap essentially
+completely on this task — the quantized model matches (and here slightly exceeds, within
+small-test-set noise on ~360 samples) the float model, the quantization acting as a mild
+regularizer. The example proves the QAT path runs end to end through the exact int export and the
+golden invariant.
 
 ## Reproducing
 

@@ -141,58 +141,64 @@ class Model:
         self.input_scale = self._calibrate_input(x)
         acc_peaks = self._calibrate_accumulators(x)
 
-        # Walk layers, emitting natural IR nodes (no Requant yet). Activations are *fused* into
-        # the preceding accumulator's Requant, so we record where a ReLU follows an accumulator
-        # and skip emitting it as a node; the Requant params are calibrated below.
+        # Walk layers, emitting natural IR nodes (no Requant yet). An accumulator (Conv2d/Linear)
+        # immediately followed by a ReLU Activation is **requantized**: the fused-ReLU Requant
+        # narrows its wide accumulator to the `act_bits` activation domain. That changes the scale
+        # the *downstream* layer reads — it consumes post-Requant activations at `act_scale`, NOT
+        # the accumulator's wide `acc_scale`. So we must choose the Requant rescale and switch the
+        # threaded scale to `act_scale` **before** quantizing the downstream layer, or the
+        # downstream layer's bias is mis-scaled by the requant ratio (a silent accuracy killer).
         ctx = LayerContext(tensor="x", scale=self.input_scale, config=cfg, index=0)
         nodes = []
-        # accumulator node name -> (acc_scale, post_relu_peak) for choosing its Requant rescale.
-        requant_targets: dict[str, tuple[float, float]] = {}
-        last_acc_node: str | None = None
-
-        for i, layer in enumerate(self.layers):
-            ctx.index = i
-            if isinstance(layer, Activation):
-                # A ReLU activation is realized by the preceding accumulator's fused-ReLU Requant.
-                if last_acc_node is None:
-                    raise ValueError(
-                        f"Activation at layer {i} does not follow an accumulator (Conv2d/Linear); "
-                        "a standalone post-Requant Activation LUT is not yet supported by Model"
-                    )
-                # Mark that the accumulator's Requant must narrow to act_bits (already the
-                # default); nothing more to emit — the fused ReLU lives in the Requant.
-                continue
-
-            layer_nodes, out_scale, _out_len = layer.quantize(ctx)
-            nodes.extend(layer_nodes)
-            produced = layer_nodes[-1].outputs[0]
-            if isinstance(layer, _ACCUMULATOR_LAYERS):
-                last_acc_node = layer_nodes[-1].name
-                requant_targets[last_acc_node] = (out_scale, acc_peaks.get(i, 0.0))
-            else:
-                last_acc_node = None
-            ctx.tensor = produced
-            ctx.scale = out_scale
-
-        outputs = [nodes[-1].outputs[0]]
-
-        # Choose the Requant rescale for each accumulator that will be requantized. The target
-        # activation scale maps the calibrated post-ReLU peak to the top of the act_bits domain:
-        #   act_scale = post_relu_peak / (2^act_bits - 1)
-        # and the rescale ratio is acc_scale / act_scale. We compute params per accumulator and
-        # hand them to insert_requants, which decides *where* a Requant actually goes.
-        act_ceiling = (1 << cfg.act_bits) - 1
         shifts: dict[str, int] = {}
         mults: dict[str, int] = {}
         round_biases: dict[str, int] = {}
-        for acc_name, (acc_scale, peak) in requant_targets.items():
-            act_scale = (peak / act_ceiling) if peak > 0 else acc_scale
-            mult, shift, round_bias = choose_requant_params(
-                acc_scale, act_scale, out_bits=cfg.act_bits, max_mult_bits=cfg.max_mult_bits
+        act_ceiling = (1 << cfg.act_bits) - 1
+
+        i = 0
+        n_layers = len(self.layers)
+        while i < n_layers:
+            layer = self.layers[i]
+            ctx.index = i
+
+            if isinstance(layer, Activation):
+                # Reached standalone: an accumulator+ReLU pair is consumed together below (i += 2),
+                # so hitting an Activation here means it does not follow an accumulator.
+                raise ValueError(
+                    f"Activation at layer {i} does not follow an accumulator (Conv2d/Linear); "
+                    "a standalone post-Requant Activation LUT is not yet supported by Model"
+                )
+
+            layer_nodes, out_scale, _out_len = layer.quantize(ctx)
+            nodes.extend(layer_nodes)
+            ctx.tensor = layer_nodes[-1].outputs[0]
+            ctx.scale = out_scale
+
+            followed_by_relu = (
+                isinstance(layer, _ACCUMULATOR_LAYERS)
+                and i + 1 < n_layers
+                and isinstance(self.layers[i + 1], Activation)
             )
-            shifts[acc_name] = shift
-            mults[acc_name] = mult
-            round_biases[acc_name] = round_bias
+            if followed_by_relu:
+                # This accumulator will be requantized (fused ReLU). Choose the rescale that maps
+                # the calibrated post-ReLU peak to the top of the act_bits domain, and thread the
+                # post-Requant activation scale to the downstream layer.
+                acc_scale = out_scale
+                peak = acc_peaks.get(i, 0.0)
+                act_scale = (peak / act_ceiling) if peak > 0 else acc_scale
+                mult, shift, round_bias = choose_requant_params(
+                    acc_scale, act_scale, out_bits=cfg.act_bits, max_mult_bits=cfg.max_mult_bits
+                )
+                acc_name = layer_nodes[-1].name
+                shifts[acc_name] = shift
+                mults[acc_name] = mult
+                round_biases[acc_name] = round_bias
+                ctx.scale = act_scale  # downstream reads post-Requant activations
+                i += 2  # consume the fused ReLU Activation with its accumulator
+                continue
+            i += 1
+
+        outputs = [nodes[-1].outputs[0]]
 
         # Build the natural graph at a generous radix to learn widths, insert requants, then
         # search the minimal num_blocks that fits every tensor AND every Requant internal peak.
