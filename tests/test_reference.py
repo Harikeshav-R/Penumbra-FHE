@@ -129,6 +129,51 @@ def test_requant_per_channel_matches_formula():
     assert evaluate_graph_int(g, {"x": xs})["y"] == [cleartext(i, v) for i, v in enumerate(xs)]
 
 
+def test_requant_per_channel_bad_length_fails_loudly():
+    """A per-channel Requant whose tensor length doesn't map onto its channels raises clearly."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=10,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[
+            Node(
+                name="rq",
+                inputs=["x"],
+                outputs=["y"],
+                op=RequantSpec(
+                    shift=0,
+                    out_bits=2,
+                    clamp_lut=[0, 1, 2, 3],
+                    mults=[1, 3],
+                    shifts=[0, 5],
+                    round_biases=[0, 16],
+                    channel_size=3,  # 2 channels * 3 = 6 elements expected
+                ),
+            )
+        ],
+    )
+    # 5 elements: not divisible into 2 channels of 3 -> loud ValueError, not IndexError.
+    with pytest.raises(ValueError, match="do not map onto"):
+        evaluate_graph_int(g, {"x": [0, 1, 2, 3, 4]})
+
+
+def test_argmax_multi_element_input_fails_loudly():
+    """Argmax thresholds a single logit; a multi-element input is a wiring bug, so it raises."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=4,
+        inputs=["x"],
+        outputs=["label"],
+        nodes=[Node(name="amax", inputs=["x"], outputs=["label"], op=ArgmaxSpec(threshold=0))],
+    )
+    assert evaluate_graph_int(g, {"x": [3]})["label"] == [1]  # single logit is fine
+    with pytest.raises(ValueError, match="single-logit"):
+        evaluate_graph_int(g, {"x": [3, -1]})
+
+
 def test_activation_out_of_domain_fails_loudly():
     """An Activation index outside its LUT domain raises (a quantization/wiring bug)."""
     g = Graph(

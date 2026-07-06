@@ -87,8 +87,18 @@ def _requant(op: RequantSpec, x: list[int]) -> list[int]:
     ceil = (1 << op.out_bits) - 1
     out: list[int] = []
     if op.mults:  # per-channel overlay
+        # Mirror the runtime's eval-time checks (`requant.rs`) as loud, actionable errors: as the
+        # golden oracle, a wiring/fixture bug (wrong channel_size or tensor length) must fail here
+        # with a clear message, not as a bare AssertionError/IndexError (`AGENTS.md` §1.4).
         cs = op.channel_size
-        assert cs is not None  # RequantSpec.__post_init__ guarantees this when mults is set
+        if cs is None or cs < 1:
+            raise ValueError(f"per-channel Requant needs channel_size >= 1, got {cs}")
+        if len(x) % cs != 0 or len(x) // cs != len(op.mults):
+            raise ValueError(
+                f"per-channel Requant: {len(x)} elements do not map onto {len(op.mults)} channels "
+                f"at channel_size {cs} (expected len divisible by channel_size into that many "
+                "channels) — check the producing layer's shape vs. channel_size"
+            )
         for idx, v in enumerate(x):
             ch = idx // cs
             shifted = (max(v, 0) * op.mults[ch] + op.round_biases[ch]) >> op.shifts[ch]
@@ -156,7 +166,14 @@ def evaluate_graph_int(graph: Graph, inputs: dict[str, list[int]]) -> dict[str, 
             elif isinstance(op, ActivationSpec):
                 out = _activation(op, x)
             elif isinstance(op, ArgmaxSpec):
-                # 2-class threshold -> encrypted 0/1 label (a single value).
+                # 2-class threshold -> encrypted 0/1 label (a single value). The op thresholds a
+                # single logit; a multi-element input is a wiring bug (it would silently threshold
+                # only x[0] and drop the rest). Fail loudly (`AGENTS.md` §1.4).
+                if len(x) != 1:
+                    raise ValueError(
+                        f"Argmax expects a single-logit input, got {len(x)} elements; the 2-class "
+                        "threshold reads one value — check the graph wiring feeding this Argmax"
+                    )
                 out = [1 if x[0] >= op.threshold else 0]
             else:  # pragma: no cover - every OpSpec variant is handled above
                 raise ValueError(f"reference evaluator: unsupported op {op.op_type!r}")

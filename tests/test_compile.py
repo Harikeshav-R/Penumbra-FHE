@@ -201,3 +201,21 @@ def test_per_channel_requant_wrong_channel_count_fails_loudly():
     pc = {"conv": RequantChannelParams(mults=[1, 3, 5], shifts=[6, 5, 4], round_biases=[0, 0, 0])}
     with pytest.raises(ValueError, match="conv.*per output channel|per output channel"):
         insert_requants(_tiny_cnn(), per_channel=pc)
+
+
+def test_requant_channel_params_defaults_round_biases_to_zero():
+    """Omitting round_biases defaults them to one 0 per channel (truncation) — the common call."""
+    pc = RequantChannelParams(mults=[1, 3], shifts=[6, 5])  # no round_biases
+    assert pc.round_biases == [0, 0]
+    # It drives a valid per-channel Requant (round bias 0 = the scalar API's default).
+    g = insert_requants(_tiny_cnn(), per_channel={"conv": pc})
+    rq = next(n for n in g.nodes if isinstance(n.op, RequantSpec))
+    assert rq.op.round_biases == [0, 0]
+
+
+def test_requant_channel_params_rejects_mismatched_lengths():
+    """mults/shifts (and any supplied round_biases) must match in length, else raise."""
+    with pytest.raises(ValueError, match="one shift per mult"):
+        RequantChannelParams(mults=[1, 3], shifts=[6])
+    with pytest.raises(ValueError, match="round_biases"):
+        RequantChannelParams(mults=[1, 3], shifts=[6, 5], round_biases=[0])

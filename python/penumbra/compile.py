@@ -54,11 +54,32 @@ class RequantChannelParams:
     output channel has its own accumulator scale, so each gets its own fixed-point multiplier
     ``mults[i] / 2**shifts[i]`` (with round bias ``round_biases[i]``). ``insert_requants`` derives
     the flat ``channel_size`` stride from the producer op's shape, so it is not carried here.
+
+    ``round_biases`` may be omitted, in which case it defaults to all-zero (truncation — the same
+    default as the scalar API): round bias is the optional part of the rescale, so requiring it
+    made the common ``RequantChannelParams(mults=..., shifts=...)`` call fail confusingly. ``mults``
+    and ``shifts`` must match in length; a supplied ``round_biases`` must too.
     """
 
     mults: list[int]
     shifts: list[int]
     round_biases: list[int] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if len(self.mults) != len(self.shifts):
+            raise ValueError(
+                f"RequantChannelParams needs one shift per mult: mults={len(self.mults)}, "
+                f"shifts={len(self.shifts)}"
+            )
+        if not self.round_biases:
+            # Default missing round biases to 0 (truncation), one per channel — matches the scalar
+            # API's `round_bias=0` default so the common (mults, shifts)-only call is valid.
+            object.__setattr__(self, "round_biases", [0] * len(self.mults))
+        elif len(self.round_biases) != len(self.mults):
+            raise ValueError(
+                f"RequantChannelParams round_biases must have one entry per mult "
+                f"({len(self.mults)}); got {len(self.round_biases)}"
+            )
 
 
 # Ops after which a requant is inserted when their output is consumed downstream: the
