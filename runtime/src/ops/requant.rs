@@ -72,16 +72,24 @@ fn lut_output_bits(lut: &[u64]) -> usize {
 /// is tiny (`out_bits`). For the legacy `mult = 1, round_bias = 0` path this equals
 /// `input_bits` exactly (no growth), so existing models keep fitting their radix.
 pub fn requant_internal_bits(input_bits: usize, mult: u64, round_bias: u64) -> usize {
-    // Largest positive value a signed `input_bits`-wide accumulator holds, post-ReLU.
-    let relu_max: u64 = if input_bits >= 1 {
-        (1u64 << (input_bits - 1)).saturating_sub(1)
+    // Computed in `u128` (not `u64`) so this matches the Python mirror's *unbounded* ints
+    // value-for-value across the whole realistic range (`penumbra.bitwidth`, `AGENTS.md` §5).
+    // A `u64` `relu_max * mult + round_bias` saturates near a ~63-bit accumulator with a
+    // non-trivial `mult`, silently under-reporting the peak and drifting from Python — the exact
+    // divergence the conformance table exists to catch. `u128` pushes the ceiling past any radix
+    // a real model uses (num_blocks * MESSAGE_BITS bits); the `1u128 << (input_bits - 1)` shift
+    // is well-defined for every `input_bits < 129`.
+    let relu_max: u128 = if input_bits >= 1 {
+        (1u128 << (input_bits - 1)) - 1
     } else {
         0
     };
-    let intermediate_max = relu_max.saturating_mul(mult).saturating_add(round_bias);
+    let intermediate_max = relu_max * mult as u128 + round_bias as u128;
+    // Magnitude width of the u128 intermediate (mirror of `keys::magnitude_bits`, widened).
+    let magnitude = (u128::BITS - intermediate_max.leading_zeros()) as usize;
     // +1 for the sign bit: the intermediate lives in the signed radix even though it is
     // non-negative. Never report less than the input width itself.
-    (crate::keys::magnitude_bits(intermediate_max) + 1).max(input_bits)
+    (magnitude + 1).max(input_bits)
 }
 
 /// Rescale a wide accumulator to a narrow non-negative value via ReLU + fixed-point multiply
