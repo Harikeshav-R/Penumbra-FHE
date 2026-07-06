@@ -54,5 +54,16 @@ fn rust_output_bits_matches_committed_table() {
             "bit-width drift in case {name:?}: Rust output_bits_n gave {got}, committed table \
              expects {expected} — Python and Rust rules disagree"
         );
+
+        // Cases declaring `expected_internal` also pin the transient internal peak (e.g.
+        // Requant's pre-shift `max(x,0)*mult + round_bias`) across languages (`AGENTS.md` §1.3).
+        if let Some(expected_internal) = case["expected_internal"].as_u64() {
+            let got_internal = op.internal_bits_n(&input_bits);
+            assert_eq!(
+                got_internal as u64, expected_internal,
+                "internal-bits drift in case {name:?}: Rust internal_bits_n gave {got_internal}, \
+                 committed table expects {expected_internal}"
+            );
+        }
     }
 }

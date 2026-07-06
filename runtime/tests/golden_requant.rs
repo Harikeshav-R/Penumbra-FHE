@@ -54,8 +54,17 @@ fn requant_graph(num_blocks: usize, input_bits: usize, shift: u32, out_bits: usi
             outputs: vec!["y".to_string()],
             op: OpSpec::Requant {
                 shift,
+                // This legacy sweep pins the pure power-of-two-shift semantics: mult=1,
+                // round_bias=0 makes the generalized op reduce to clamp(max(x>>shift,0),…).
+                mult: 1,
+                round_bias: 0,
                 out_bits,
                 clamp_lut: clamp_lut(out_bits),
+                // Per-tensor: the 0.6.0 per-channel overlay is unused (omitted from the JSON).
+                mults: vec![],
+                shifts: vec![],
+                round_biases: vec![],
+                channel_size: None,
             },
         }],
     }

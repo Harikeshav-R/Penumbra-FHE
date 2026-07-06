@@ -57,19 +57,73 @@ do many cheap scalar-mul/add operations on the multi-block radix, which is why a
 (more blocks) also costs more. Both are Phase-10 optimization targets (parallelize per-element
 work with `rayon`; shrink `num_blocks`/precision to the minimum each layer needs).
 
+### Phase-5 — real handwritten digits, PTQ (`examples/mnist/phase5_digits_fixture.json`)
+
+The first example on a **real dataset** and a **real trained PyTorch model**: scikit-learn's
+8×8 `load_digits` (real pen-written digits), quantized through the library service
+(`Model.quantize`). `Conv2d(1→12, 3×3, stride 2) → Requant+ReLU → Linear(108→10 logits)`.
+
+| Metric | Value |
+|---|---|
+| Float accuracy | ~0.96 |
+| Quantized accuracy | ~0.93 |
+| Quantization gap | ~0.03 |
+| Weight / activation bits | 6-bit weights, 2-bit activations |
+| Calibration | MSE (clip minimizing round-trip error), per-channel weights |
+| Radix | 11 blocks (22-bit signed) |
+| Bootstraps / sample | ~108 (one `Requant` PBS per post-conv activation, 12 ch × 3×3) |
+| Latency / sample (encrypted) | minutes (the golden test is `#[ignore]`d; see below) |
+
+The remaining ~0.03 gap is the cost of capping activations at a single 2-bit block
+(`MESSAGE_BITS`) — the hard backend limit. Three service levers close most of the naive gap:
+6-bit **per-channel** weights, **MSE** activation calibration (the clip minimizing round-trip
+quantization error, not the raw peak), and — the big one — quantizing the head against the
+**post-Requant activation scale** (not the wide pre-Requant accumulator scale; getting that wrong
+mis-scales the head bias by the requant ratio and was worth ~0.22 accuracy alone). The FHE golden
+test (`golden_digits.rs`) is `#[ignore]`d because at ~108 bootstraps/sample it is minutes per
+sample; the fast Python guard (`tests/test_real_digits_fixture.py`) checks fixture
+self-consistency on every CI run.
+
+### Phase-5 — real handwritten digits, QAT (`examples/mnist/phase5_qat_fixture.json`)
+
+The same architecture and dataset, but trained with **Brevitas quantization-aware training**, then
+exported through the same PTQ service (so the int graph and the golden gate are identical).
+
+| Metric | Value |
+|---|---|
+| Float accuracy | ~0.94 |
+| Quantized accuracy | ~0.94 |
+| Quantization gap | ~0.00 |
+| Weight / activation bits | 6-bit weights, 2-bit activations |
+| Calibration | MSE, per-channel weights |
+| Radix | 10 blocks (20-bit signed) |
+| Latency / sample (encrypted) | minutes (`golden_qat.rs` is `#[ignore]`d) |
+
+With the head correctly quantized against the post-Requant scale, QAT closes the gap essentially
+completely on this task — the quantized model matches (and here slightly exceeds, within
+small-test-set noise on ~360 samples) the float model, the quantization acting as a mild
+regularizer. The example proves the QAT path runs end to end through the exact int export and the
+golden invariant.
+
 ## Reproducing
 
 ```bash
-# Regenerate the fixtures (NumPy only; prints accuracy):
+# Regenerate the synthetic fixtures (NumPy only; prints accuracy):
 cd python
 uv run python ../examples/mnist/train_quantize_export.py   # Phase-2 logreg
 uv run python ../examples/mnist/cnn_export.py               # Phase-4 CNN
 
+# Regenerate the real-data fixtures (needs the optional `ml` extra: torch + sklearn + brevitas):
+uv run --extra ml --system-certs python ../examples/mnist/real_digits_export.py  # Phase-5 PTQ
+uv run --extra ml --system-certs python ../examples/mnist/qat_export.py          # Phase-5 QAT
+
 # Time the encrypted forward pass (release; the golden tests carry the timing):
 cd ../runtime
-cargo test --release --test golden_logreg -- --nocapture    # ~30 s/sample
-cargo test --release --test golden_cnn    -- --nocapture     # ~3-4 min/sample
+cargo test --release --test golden_logreg -- --nocapture                  # ~30 s/sample
+cargo test --release --test golden_cnn    -- --nocapture                  # ~3-4 min/sample
+cargo test --release --test golden_digits -- --ignored --nocapture        # minutes/sample (real digits)
+cargo test --release --test golden_qat    -- --ignored --nocapture        # minutes/sample (QAT)
 
 # Inspect a model's per-tensor bit-widths without running FHE:
-cargo run --release --bin inspect ../examples/mnist/phase4_cnn_fixture.json
+cargo run --release --bin inspect ../examples/mnist/phase5_digits_fixture.json
 ```

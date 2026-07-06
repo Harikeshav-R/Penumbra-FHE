@@ -1,7 +1,7 @@
 {
   "_comment": "Phase-4 golden-test fixture: a small 10-class CNN (Conv2d -> auto Requant+ReLU -> avg Pool -> Linear). The model is the serialized IR graph under 'graph' (the Rust runtime deserializes and walks it). The 10 logits are the graph output; the client argmaxes them. FHE output must equal these quantized-cleartext logits/labels bit-for-bit. Synthetic dataset stand-in (see cnn_export.py).",
   "graph": {
-    "schema_version": "0.4.0",
+    "schema_version": "0.6.0",
     "num_blocks": 7,
     "input_bits": 4,
     "inputs": [
@@ -70,6 +70,8 @@
         "op": {
           "op_type": "Requant",
           "shift": 6,
+          "mult": 1,
+          "round_bias": 0,
           "out_bits": 2,
           "clamp_lut": [
             0,

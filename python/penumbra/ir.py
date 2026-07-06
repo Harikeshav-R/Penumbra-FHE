@@ -34,7 +34,15 @@ from typing import Any
 
 # IR wire-format version. Hardcoded identically in ``runtime/src/ir.rs``; a mismatch is a
 # breaking change caught loudly at load time (``AGENTS.md`` §5, §8).
-SCHEMA_VERSION = "0.4.0"
+#
+# 0.5.0 generalized ``Requant`` to a fixed-point multiply-then-round-shift rescale (the
+# ``mult``/``round_bias`` fields on :class:`RequantSpec`) — a breaking schema change.
+# 0.6.0 added an optional per-channel ``Requant`` overlay (``mults``/``shifts``/``round_biases``
+# + ``channel_size`` on :class:`RequantSpec`): one fixed-point multiplier per output channel, so
+# per-channel weight quantization rescales each channel by its true ratio. The fields are omitted
+# from the JSON when unused, so a per-tensor ``Requant`` (and every legacy fixture) serializes
+# byte-identically — but the version still bumps (a 0.6.0 reader is required to interpret them).
+SCHEMA_VERSION = "0.6.0"
 
 
 @dataclass(frozen=True)
@@ -81,10 +89,20 @@ class OpSpec:
         if op_type == "Argmax":
             return ArgmaxSpec(threshold=int(d["threshold"]))
         if op_type == "Requant":
+            cs = d.get("channel_size")
             return RequantSpec(
                 shift=int(d["shift"]),
+                # mult/round_bias are 0.5.0 additions; default to the legacy pure-shift
+                # (mult=1, round_bias=0) when absent so a minimal Requant payload still loads.
+                mult=int(d.get("mult", 1)),
+                round_bias=int(d.get("round_bias", 0)),
                 out_bits=int(d["out_bits"]),
                 clamp_lut=[int(v) for v in d["clamp_lut"]],
+                # 0.6.0 per-channel overlay; absent -> empty (per-tensor scalar path).
+                mults=[int(v) for v in d.get("mults", [])],
+                shifts=[int(v) for v in d.get("shifts", [])],
+                round_biases=[int(v) for v in d.get("round_biases", [])],
+                channel_size=(int(cs) if cs is not None else None),
             )
         if op_type == "Pool":
             return PoolSpec(
@@ -242,18 +260,58 @@ class RequantSpec(OpSpec):
 
     Exact semantics (matched bit-for-bit by the runtime, ``AGENTS.md`` §1.1)::
 
-        requant(x) = clamp(max(x >> shift, 0), 0, 2**out_bits - 1)
+        requant(x) = clamp((max(x, 0) * mult + round_bias) >> shift, 0, 2**out_bits - 1)
 
-    ``shift`` is a non-negative power-of-two rescale; the op is a fused ReLU+requant so its
-    output is non-negative (required by the single-block PBS path). ``clamp_lut[v]`` is the
-    output for the already-saturated input block value ``v``; it must cover the whole
-    ``MESSAGE_BITS``-bit message space and saturate at ``2**out_bits - 1``. The quantization
-    service owns choosing ``shift`` and building ``clamp_lut`` (Phase 5 / the compile pass).
+    This is the standard integer-quantization rescale (a fixed-point multiplier): an arbitrary
+    real rescale ``M = (s_in * s_w) / s_out`` is approximated by the ratio ``mult / 2**shift``.
+    It is bit-exact in both the FHE and cleartext domains — every step (multiply, add, shift)
+    has an exact integer counterpart (no true division). The op is a fused ReLU+requant, so its
+    output is non-negative (required by the single-block PBS path).
+
+    Fields:
+        ``shift``      — non-negative right-shift (the denominator ``2**shift``).
+        ``mult``       — non-negative fixed-point multiplier (the numerator); ``1`` is the
+                         legacy pure power-of-two shift.
+        ``round_bias`` — value added before the shift for round-to-nearest (``2**(shift-1)``
+                         rounds half-up); ``0`` truncates. Unambiguous because the value is
+                         non-negative after the ReLU.
+        ``out_bits``   — narrowed output width (``<= MESSAGE_BITS``).
+        ``clamp_lut``  — output for each already-saturated input block value ``v``; covers the
+                         whole ``MESSAGE_BITS``-bit message space and saturates at
+                         ``2**out_bits - 1``.
+
+    The quantization service owns choosing ``(mult, shift, round_bias)`` and building
+    ``clamp_lut`` (Phase 5 / the compile pass). ``mult``/``round_bias`` are 0.5.0 additions and
+    default to the legacy pure-shift (``1``/``0``), so a Phase-4-shaped Requant is unchanged.
+
+    The fixed-point multiplier widens the value to ``max(x, 0) * mult + round_bias`` *before*
+    the shift narrows it; that transient peak must still fit the radix. The bit-width tracker's
+    Requant rule checks this internal peak (:func:`penumbra.bitwidth.requant_internal_bits`),
+    mirroring the Rust ``Requant::internal_bits_n`` (``AGENTS.md`` §1.3).
+
+    Per-channel overlay (0.6.0). ``mults``/``shifts``/``round_biases`` + ``channel_size`` are an
+    optional overlay for **per-channel** weight quantization: each output channel carries its own
+    accumulator scale, so a single shared rescale is wrong for all but one channel. When the arrays
+    are non-empty they are indexed by channel — flat element ``idx`` uses channel
+    ``idx // channel_size`` — and the scalar ``shift``/``mult``/``round_bias`` are ignored.
+    ``channel_size`` is the elements-per-channel stride (``1`` for a ``Linear`` head,
+    ``out_h * out_w`` for a ``Conv2d``); it is on the wire because the runtime op sees only the
+    flat tensor, not the producing layer's shape. The arrays are omitted from :meth:`to_dict` when
+    empty, so a per-tensor Requant round-trips byte-identically.
     """
 
     shift: int
     out_bits: int
     clamp_lut: list[int]
+    # 0.5.0 additions; declared after the required fields (dataclass ordering) but emitted in
+    # the Rust struct's field order by `to_dict`. Defaults reproduce the legacy pure-shift.
+    mult: int = 1
+    round_bias: int = 0
+    # 0.6.0 per-channel overlay; empty/None = per-tensor (scalar) path, omitted from `to_dict`.
+    mults: list[int] = field(default_factory=list)
+    shifts: list[int] = field(default_factory=list)
+    round_biases: list[int] = field(default_factory=list)
+    channel_size: int | None = None
 
     op_type: str = field(init=False, default="Requant")
 
@@ -263,14 +321,64 @@ class RequantSpec(OpSpec):
             raise ValueError(f"RequantSpec shift must be non-negative, got {self.shift}")
         if self.out_bits < 1:
             raise ValueError(f"RequantSpec out_bits must be >= 1, got {self.out_bits}")
+        if self.mult < 1:
+            raise ValueError(
+                f"RequantSpec mult must be >= 1 (a fixed-point multiplier; 1 is a pure shift), "
+                f"got {self.mult}"
+            )
+        if self.round_bias < 0:
+            raise ValueError(f"RequantSpec round_bias must be non-negative, got {self.round_bias}")
+        # Per-channel overlay: if any part is present, all must be consistent (mirror Rust build).
+        has_pc = bool(self.mults or self.shifts or self.round_biases or self.channel_size)
+        if has_pc:
+            if not self.mults:
+                raise ValueError(
+                    "RequantSpec per-channel overlay present but `mults` is empty; supply one "
+                    "multiplier per output channel"
+                )
+            if len(self.shifts) != len(self.mults) or len(self.round_biases) != len(self.mults):
+                raise ValueError(
+                    "RequantSpec per-channel arrays must be equal length: "
+                    f"mults={len(self.mults)}, shifts={len(self.shifts)}, "
+                    f"round_biases={len(self.round_biases)}"
+                )
+            if self.channel_size is None or self.channel_size < 1:
+                raise ValueError(
+                    "RequantSpec per-channel overlay needs channel_size >= 1 (elements per "
+                    "channel: 1 for a Linear head, out_h*out_w for a Conv2d)"
+                )
+            for i, m in enumerate(self.mults):
+                if m < 1:
+                    raise ValueError(
+                        f"RequantSpec mults[{i}] = {m} must be >= 1 (a per-channel fixed-point "
+                        "multiplier; 1 is a pure shift)"
+                    )
+            for i, rb in enumerate(self.round_biases):
+                if rb < 0:
+                    raise ValueError(f"RequantSpec round_biases[{i}] = {rb} must be non-negative")
+            for i, s in enumerate(self.shifts):
+                if s < 0:
+                    raise ValueError(f"RequantSpec shifts[{i}] = {s} must be non-negative")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        # Key order matches the Rust struct declaration (shift, mult, round_bias, out_bits,
+        # clamp_lut) so the committed JSON diffs cleanly across languages.
+        d: dict[str, Any] = {
             "op_type": self.op_type,
             "shift": self.shift,
+            "mult": self.mult,
+            "round_bias": self.round_bias,
             "out_bits": self.out_bits,
             "clamp_lut": self.clamp_lut,
         }
+        # Emit the per-channel overlay only when used, so a per-tensor Requant is byte-identical
+        # to 0.5.0 (mirrors the Rust `skip_serializing_if` guards) — keeps legacy fixtures stable.
+        if self.mults:
+            d["mults"] = self.mults
+            d["shifts"] = self.shifts
+            d["round_biases"] = self.round_biases
+            d["channel_size"] = self.channel_size
+        return d
 
 
 @dataclass(frozen=True)

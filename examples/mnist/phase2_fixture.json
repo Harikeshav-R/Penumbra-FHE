@@ -1,7 +1,7 @@
 {
   "_comment": "Phase-3 golden-test fixture. The model is the serializable IR graph under 'graph' (the Rust runtime deserializes and walks it). Sibling keys are test metadata. FHE output must equal these quantized-cleartext labels bit-for-bit. Synthetic dataset stand-in (see train_quantize_export.py).",
   "graph": {
-    "schema_version": "0.4.0",
+    "schema_version": "0.6.0",
     "num_blocks": 8,
     "input_bits": 4,
     "inputs": [

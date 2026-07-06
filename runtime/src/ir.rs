@@ -32,7 +32,23 @@ use crate::ops::{Activation, Add, Argmax, Conv2d, Linear, Op, Pool, PoolMode, Re
 
 /// IR wire-format version. Hardcoded identically in `python/penumbra/ir.py`; a mismatch is
 /// a breaking change caught loudly at load time (`AGENTS.md` §5, §8).
-pub const SCHEMA_VERSION: &str = "0.4.0";
+///
+/// Version 0.5.0 generalized `Requant` to a fixed-point multiply-then-round-shift rescale (the
+/// `mult`/`round_bias` fields below) — a breaking schema change (`AGENTS.md` §8).
+/// Version 0.6.0 added an optional **per-channel** `Requant` overlay
+/// (`mults`/`shifts`/`round_biases` + `channel_size`): each output channel gets its own
+/// fixed-point multiplier so per-channel weight quantization rescales each channel by its true
+/// ratio. The fields are omitted when empty, so a per-tensor `Requant` (and every legacy fixture)
+/// serializes byte-identically — but the version still bumps because a 0.6.0 reader is required
+/// to interpret them.
+pub const SCHEMA_VERSION: &str = "0.6.0";
+
+/// Serde default for `Requant.mult`: `1` makes the rescale a pure power-of-two shift, the
+/// Phase-4 semantics. Defaulting lets a 0.5.0 reader accept a `Requant` node emitted without
+/// the field (and keeps the legacy-equivalent JSON minimal).
+fn default_requant_mult() -> u64 {
+    1
+}
 
 /// The root IR object: a directed graph of op nodes in a valid topological order.
 ///
@@ -95,12 +111,34 @@ pub enum OpSpec {
     Argmax {
         threshold: i64,
     },
-    /// Rescale a wide accumulator down to a narrow, LUT-able value: arithmetic right-shift by
-    /// `shift`, ReLU, clamp to `2^out_bits - 1` via `clamp_lut`. See [`crate::ops::Requant`].
+    /// Rescale a wide accumulator down to a narrow, LUT-able value:
+    /// `clamp((max(x,0) * mult + round_bias) >> shift, 0, 2^out_bits - 1)`. `mult`/`round_bias`
+    /// (serde-defaulted to `1`/`0` = the legacy pure-shift) implement a fixed-point
+    /// multiply-then-round-shift rescale. See [`crate::ops::Requant`].
+    ///
+    /// The `mults`/`shifts`/`round_biases` arrays + `channel_size` are the optional 0.6.0
+    /// **per-channel** overlay: when non-empty they are indexed by channel (flat element `idx`
+    /// maps to channel `idx / channel_size`), and the scalar `shift`/`mult`/`round_bias` are
+    /// ignored. `channel_size` is the elements-per-channel stride (`1` for a `Linear` head,
+    /// `out_h*out_w` for a `Conv2d`); it must be on the wire because the op sees only the flat
+    /// tensor, not the producer's shape. All four are omitted from the JSON when unused, so a
+    /// per-tensor `Requant` round-trips byte-identically.
     Requant {
         shift: u32,
+        #[serde(default = "default_requant_mult")]
+        mult: u64,
+        #[serde(default)]
+        round_bias: u64,
         out_bits: usize,
         clamp_lut: Vec<u64>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        mults: Vec<u64>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        shifts: Vec<u32>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        round_biases: Vec<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel_size: Option<usize>,
     },
     /// Spatial pooling over a flattened `[channels][in_h][in_w]` feature map. `mode` is
     /// `"avg"` (window sum, rescale deferred to `Requant`) or `"max"`. See [`crate::ops::Pool`].
@@ -263,8 +301,14 @@ impl OpSpec {
             })),
             OpSpec::Requant {
                 shift,
+                mult,
+                round_bias,
                 out_bits,
                 clamp_lut,
+                mults,
+                shifts,
+                round_biases,
+                channel_size,
             } => {
                 // Mirror the asserts in `Requant::eval`/`output_bits` as load-time errors so a
                 // malformed table fails before keygen (`AGENTS.md` §1.4), not deep in eval.
@@ -295,10 +339,68 @@ impl OpSpec {
                         crate::keys::MESSAGE_BITS
                     ));
                 }
+                // A zero multiplier would annihilate the value (every output 0); a non-positive
+                // rescale is never what the quantization service means. Catch it loudly here.
+                if *mult == 0 {
+                    return Err(
+                        "Requant mult must be >= 1 (a fixed-point multiplier; 1 is a pure shift)"
+                            .to_string(),
+                    );
+                }
+                // Per-channel overlay (0.6.0): if any of the arrays / channel_size is present, all
+                // must be consistent — equal-length arrays, a positive channel_size, and every
+                // per-channel mult >= 1 (the scalar mult==0 guard, per channel). Element-count vs
+                // channel_size divisibility depends on the runtime tensor length, so it is checked
+                // in `eval` (`AGENTS.md` §1.4), not here.
+                let has_pc = !mults.is_empty()
+                    || !shifts.is_empty()
+                    || !round_biases.is_empty()
+                    || channel_size.is_some();
+                let channel_size = if has_pc {
+                    if mults.is_empty() {
+                        return Err(
+                            "Requant per-channel overlay present but `mults` is empty; supply one \
+                             multiplier per output channel"
+                                .to_string(),
+                        );
+                    }
+                    if shifts.len() != mults.len() || round_biases.len() != mults.len() {
+                        return Err(format!(
+                            "Requant per-channel arrays must be equal length: mults={}, shifts={}, \
+                             round_biases={}",
+                            mults.len(),
+                            shifts.len(),
+                            round_biases.len()
+                        ));
+                    }
+                    let cs = channel_size.ok_or_else(|| {
+                        "Requant per-channel overlay needs `channel_size` (elements per channel: 1 \
+                         for a Linear head, out_h*out_w for a Conv2d)"
+                            .to_string()
+                    })?;
+                    if cs < 1 {
+                        return Err("Requant channel_size must be >= 1".to_string());
+                    }
+                    if let Some((i, &m)) = mults.iter().enumerate().find(|&(_, &m)| m == 0) {
+                        return Err(format!(
+                            "Requant mults[{i}] = {m} must be >= 1 (a fixed-point multiplier per \
+                             channel; 1 is a pure shift)"
+                        ));
+                    }
+                    cs
+                } else {
+                    0 // sentinel: per-tensor (scalar) path
+                };
                 Ok(Box::new(Requant {
                     shift: *shift,
+                    mult: *mult,
+                    round_bias: *round_bias,
                     out_bits: *out_bits,
                     clamp_lut: clamp_lut.clone(),
+                    mults: mults.clone(),
+                    shifts: shifts.clone(),
+                    round_biases: round_biases.clone(),
+                    channel_size,
                 }))
             }
             OpSpec::Pool {
@@ -484,19 +586,42 @@ mod tests {
                 outputs: vec!["y".to_string()],
                 op: OpSpec::Requant {
                     shift: 4,
+                    mult: 1,
+                    round_bias: 0,
                     out_bits: 2,
                     clamp_lut: vec![0, 1, 2, 3],
+                    mults: vec![],
+                    shifts: vec![],
+                    round_biases: vec![],
+                    channel_size: None,
                 },
             }],
         };
         let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
         assert_eq!(graph, restored);
+        // A per-tensor Requant must omit the per-channel keys entirely (byte-identical to 0.5.0):
+        // the `skip_serializing_if` guards are what keep every legacy fixture unchanged.
+        let json = graph.to_json();
+        assert!(
+            !json.contains("mults"),
+            "per-tensor JSON must not emit `mults`"
+        );
+        assert!(
+            !json.contains("channel_size"),
+            "per-tensor JSON must not emit `channel_size`"
+        );
 
         // Wrong LUT length fails to build (must cover the whole 2-bit message space).
         let bad_len = OpSpec::Requant {
             shift: 1,
+            mult: 1,
+            round_bias: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2],
+            mults: vec![],
+            shifts: vec![],
+            round_biases: vec![],
+            channel_size: None,
         };
         assert!(
             bad_len.build().is_err(),
@@ -506,13 +631,154 @@ mod tests {
         // An entry that doesn't fit one block fails to build.
         let bad_entry = OpSpec::Requant {
             shift: 1,
+            mult: 1,
+            round_bias: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2, 9],
+            mults: vec![],
+            shifts: vec![],
+            round_biases: vec![],
+            channel_size: None,
         };
         assert!(
             bad_entry.build().is_err(),
             "out-of-range clamp_lut entry must fail to build"
         );
+
+        // mult == 0 (an annihilating rescale) fails to build.
+        let zero_mult = OpSpec::Requant {
+            shift: 1,
+            mult: 0,
+            round_bias: 0,
+            out_bits: 2,
+            clamp_lut: vec![0, 1, 2, 3],
+            mults: vec![],
+            shifts: vec![],
+            round_biases: vec![],
+            channel_size: None,
+        };
+        assert!(zero_mult.build().is_err(), "mult == 0 must fail to build");
+    }
+
+    /// A `Requant` payload emitted *without* the 0.5.0 `mult`/`round_bias` fields deserializes
+    /// with their defaults (`mult = 1`, `round_bias = 0`) — the legacy pure-shift semantics.
+    /// This is the forward-compat path that keeps a minimal `Requant` JSON valid.
+    #[test]
+    fn requant_fields_default_when_absent() {
+        let json = format!(
+            r#"{{"schema_version":"{SCHEMA_VERSION}","num_blocks":6,"input_bits":10,
+            "inputs":["x"],"outputs":["y"],"nodes":[{{"name":"rq","inputs":["x"],
+            "outputs":["y"],"op":{{"op_type":"Requant","shift":4,"out_bits":2,
+            "clamp_lut":[0,1,2,3]}}}}]}}"#
+        );
+        let graph = Graph::from_json(&json).expect("legacy Requant JSON deserializes");
+        match &graph.nodes[0].op {
+            OpSpec::Requant {
+                mult, round_bias, ..
+            } => {
+                assert_eq!(*mult, 1, "absent mult must default to 1");
+                assert_eq!(*round_bias, 0, "absent round_bias must default to 0");
+            }
+            other => panic!("expected Requant, got {}", other.op_type()),
+        }
+    }
+
+    /// The generalized `Requant` (mult != 1, round-to-nearest bias) round-trips through JSON.
+    #[test]
+    fn requant_with_mult_round_trips() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 8,
+            input_bits: 10,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["y".to_string()],
+            nodes: vec![Node {
+                name: "rq".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["y".to_string()],
+                op: OpSpec::Requant {
+                    shift: 5,
+                    mult: 3,
+                    round_bias: 16,
+                    out_bits: 2,
+                    clamp_lut: vec![0, 1, 2, 3],
+                    mults: vec![],
+                    shifts: vec![],
+                    round_biases: vec![],
+                    channel_size: None,
+                },
+            }],
+        };
+        let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
+        assert_eq!(graph, restored);
+    }
+
+    /// A **per-channel** `Requant` (0.6.0 overlay) round-trips through JSON, and `build` rejects
+    /// inconsistent per-channel arrays.
+    #[test]
+    fn requant_per_channel_round_trips_and_validates() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 8,
+            input_bits: 10,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["y".to_string()],
+            nodes: vec![Node {
+                name: "rq".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["y".to_string()],
+                op: OpSpec::Requant {
+                    shift: 0,
+                    mult: 1,
+                    round_bias: 0,
+                    out_bits: 2,
+                    clamp_lut: vec![0, 1, 2, 3],
+                    // Two channels with distinct rescales; the scalars above are ignored.
+                    mults: vec![1, 3],
+                    shifts: vec![0, 5],
+                    round_biases: vec![0, 16],
+                    channel_size: Some(2),
+                },
+            }],
+        };
+        let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
+        assert_eq!(graph, restored);
+        assert!(
+            graph.to_json().contains("channel_size"),
+            "per-channel JSON must carry channel_size"
+        );
+        assert!(
+            graph.nodes[0].op.build().is_ok(),
+            "valid per-channel builds"
+        );
+
+        // Mismatched array lengths fail to build.
+        let bad = OpSpec::Requant {
+            shift: 0,
+            mult: 1,
+            round_bias: 0,
+            out_bits: 2,
+            clamp_lut: vec![0, 1, 2, 3],
+            mults: vec![1, 3],
+            shifts: vec![0], // too short
+            round_biases: vec![0, 16],
+            channel_size: Some(2),
+        };
+        assert!(bad.build().is_err(), "unequal per-channel arrays must fail");
+
+        // Arrays present but channel_size missing fails to build.
+        let no_cs = OpSpec::Requant {
+            shift: 0,
+            mult: 1,
+            round_bias: 0,
+            out_bits: 2,
+            clamp_lut: vec![0, 1, 2, 3],
+            mults: vec![1, 3],
+            shifts: vec![0, 5],
+            round_biases: vec![0, 16],
+            channel_size: None,
+        };
+        assert!(no_cs.build().is_err(), "missing channel_size must fail");
     }
 
     /// A `Pool` node round-trips, and `build` rejects an unknown mode / oversized window.

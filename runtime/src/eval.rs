@@ -228,8 +228,12 @@ pub fn propagate_bit_widths(graph: &Graph) -> Result<HashMap<String, usize>, Str
 /// **loudly** before evaluation if not (`AGENTS.md` §1.3, §1.4) — the graph analogue of
 /// [`check_bit_width_budget`].
 ///
-/// Walks every tensor's propagated width (via [`propagate_bit_widths`]); if any exceeds what
-/// `graph.num_blocks` radix blocks can hold, returns an `Err` naming the offending tensor.
+/// Walks every tensor's propagated width (via [`propagate_bit_widths`]); if any output width,
+/// **or any op's transient internal peak** ([`Op::internal_bits_n`]), exceeds what
+/// `graph.num_blocks` radix blocks can hold, returns an `Err` naming the offending node. The
+/// internal-peak check matters for `Requant`: its fixed-point multiplier widens the value to
+/// `max(x,0) * mult + round_bias` mid-op before the shift narrows it back, and that peak must
+/// fit the radix even though the op's *output* is tiny.
 pub fn check_graph_bit_width_budget(graph: &Graph) -> Result<(), String> {
     let capacity = crate::keys::radix_capacity_bits(graph.num_blocks);
     let widths = propagate_bit_widths(graph)?;
@@ -245,6 +249,25 @@ pub fn check_graph_bit_width_budget(graph: &Graph) -> Result<(), String> {
                  but the radix holds only {capacity} ({} blocks × {} bits). Reduce precision or \
                  widen num_blocks (a Requant here is Phase 4).",
                 node.name,
+                graph.num_blocks,
+                crate::keys::MESSAGE_BITS
+            ));
+        }
+
+        // Transient internal peak (e.g. Requant's pre-shift `max(x,0) * mult + round_bias`).
+        // For most ops this equals the output width and is already covered above; Requant
+        // overrides it, so an over-large multiplier overflows here even when input + output fit.
+        let op = node.op.build()?;
+        let in_bits: Vec<usize> = node.inputs.iter().map(|n| widths[n]).collect();
+        let internal = op.internal_bits_n(&in_bits);
+        if internal > capacity {
+            return Err(format!(
+                "bit-width budget exceeded inside node '{}' ({}): its rescale needs {internal} \
+                 transient bits (the multiply-then-shift intermediate) but the radix holds only \
+                 {capacity} ({} blocks × {} bits). Reduce the requant multiplier, reduce input \
+                 precision, or widen num_blocks.",
+                node.name,
+                node.op.op_type(),
                 graph.num_blocks,
                 crate::keys::MESSAGE_BITS
             ));

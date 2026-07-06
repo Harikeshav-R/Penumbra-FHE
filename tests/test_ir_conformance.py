@@ -31,6 +31,7 @@ from penumbra.ir import (
     Graph,
     LinearSpec,
     Node,
+    OpSpec,
     PoolSpec,
     RequantSpec,
 )
@@ -142,20 +143,140 @@ def test_requant_spec_round_trips():
     )
     restored = Graph.from_json(g.to_json())
     assert restored == g
+    # Defaulted 0.5.0 fields (mult=1, round_bias=0) are emitted in the Rust struct field order.
     assert restored.nodes[0].op.to_dict() == {
         "op_type": "Requant",
         "shift": 4,
+        "mult": 1,
+        "round_bias": 0,
         "out_bits": 2,
         "clamp_lut": [0, 1, 2, 3],
     }
 
 
+def test_requant_spec_generalized_round_trips():
+    """A generalized Requant (mult != 1, round-to-nearest bias) round-trips through ir.py."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=10,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[
+            Node(
+                name="rq",
+                inputs=["x"],
+                outputs=["y"],
+                op=RequantSpec(shift=5, mult=3, round_bias=16, out_bits=2, clamp_lut=[0, 1, 2, 3]),
+            )
+        ],
+    )
+    assert Graph.from_json(g.to_json()) == g
+
+
+def test_requant_spec_defaults_when_fields_absent():
+    """A Requant payload without mult/round_bias loads with the legacy pure-shift defaults."""
+    spec = OpSpec.from_dict(
+        {"op_type": "Requant", "shift": 4, "out_bits": 2, "clamp_lut": [0, 1, 2, 3]}
+    )
+    assert isinstance(spec, RequantSpec)
+    assert spec.mult == 1 and spec.round_bias == 0
+
+
 def test_requant_spec_rejects_invalid():
-    """RequantSpec fails loudly at construction on a negative shift / zero out_bits."""
+    """RequantSpec fails loudly at construction on bad shift / out_bits / mult / round_bias."""
     with pytest.raises(ValueError, match="shift"):
         RequantSpec(shift=-1, out_bits=2, clamp_lut=[0, 1, 2, 3])
     with pytest.raises(ValueError, match="out_bits"):
         RequantSpec(shift=1, out_bits=0, clamp_lut=[0, 1, 2, 3])
+    with pytest.raises(ValueError, match="mult"):
+        RequantSpec(shift=1, out_bits=2, clamp_lut=[0, 1, 2, 3], mult=0)
+    with pytest.raises(ValueError, match="round_bias"):
+        RequantSpec(shift=1, out_bits=2, clamp_lut=[0, 1, 2, 3], round_bias=-1)
+
+
+def test_requant_spec_per_channel_round_trips():
+    """A per-channel Requant (0.6.0 overlay) round-trips and emits the four extra keys in order."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=10,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[
+            Node(
+                name="rq",
+                inputs=["x"],
+                outputs=["y"],
+                op=RequantSpec(
+                    shift=0,
+                    out_bits=2,
+                    clamp_lut=[0, 1, 2, 3],
+                    mults=[1, 3],
+                    shifts=[0, 5],
+                    round_biases=[0, 16],
+                    channel_size=2,
+                ),
+            )
+        ],
+    )
+    restored = Graph.from_json(g.to_json())
+    assert restored == g
+    assert restored.nodes[0].op.to_dict() == {
+        "op_type": "Requant",
+        "shift": 0,
+        "mult": 1,
+        "round_bias": 0,
+        "out_bits": 2,
+        "clamp_lut": [0, 1, 2, 3],
+        "mults": [1, 3],
+        "shifts": [0, 5],
+        "round_biases": [0, 16],
+        "channel_size": 2,
+    }
+
+
+def test_requant_per_tensor_omits_channel_fields():
+    """A per-tensor Requant must NOT emit any per-channel key — byte-identical to 0.5.0."""
+    d = RequantSpec(shift=4, out_bits=2, clamp_lut=[0, 1, 2, 3]).to_dict()
+    for key in ("mults", "shifts", "round_biases", "channel_size"):
+        assert key not in d, f"per-tensor Requant leaked per-channel key {key!r}"
+
+
+def test_requant_spec_per_channel_rejects_inconsistent():
+    """The per-channel overlay validates at construction: equal lengths + channel_size present."""
+    # Mismatched array lengths.
+    with pytest.raises(ValueError, match="equal length"):
+        RequantSpec(
+            shift=0,
+            out_bits=2,
+            clamp_lut=[0, 1, 2, 3],
+            mults=[1, 3],
+            shifts=[0],
+            round_biases=[0, 16],
+            channel_size=2,
+        )
+    # Arrays present but no channel_size.
+    with pytest.raises(ValueError, match="channel_size"):
+        RequantSpec(
+            shift=0,
+            out_bits=2,
+            clamp_lut=[0, 1, 2, 3],
+            mults=[1, 3],
+            shifts=[0, 5],
+            round_biases=[0, 16],
+        )
+    # A per-channel multiplier < 1.
+    with pytest.raises(ValueError, match="mults"):
+        RequantSpec(
+            shift=0,
+            out_bits=2,
+            clamp_lut=[0, 1, 2, 3],
+            mults=[1, 0],
+            shifts=[0, 5],
+            round_biases=[0, 16],
+            channel_size=2,
+        )
 
 
 def test_pool_spec_round_trips():

@@ -30,11 +30,28 @@ dependencies = [
 ml = [
     "torch>=2.2",
     "brevitas>=0.10",
+    # Real bundled handwritten-digit data for the example generators (no network): sklearn's
+    # 8x8 `load_digits`. Listed in PROJECT.md §15 as part of the example/export stack.
+    "scikit-learn>=1.3",
 ]
 
 [project.urls]
 Homepage = "https://github.com/Harikeshav-R/Penumbra-FHE"
 Repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
+
+# ---------------------------------------------------------------------------
+# Pin the `ml` extra's torch to the CPU build. The example generators only need a CPU
+# forward pass to produce the committed integer fixtures; the multi-GB CUDA wheels are
+# pure bloat here. CI never installs the `ml` extra (the fixtures are plain data), so this
+# only affects a developer running the generators locally.
+# ---------------------------------------------------------------------------
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [build-system]
 requires = ["hatchling"]
