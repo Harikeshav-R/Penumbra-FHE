@@ -67,6 +67,12 @@ fn requant_graph(
                 round_bias,
                 out_bits,
                 clamp_lut: clamp_lut(out_bits),
+                // Per-tensor scalar rescale — the per-channel overlay is exercised by
+                // golden_requant_per_channel.rs.
+                mults: vec![],
+                shifts: vec![],
+                round_biases: vec![],
+                channel_size: None,
             },
         }],
     }

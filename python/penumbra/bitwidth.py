@@ -153,6 +153,13 @@ def internal_bits(op: OpSpec, input_bits: list[int]) -> int:
     """
     if isinstance(op, RequantSpec):
         _expect_arity(op, input_bits, 1)
+        # Per-channel Requant: the transient peak is the MAX over channels (the largest-multiplier
+        # channel bounds the radix). Empty arrays -> the scalar per-tensor path.
+        if op.mults:
+            return max(
+                requant_internal_bits(input_bits[0], m, rb)
+                for m, rb in zip(op.mults, op.round_biases, strict=True)
+            )
         return requant_internal_bits(input_bits[0], op.mult, op.round_bias)
     return output_bits(op, input_bits)
 

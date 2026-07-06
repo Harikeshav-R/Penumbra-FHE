@@ -98,14 +98,30 @@ fn cleartext_logits(graph: &Graph, input: &[i64]) -> Vec<i64> {
                 mult,
                 round_bias,
                 out_bits,
+                mults,
+                shifts,
+                round_biases,
+                channel_size,
                 ..
-            } => x
-                .iter()
-                .map(|&v| {
-                    let scaled = (v.max(0) * *mult as i64 + *round_bias as i64) >> shift;
-                    scaled.max(0).min((1i64 << out_bits) - 1)
-                })
-                .collect(),
+            } => {
+                let ceil = (1i64 << out_bits) - 1;
+                x.iter()
+                    .enumerate()
+                    .map(|(idx, &v)| {
+                        // Per-channel overlay (0.6.0): element idx uses channel idx/channel_size.
+                        // A per-tensor Requant leaves the arrays empty and uses the scalars — the
+                        // `..` must NOT silently pick the scalar path for a per-channel fixture.
+                        let (m, s, rb) = if mults.is_empty() {
+                            (*mult, *shift, *round_bias)
+                        } else {
+                            let ch = idx / channel_size.expect("per-channel needs channel_size");
+                            (mults[ch], shifts[ch], round_biases[ch])
+                        };
+                        let scaled = (v.max(0) * m as i64 + rb as i64) >> s;
+                        scaled.max(0).min(ceil)
+                    })
+                    .collect()
+            }
             OpSpec::Linear { weights, bias, .. } => weights
                 .iter()
                 .zip(bias)

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from penumbra.compile import insert_requants
+from penumbra.compile import RequantChannelParams, insert_requants
 from penumbra.ir import (
     SCHEMA_VERSION,
     ArgmaxSpec,
@@ -178,3 +178,26 @@ def test_fanout_argmax_reads_wide_logit_not_requantized():
     assert rq.inputs == ["z"]
     assert head.inputs == ["z__rq"], "the narrow head must consume the requantized tensor"
     assert amax.inputs == ["z"], "the Argmax must still read the wide logit, not z__rq"
+
+
+def test_per_channel_requant_derives_channel_size_from_conv():
+    """per_channel params build a per-channel Requant; channel_size = out_h*out_w for the conv."""
+    # _tiny_cnn: Conv(1->2, 3x3) on 6x6 -> out 4x4 -> Pool consumes it, so the conv is requantized.
+    pc = {"conv": RequantChannelParams(mults=[1, 3], shifts=[6, 5], round_biases=[0, 16])}
+    g = insert_requants(_tiny_cnn(), per_channel=pc)
+    assert [n.op.op_type for n in g.nodes] == ["Conv2d", "Requant", "Pool", "Linear"]
+    rq = next(n for n in g.nodes if isinstance(n.op, RequantSpec))
+    assert rq.op.mults == [1, 3]
+    assert rq.op.shifts == [6, 5]
+    assert rq.op.round_biases == [0, 16]
+    assert rq.op.channel_size == 16, "conv out is 4x4 -> 16 elements per output channel"
+    # Idempotent: the already-per-channel Requant is not touched on a re-run.
+    assert insert_requants(g, per_channel=pc) == g
+
+
+def test_per_channel_requant_wrong_channel_count_fails_loudly():
+    """A per-channel param list whose length != output channels raises, naming the layer."""
+    # The conv has 2 output channels; supplying 3 multipliers is a wiring bug.
+    pc = {"conv": RequantChannelParams(mults=[1, 3, 5], shifts=[6, 5, 4], round_biases=[0, 0, 0])}
+    with pytest.raises(ValueError, match="conv.*per output channel|per output channel"):
+        insert_requants(_tiny_cnn(), per_channel=pc)

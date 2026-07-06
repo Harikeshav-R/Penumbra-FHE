@@ -1,8 +1,8 @@
 {
   "_comment": "Phase-5 QAT example: a Brevitas quantization-aware-trained CNN on real 8x8 handwritten digits (sklearn load_digits), exported through penumbra.Model.quantize. Same architecture as phase5_digits_fixture (PTQ); QAT recovers accuracy lost to the 2-bit activation cap. The model is the serialized IR graph under 'graph'; the 10 logits are the graph output and the client argmaxes them. FHE output must equal these quantized-cleartext logits/labels bit-for-bit (see qat_export.py).",
   "graph": {
-    "schema_version": "0.5.0",
-    "num_blocks": 10,
+    "schema_version": "0.6.0",
+    "num_blocks": 11,
     "input_bits": 4,
     "inputs": [
       "x"
@@ -189,16 +189,59 @@
         ],
         "op": {
           "op_type": "Requant",
-          "shift": 10,
-          "mult": 5,
-          "round_bias": 512,
+          "shift": 0,
+          "mult": 1,
+          "round_bias": 0,
           "out_bits": 2,
           "clamp_lut": [
             0,
             1,
             2,
             3
-          ]
+          ],
+          "mults": [
+            9,
+            9,
+            31,
+            3,
+            9,
+            13,
+            19,
+            13,
+            25,
+            27,
+            5,
+            5
+          ],
+          "shifts": [
+            11,
+            11,
+            13,
+            10,
+            11,
+            12,
+            12,
+            12,
+            13,
+            13,
+            10,
+            10
+          ],
+          "round_biases": [
+            1024,
+            1024,
+            4096,
+            512,
+            1024,
+            2048,
+            2048,
+            2048,
+            4096,
+            4096,
+            512,
+            512
+          ],
+          "channel_size": 9
         }
       },
       {
@@ -1335,7 +1378,7 @@
   },
   "accuracy": {
     "float": 0.9361111111111111,
-    "quantized": 0.9361111111111111
+    "quantized": 0.9388888888888889
   },
   "test_inputs": [
     [
@@ -1477,28 +1520,28 @@
   ],
   "expected_logits": [
     [
-      -161,
-      -82,
-      53,
-      -95,
-      -25,
-      -323,
-      -143,
-      142,
-      -34,
-      57
+      -144,
+      -115,
+      64,
+      -80,
+      -37,
+      -294,
+      -136,
+      134,
+      -29,
+      35
     ],
     [
-      -87,
-      -155,
-      -159,
-      -322,
-      -47,
-      -75,
-      172,
-      -214,
-      27,
-      -303
+      -90,
+      -181,
+      -142,
+      -271,
+      -45,
+      -82,
+      151,
+      -198,
+      -7,
+      -262
     ]
   ]
 }

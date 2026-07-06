@@ -109,6 +109,17 @@ pub struct Requant {
     pub out_bits: usize,
     /// Clamp lookup table indexed by the saturated input block value.
     pub clamp_lut: Vec<u64>,
+    /// Per-channel `(mult, shift, round_bias)` overlay (0.6.0). When non-empty, element `idx`
+    /// uses channel `idx / channel_size`, and the scalar `shift`/`mult`/`round_bias` above are
+    /// ignored. Empty ⇒ the scalar per-tensor path (bit-identical to Phase 4/5). Each array has
+    /// one entry per output channel; the quantization service sizes each from that channel's own
+    /// accumulator scale so per-channel weight quantization rescales exactly.
+    pub mults: Vec<u64>,
+    pub shifts: Vec<u32>,
+    pub round_biases: Vec<u64>,
+    /// Elements per channel in the flat tensor (`1` for a `Linear` head, `out_h*out_w` for a
+    /// `Conv2d`). `0` is the per-tensor sentinel (arrays empty).
+    pub channel_size: usize,
 }
 
 impl Op for Requant {
@@ -150,33 +161,69 @@ impl Op for Requant {
 
         let max_val = (1i64 << self.out_bits) - 1;
 
+        // Per-channel overlay: element `idx` uses channel `idx / channel_size`. Empty arrays ⇒
+        // the scalar per-tensor path, which reproduces the Phase-4/5 sequence bit-for-bit. Verify
+        // the flat length maps cleanly onto the channels (`AGENTS.md` §1.4) — a wrong channel_size
+        // (e.g. a Linear head emitting out_h*out_w) would otherwise mis-map channels silently.
+        let per_channel = !self.mults.is_empty();
+        if per_channel {
+            assert!(
+                self.channel_size >= 1,
+                "Requant per-channel channel_size must be >= 1"
+            );
+            assert_eq!(
+                inputs.len() % self.channel_size,
+                0,
+                "Requant per-channel: {} elements not divisible by channel_size {}",
+                inputs.len(),
+                self.channel_size
+            );
+            assert_eq!(
+                inputs.len() / self.channel_size,
+                self.mults.len(),
+                "Requant per-channel: {} channels (len {} / channel_size {}) != {} multipliers",
+                inputs.len() / self.channel_size,
+                inputs.len(),
+                self.channel_size,
+                self.mults.len()
+            );
+        }
+
         let table = self.clamp_lut.clone();
         let lut = shortint_sk.generate_lookup_table(move |v| *table.get(v as usize).unwrap_or(&0));
 
         inputs
             .iter()
-            .map(|ct| {
+            .enumerate()
+            .map(|(idx, ct)| {
+                // Select this element's rescale: per-channel by flat index, else the scalars.
+                let (mult, shift, round_bias) = if per_channel {
+                    let ch = idx / self.channel_size;
+                    (self.mults[ch], self.shifts[ch], self.round_biases[ch])
+                } else {
+                    (self.mult, self.shift, self.round_bias)
+                };
                 // 1. ReLU at the radix level FIRST: max(x, 0). Doing the ReLU before the
                 //    multiply/round keeps the value non-negative, which the rounding and the
                 //    single-block trick both rely on.
                 let nonneg = sk.scalar_max_parallelized(ct, 0i64);
                 // 2. Fixed-point multiplier (plaintext scalar mul, NO PBS). Skip the op when
-                //    mult == 1 so the legacy path is bit-identical and adds no noise.
-                let scaled = if self.mult == 1 {
+                //    mult == 1 so the legacy/mult-1 path is bit-identical and adds no noise.
+                let scaled = if mult == 1 {
                     nonneg
                 } else {
-                    sk.scalar_mul_parallelized(&nonneg, self.mult)
+                    sk.scalar_mul_parallelized(&nonneg, mult)
                 };
                 // 3. Round-to-nearest bias (skip when 0 — the truncating/legacy path).
-                let biased = if self.round_bias == 0 {
+                let biased = if round_bias == 0 {
                     scaled
                 } else {
-                    sk.scalar_add_parallelized(&scaled, self.round_bias)
+                    sk.scalar_add_parallelized(&scaled, round_bias)
                 };
                 // 4. Arithmetic right shift: floor-divide by 2^shift (the value is non-negative
                 //    here, so this equals the cleartext `>>` bit-for-bit).
                 let shifted: SignedRadixCiphertext =
-                    sk.scalar_right_shift_parallelized(&biased, self.shift);
+                    sk.scalar_right_shift_parallelized(&biased, shift);
                 // 5. Saturate at the radix level so the value fits one block BEFORE we read it.
                 let saturated = sk.scalar_min_parallelized(&shifted, max_val);
                 // 6. Single-block PBS (clamp LUT) — identity over the in-range value, but resets
@@ -225,7 +272,17 @@ impl Op for Requant {
         // The widest value the rescale materializes (max(x,0)*mult + round_bias) before the
         // shift narrows it. The budget check verifies THIS fits the radix, not just the tiny
         // output (`AGENTS.md` §1.3): a too-large multiplier overflows here even when both the
-        // input accumulator and the narrowed output individually fit.
-        requant_internal_bits(input_bits[0], self.mult, self.round_bias)
+        // input accumulator and the narrowed output individually fit. For a per-channel Requant
+        // the peak is the MAX over channels (the largest-multiplier channel bounds the radix).
+        if self.mults.is_empty() {
+            requant_internal_bits(input_bits[0], self.mult, self.round_bias)
+        } else {
+            self.mults
+                .iter()
+                .zip(&self.round_biases)
+                .map(|(&m, &rb)| requant_internal_bits(input_bits[0], m, rb))
+                .max()
+                .expect("per-channel Requant has at least one channel")
+        }
     }
 }

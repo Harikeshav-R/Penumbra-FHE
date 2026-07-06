@@ -73,12 +73,17 @@ class Layer:
         """Float forward over a batch ``(N, ...)`` -> ``(N, ...)`` (for calibration)."""
         raise NotImplementedError
 
-    def quantize(self, ctx: LayerContext) -> tuple[list[Node], float, int]:  # pragma: no cover
-        """Emit this layer's IR node(s); return ``(nodes, output_scale, output_len)``.
+    def quantize(
+        self, ctx: LayerContext
+    ) -> tuple[list[Node], float, int, list[float] | None]:  # pragma: no cover
+        """Emit this layer's IR node(s); return ``(nodes, output_scale, output_len, ch_scales)``.
 
         ``output_len`` is the flat length of this layer's output tensor (the model uses it only
-        for bookkeeping / shape sanity). The returned nodes are *natural* (no ``Requant``): the
-        service inserts requants between accumulator layers afterwards (:mod:`penumbra.compile`).
+        for bookkeeping / shape sanity). ``ch_scales`` is the list of per-output-channel
+        accumulator scales when this is a per-channel accumulator layer, else ``None`` — the model
+        uses it to choose a per-channel Requant rescale (each channel has its own accumulator
+        scale). The returned nodes are *natural* (no ``Requant``): the service inserts requants
+        between accumulator layers afterwards (:mod:`penumbra.compile`).
         """
         raise NotImplementedError
 
@@ -96,15 +101,22 @@ class Linear(Layer):
             y = y + np.asarray(self.bias, dtype=np.float64)
         return y
 
-    def quantize(self, ctx: LayerContext) -> tuple[list[Node], float, int]:
+    def quantize(self, ctx: LayerContext) -> tuple[list[Node], float, int, list[float] | None]:
         cfg = ctx.config
         w_q, b_q, spec = quantize_linear(
             self.weight, self.bias, ctx.scale, bits=cfg.n_bits, per_channel=cfg.per_channel
         )
-        # Per-channel returns one scale per row; the accumulator scale used downstream is the
-        # per-tensor weight scale (per-channel folds its row scales into the int weights/bias,
-        # so the emitted integer accumulator shares a single nominal scale = in_scale * w_scale).
-        w_scale = spec.scale if not cfg.per_channel else _representative_scale(spec)
+        # Per-channel returns one scale per output row; each row's accumulator lives in its own
+        # units (in_scale * row_scale). We surface those per-channel accumulator scales so the
+        # model can build a per-channel Requant (one rescale per channel). `out_scale` is the
+        # single nominal scale threaded to the *next* layer / used for a wide head; the max row
+        # scale bounds the accumulator magnitude (`_representative_scale`).
+        ch_scales = None
+        if cfg.per_channel:
+            w_scale = _representative_scale(spec)
+            ch_scales = [ctx.scale * s.scale for s in spec]
+        else:
+            w_scale = spec.scale
         out_scale = ctx.scale * w_scale
         name = f"linear{ctx.index}"
         node = Node(
@@ -113,7 +125,7 @@ class Linear(Layer):
             outputs=[f"{name}_out"],
             op=LinearSpec(weights=w_q.tolist(), bias=b_q.tolist(), weight_bits=cfg.n_bits),
         )
-        return [node], out_scale, w_q.shape[0]
+        return [node], out_scale, w_q.shape[0], ch_scales
 
 
 @dataclass
@@ -152,7 +164,7 @@ class Conv2d(Layer):
                         out[:, oc, oy, ox] += float(self.bias[oc])
         return out.reshape(n, -1)
 
-    def quantize(self, ctx: LayerContext) -> tuple[list[Node], float, int]:
+    def quantize(self, ctx: LayerContext) -> tuple[list[Node], float, int, list[float] | None]:
         cfg = ctx.config
         w = np.asarray(self.weight, dtype=np.float64)
         out_ch, _, kh, kw = w.shape
@@ -163,7 +175,14 @@ class Conv2d(Layer):
             b_f=self.bias,
             per_channel=cfg.per_channel,
         )
-        w_scale = spec.scale if not cfg.per_channel else _representative_scale(spec)
+        # Per-channel: one scale per output channel; surface each channel's accumulator scale for
+        # a per-channel Requant. `out_scale` (the max row scale) is the nominal downstream scale.
+        ch_scales = None
+        if cfg.per_channel:
+            w_scale = _representative_scale(spec)
+            ch_scales = [ctx.scale * s.scale for s in spec]
+        else:
+            w_scale = spec.scale
         out_scale = ctx.scale * w_scale
         out_h = (self.in_h + 2 * self.padding - kh) // self.stride + 1
         out_w = (self.in_w + 2 * self.padding - kw) // self.stride + 1
@@ -185,7 +204,7 @@ class Conv2d(Layer):
                 padding=self.padding,
             ),
         )
-        return [node], out_scale, out_ch * out_h * out_w
+        return [node], out_scale, out_ch * out_h * out_w, ch_scales
 
 
 @dataclass
@@ -221,7 +240,7 @@ class Pool(Layer):
                 )
         return out.reshape(n, -1)
 
-    def quantize(self, ctx: LayerContext) -> tuple[list[Node], float, int]:
+    def quantize(self, ctx: LayerContext) -> tuple[list[Node], float, int, list[float] | None]:
         out_h = (self.in_h - self.pool_h) // self.stride + 1
         out_w = (self.in_w - self.pool_w) // self.stride + 1
         name = f"pool{ctx.index}"
@@ -240,8 +259,9 @@ class Pool(Layer):
             ),
         )
         # avg-pool sums pool_h*pool_w terms -> the value scale is unchanged (the sum is in the
-        # same integer units); max-pool selects one value, also scale-preserving.
-        return [node], ctx.scale, self.channels * out_h * out_w
+        # same integer units); max-pool selects one value, also scale-preserving. Not an
+        # accumulator layer, so no per-channel accumulator scales.
+        return [node], ctx.scale, self.channels * out_h * out_w, None
 
 
 @dataclass
@@ -272,10 +292,13 @@ class Activation(Layer):
 def _representative_scale(specs: list) -> float:
     """A single nominal scale for a per-channel-quantized layer (the max row scale).
 
-    Per-channel folds each output row's own scale into its int weights/bias, but downstream code
-    (the Requant rescale, the next layer's input scale) needs one number for the integer
-    accumulator's units. The largest row scale is the conservative choice — it bounds the
-    accumulator's float magnitude. (Per-channel accuracy still comes from the per-row *integer*
-    quantization; this nominal scale only sets the downstream rescale target.)
+    Per-channel quantizes each output row with its own scale, but code that needs *one* number
+    for the accumulator's units — the next layer's input scale, or a *wide* head/terminal
+    accumulator left un-requantized — uses this nominal scale. The largest row scale is the
+    conservative choice: it bounds the accumulator's float magnitude.
+
+    Note: as of 0.6.0 this no longer feeds the fused Requant rescale — a per-channel accumulator
+    followed by a ReLU gets a **per-channel** Requant built from each row's own accumulator scale
+    (:class:`~penumbra.ir.RequantSpec` per-channel overlay), not a single rescale at this max.
     """
     return max(s.scale for s in specs)

@@ -34,7 +34,7 @@ unchanged, because requants are only inserted after ``Conv2d``/``Linear``, never
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 
 from penumbra.bitwidth import (
     MESSAGE_BITS,
@@ -43,6 +43,23 @@ from penumbra.bitwidth import (
     radix_capacity_bits,
 )
 from penumbra.ir import ArgmaxSpec, Conv2dSpec, Graph, LinearSpec, Node, RequantSpec
+from penumbra.quantization.lut import identity_clamp_lut
+
+
+@dataclass(frozen=True)
+class RequantChannelParams:
+    """Per-output-channel rescale for a per-channel Requant (one entry per channel).
+
+    The quantization service builds this when an accumulator was quantized per-channel: each
+    output channel has its own accumulator scale, so each gets its own fixed-point multiplier
+    ``mults[i] / 2**shifts[i]`` (with round bias ``round_biases[i]``). ``insert_requants`` derives
+    the flat ``channel_size`` stride from the producer op's shape, so it is not carried here.
+    """
+
+    mults: list[int]
+    shifts: list[int]
+    round_biases: list[int] = field(default_factory=list)
+
 
 # Ops after which a requant is inserted when their output is consumed downstream: the
 # accumulator-growing (wide-output) layers.
@@ -57,9 +74,34 @@ _WIDE_INPUT_OPS = (ArgmaxSpec,)
 
 
 def _clamp_lut(out_bits: int) -> list[int]:
-    """Identity-over-range clamp LUT: ``min(v, 2^out_bits - 1)`` over the message space."""
-    ceil = (1 << out_bits) - 1
-    return [min(v, ceil) for v in range(1 << MESSAGE_BITS)]
+    """Identity-over-range clamp LUT: ``min(v, 2^out_bits - 1)`` over the message space.
+
+    Delegates to the quantization service's :func:`~penumbra.quantization.lut.identity_clamp_lut`,
+    which owns LUT generation (that module is the single source of truth). Reusing it — rather than
+    rebuilding the table inline — also runs :func:`~penumbra.quantization.lut.validate_lut` on the
+    result, so every auto-inserted Requant's ``clamp_lut`` is backend-validated here in Python
+    before it can reach a PBS (``AGENTS.md`` §1.4). The equality is test-pinned
+    (``tests/test_quantization_lut.py``).
+    """
+    return identity_clamp_lut(out_bits)
+
+
+def _channel_size(op: object) -> int:
+    """Flat elements-per-channel stride of an accumulator op's output tensor.
+
+    A per-channel ``Requant`` operates on the flat output tensor, so it must know how many
+    consecutive elements belong to one output channel to map ``flat_index -> channel``. This
+    mirrors the runtime tensor layouts (``conv2d.rs``, ``linear.rs``): a ``Linear`` emits one
+    element per output row (stride ``1``); a ``Conv2d`` emits ``[out_ch][out_h][out_w]``
+    channel-major, so a whole ``out_h*out_w`` spatial map belongs to one channel.
+    """
+    if isinstance(op, LinearSpec):
+        return 1
+    if isinstance(op, Conv2dSpec):
+        out_h = (op.in_h + 2 * op.padding - op.kernel_h) // op.stride + 1
+        out_w = (op.in_w + 2 * op.padding - op.kernel_w) // op.stride + 1
+        return out_h * out_w
+    raise ValueError(f"per-channel Requant not supported after op {type(op).__name__}")
 
 
 def insert_requants(
@@ -68,6 +110,7 @@ def insert_requants(
     shifts: dict[str, int] | None = None,
     mults: dict[str, int] | None = None,
     round_biases: dict[str, int] | None = None,
+    per_channel: dict[str, RequantChannelParams] | None = None,
     out_bits: int = MESSAGE_BITS,
 ) -> Graph:
     """Return a copy of ``graph`` with ``Requant`` nodes auto-inserted between layers.
@@ -80,6 +123,11 @@ def insert_requants(
       ``max(0, producer_output_bits - out_bits)`` (exactness-safe but coarse).
     - ``mults[name]`` — the fixed-point multiplier (numerator of the rescale); default ``1``.
     - ``round_biases[name]`` — the round-to-nearest bias; default ``0`` (truncation).
+    - ``per_channel[name]`` — a :class:`RequantChannelParams` for a per-channel-quantized
+      accumulator: one ``(mult, shift, round_bias)`` per output channel. When present it takes
+      precedence over the scalar ``shifts``/``mults``/``round_biases`` for that node, and the
+      emitted ``Requant`` carries the per-channel overlay. The flat ``channel_size`` stride is
+      derived from the producer op (``1`` for ``Linear``, ``out_h*out_w`` for ``Conv2d``).
 
     The quantization service calibrates ``(mult, shift, round_bias)`` together so the rescale
     approximates the real scale ratio; passing only ``shifts`` keeps the Phase-4 behavior. After
@@ -91,6 +139,7 @@ def insert_requants(
     """
     shifts = shifts or {}
     mults = mults or {}
+    per_channel = per_channel or {}
     round_biases = round_biases or {}
 
     # Which tensors are consumed at all, which are graph outputs, and which are *already* read
@@ -150,23 +199,44 @@ def insert_requants(
                 "num_blocks — a Requant cannot recover bits already overflowed"
             )
 
-        shift = shifts.get(node.name, max(0, incoming_bits - out_bits))
-        mult = mults.get(node.name, 1)
-        round_bias = round_biases.get(node.name, 0)
         rq_name = f"{out_name}__rq"
-        new_nodes.append(
-            Node(
-                name=f"{node.name}__requant",
-                inputs=[out_name],
-                outputs=[rq_name],
-                op=RequantSpec(
-                    shift=shift,
-                    mult=mult,
-                    round_bias=round_bias,
-                    out_bits=out_bits,
-                    clamp_lut=_clamp_lut(out_bits),
-                ),
+        pc = per_channel.get(node.name)
+        if pc is not None:
+            # Per-channel Requant: each output channel rescaled by its own (mult, shift,
+            # round_bias). channel_size is the flat elements-per-channel stride, derived from the
+            # producer op's shape so it matches the runtime tensor layout exactly (`conv2d.rs`).
+            channel_size = _channel_size(node.op)
+            n_channels = len(node.op.weights)
+            if not (len(pc.mults) == len(pc.shifts) == len(pc.round_biases) == n_channels):
+                raise ValueError(
+                    f"layer {node.name!r}: per-channel Requant needs one (mult, shift, round_bias) "
+                    f"per output channel ({n_channels}); got mults={len(pc.mults)}, "
+                    f"shifts={len(pc.shifts)}, round_biases={len(pc.round_biases)}"
+                )
+            rq_op = RequantSpec(
+                shift=0,
+                mult=1,
+                round_bias=0,
+                out_bits=out_bits,
+                clamp_lut=_clamp_lut(out_bits),
+                mults=list(pc.mults),
+                shifts=list(pc.shifts),
+                round_biases=list(pc.round_biases),
+                channel_size=channel_size,
             )
+        else:
+            shift = shifts.get(node.name, max(0, incoming_bits - out_bits))
+            mult = mults.get(node.name, 1)
+            round_bias = round_biases.get(node.name, 0)
+            rq_op = RequantSpec(
+                shift=shift,
+                mult=mult,
+                round_bias=round_bias,
+                out_bits=out_bits,
+                clamp_lut=_clamp_lut(out_bits),
+            )
+        new_nodes.append(
+            Node(name=f"{node.name}__requant", inputs=[out_name], outputs=[rq_name], op=rq_op)
         )
         rewire[out_name] = rq_name
 

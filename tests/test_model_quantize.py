@@ -249,3 +249,99 @@ def test_unknown_calibration_rejected():
     model = Model([Linear(weight=np.ones((2, 4)), bias=np.zeros(2))])
     with pytest.raises(ValueError, match="calibration must be one of"):
         model.quantize(np.random.default_rng(0).uniform(0, 16, size=(8, 4)), calibration="bogus")
+
+
+def test_per_channel_emits_per_channel_requant_with_correct_channel_size():
+    """per_channel=True fuses a per-channel Requant: one (mult,shift,round_bias) per out channel.
+
+    Also pins the flat channel_size stride derived from the producer op: a Conv2d's Requant stride
+    is out_h*out_w (a whole spatial map per channel), matching the runtime tensor layout.
+    """
+    rng = np.random.default_rng(21)
+    out_ch = 4
+    model = Model(
+        [
+            # 8x8 input, stride-2 3x3 conv -> out_h = out_w = 3, so channel_size should be 9.
+            Conv2d(
+                weight=rng.normal(size=(out_ch, 1, 3, 3)),
+                in_h=8,
+                in_w=8,
+                in_channels=1,
+                stride=2,
+            ),
+            Activation(_relu),
+            Linear(weight=rng.normal(size=(10, out_ch * 3 * 3)), bias=rng.normal(size=10)),
+        ],
+        input_bits=4,
+    )
+    cal = rng.uniform(0.0, 16.0, size=(64, 64))
+    graph = model.quantize(cal, n_bits=6, act_bits=2, per_channel=True)
+
+    rq = next(n for n in graph.nodes if n.op.op_type == "Requant")
+    assert rq.op.channel_size == 9, "Conv2d Requant stride must be out_h*out_w"
+    assert len(rq.op.mults) == out_ch, "one multiplier per output channel"
+    assert len(rq.op.shifts) == out_ch and len(rq.op.round_biases) == out_ch
+    check_bit_width_budget(graph)
+    xq = np.clip(np.round(cal[0] / model.input_scale), 0, 15).astype(np.int64)
+    assert len(evaluate_graph_int(graph, {"x": xq.tolist()})[graph.outputs[0]]) == 10
+
+
+def test_per_channel_beats_per_tensor_on_imbalanced_channels():
+    """Per-channel must not do worse than per-tensor when channels have very different scales.
+
+    Constructs a Conv whose two output channels differ ~100x in weight magnitude — the exact case
+    where a single shared rescale (max row scale) crushes the small-magnitude channel. Quantize
+    per-tensor vs per-channel, run the integer oracle, and assert the per-channel argmax agreement
+    with the float model is >= the per-tensor agreement over a held-out batch.
+    """
+    rng = np.random.default_rng(22)
+    # Two conv channels with wildly different magnitudes.
+    conv_w = np.stack(
+        [
+            rng.normal(scale=2.0, size=(1, 3, 3)),  # large-magnitude channel
+            rng.normal(scale=0.02, size=(1, 3, 3)),  # tiny-magnitude channel
+        ]
+    )
+    head_w = rng.normal(scale=0.5, size=(4, 2 * 3 * 3))  # 2ch * 3x3 (stride-2 on 8x8) = 18 feats
+    head_b = rng.normal(scale=0.5, size=4)
+    layers = [
+        Conv2d(weight=conv_w, in_h=8, in_w=8, in_channels=1, stride=2),
+        Activation(_relu),
+        Linear(weight=head_w, bias=head_b),
+    ]
+    cal = rng.uniform(0.0, 16.0, size=(128, 64))
+
+    def float_logits(x_row):
+        acts = x_row[None, :]
+        for layer in layers:
+            acts = np.maximum(acts, 0.0) if isinstance(layer, Activation) else layer.forward(acts)
+        return acts[0]
+
+    def quant_logits(model, graph, x_row):
+        xq = np.clip(np.round(x_row / model.input_scale), 0, 15).astype(np.int64)
+        return np.array(evaluate_graph_int(graph, {"x": xq.tolist()})[graph.outputs[0]], float)
+
+    # Compare *argmax*, the decision the model actually makes, against the float model over a
+    # held-out batch — per-channel must win or tie.
+    probe = rng.uniform(0.0, 16.0, size=(40, 64))
+    ref = np.array([np.argmax(float_logits(r)) for r in probe])
+
+    def agreement(per_channel: bool) -> float:
+        model = Model(
+            [
+                Conv2d(weight=conv_w, in_h=8, in_w=8, in_channels=1, stride=2),
+                Activation(_relu),
+                Linear(weight=head_w, bias=head_b),
+            ],
+            input_bits=4,
+        )
+        graph = model.quantize(cal, n_bits=6, act_bits=2, per_channel=per_channel)
+        pred = np.array([np.argmax(quant_logits(model, graph, r)) for r in probe])
+        return float(np.mean(pred == ref))
+
+    per_tensor_acc = agreement(False)
+    per_channel_acc = agreement(True)
+    assert per_channel_acc >= per_tensor_acc, (
+        f"per-channel ({per_channel_acc:.3f}) regressed vs per-tensor ({per_tensor_acc:.3f}) on "
+        "imbalanced channels — the per-channel Requant should rescale each channel correctly"
+    )

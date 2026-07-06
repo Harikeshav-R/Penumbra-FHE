@@ -90,6 +90,45 @@ def test_requant_multiply_then_round_shift_matches_formula():
     assert evaluate_graph_int(g, {"x": xs})["y"] == [cleartext(v) for v in xs]
 
 
+def test_requant_per_channel_matches_formula():
+    """The reference per-channel Requant selects each element's channel params by idx//stride."""
+    channel_size = 3
+    mults = [1, 3]
+    shifts = [4, 5]
+    round_biases = [0, 16]
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=10,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[
+            Node(
+                name="rq",
+                inputs=["x"],
+                outputs=["y"],
+                op=RequantSpec(
+                    shift=0,
+                    out_bits=2,
+                    clamp_lut=[0, 1, 2, 3],
+                    mults=mults,
+                    shifts=shifts,
+                    round_biases=round_biases,
+                    channel_size=channel_size,
+                ),
+            )
+        ],
+    )
+
+    def cleartext(idx: int, v: int) -> int:
+        ch = idx // channel_size
+        return min(max((max(v, 0) * mults[ch] + round_biases[ch]) >> shifts[ch], 0), 3)
+
+    # 3 elements for channel 0, then 3 for channel 1 (matches the Rust golden layout).
+    xs = [-100, 63, 511, -1, 47, 200]
+    assert evaluate_graph_int(g, {"x": xs})["y"] == [cleartext(i, v) for i, v in enumerate(xs)]
+
+
 def test_activation_out_of_domain_fails_loudly():
     """An Activation index outside its LUT domain raises (a quantization/wiring bug)."""
     g = Graph(

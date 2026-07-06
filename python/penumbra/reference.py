@@ -79,10 +79,21 @@ def _requant(op: RequantSpec, x: list[int]) -> list[int]:
     """Integer requant: ``clamp((max(v,0)*mult + round_bias) >> shift, 0, 2^out_bits-1)``.
 
     Mirrors ``requant.rs`` exactly: ReLU first, then the fixed-point multiply + round bias, then
-    the arithmetic right shift (floor — the value is non-negative here), then the clamp.
+    the arithmetic right shift (floor — the value is non-negative here), then the clamp. For a
+    per-channel Requant (``op.mults`` non-empty) each flat element ``idx`` uses its channel's
+    params (channel ``idx // channel_size``) — the same index math as the Rust eval, so the
+    per-channel path is bit-exact too.
     """
     ceil = (1 << op.out_bits) - 1
     out: list[int] = []
+    if op.mults:  # per-channel overlay
+        cs = op.channel_size
+        assert cs is not None  # RequantSpec.__post_init__ guarantees this when mults is set
+        for idx, v in enumerate(x):
+            ch = idx // cs
+            shifted = (max(v, 0) * op.mults[ch] + op.round_biases[ch]) >> op.shifts[ch]
+            out.append(min(max(shifted, 0), ceil))
+        return out
     for v in x:
         nonneg = max(v, 0)
         shifted = (nonneg * op.mult + op.round_bias) >> op.shift

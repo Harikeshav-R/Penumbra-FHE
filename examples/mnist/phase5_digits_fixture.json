@@ -1,7 +1,7 @@
 {
   "_comment": "Phase-5 example: a real torch CNN trained on real 8x8 handwritten digits (sklearn load_digits), quantized through penumbra.Model.quantize. The model is the serialized IR graph under 'graph'; the 10 logits are the graph output and the client argmaxes them. FHE output must equal these quantized-cleartext logits/labels bit-for-bit. 8x8 digits (not 28x28 MNIST) keep FHE latency feasible (see real_digits_export.py).",
   "graph": {
-    "schema_version": "0.5.0",
+    "schema_version": "0.6.0",
     "num_blocks": 11,
     "input_bits": 4,
     "inputs": [
@@ -189,16 +189,59 @@
         ],
         "op": {
           "op_type": "Requant",
-          "shift": 12,
-          "mult": 17,
-          "round_bias": 2048,
+          "shift": 0,
+          "mult": 1,
+          "round_bias": 0,
           "out_bits": 2,
           "clamp_lut": [
             0,
             1,
             2,
             3
-          ]
+          ],
+          "mults": [
+            31,
+            29,
+            17,
+            9,
+            29,
+            3,
+            25,
+            17,
+            25,
+            23,
+            27,
+            17
+          ],
+          "shifts": [
+            13,
+            13,
+            12,
+            12,
+            13,
+            10,
+            13,
+            13,
+            13,
+            13,
+            13,
+            12
+          ],
+          "round_biases": [
+            4096,
+            4096,
+            2048,
+            2048,
+            4096,
+            512,
+            4096,
+            4096,
+            4096,
+            4096,
+            4096,
+            2048
+          ],
+          "channel_size": 9
         }
       },
       {
@@ -1335,7 +1378,7 @@
   },
   "accuracy": {
     "float": 0.9638888888888889,
-    "quantized": 0.9305555555555556
+    "quantized": 0.9416666666666667
   },
   "test_inputs": [
     [
@@ -1477,28 +1520,28 @@
   ],
   "expected_logits": [
     [
-      -22,
-      -124,
-      79,
-      -68,
-      -48,
-      -127,
-      -59,
-      147,
-      -43,
-      8
+      -40,
+      -143,
+      43,
+      -60,
+      -28,
+      -96,
+      -51,
+      140,
+      -18,
+      11
     ],
     [
-      17,
-      -60,
-      -124,
-      -144,
-      -48,
-      -71,
-      79,
-      -153,
-      53,
-      -176
+      -18,
+      -64,
+      -88,
+      -111,
+      -52,
+      -66,
+      77,
+      -123,
+      59,
+      -147
     ]
   ]
 }

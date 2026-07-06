@@ -37,7 +37,12 @@ from typing import Any
 #
 # 0.5.0 generalized ``Requant`` to a fixed-point multiply-then-round-shift rescale (the
 # ``mult``/``round_bias`` fields on :class:`RequantSpec`) — a breaking schema change.
-SCHEMA_VERSION = "0.5.0"
+# 0.6.0 added an optional per-channel ``Requant`` overlay (``mults``/``shifts``/``round_biases``
+# + ``channel_size`` on :class:`RequantSpec`): one fixed-point multiplier per output channel, so
+# per-channel weight quantization rescales each channel by its true ratio. The fields are omitted
+# from the JSON when unused, so a per-tensor ``Requant`` (and every legacy fixture) serializes
+# byte-identically — but the version still bumps (a 0.6.0 reader is required to interpret them).
+SCHEMA_VERSION = "0.6.0"
 
 
 @dataclass(frozen=True)
@@ -84,6 +89,7 @@ class OpSpec:
         if op_type == "Argmax":
             return ArgmaxSpec(threshold=int(d["threshold"]))
         if op_type == "Requant":
+            cs = d.get("channel_size")
             return RequantSpec(
                 shift=int(d["shift"]),
                 # mult/round_bias are 0.5.0 additions; default to the legacy pure-shift
@@ -92,6 +98,11 @@ class OpSpec:
                 round_bias=int(d.get("round_bias", 0)),
                 out_bits=int(d["out_bits"]),
                 clamp_lut=[int(v) for v in d["clamp_lut"]],
+                # 0.6.0 per-channel overlay; absent -> empty (per-tensor scalar path).
+                mults=[int(v) for v in d.get("mults", [])],
+                shifts=[int(v) for v in d.get("shifts", [])],
+                round_biases=[int(v) for v in d.get("round_biases", [])],
+                channel_size=(int(cs) if cs is not None else None),
             )
         if op_type == "Pool":
             return PoolSpec(
@@ -277,6 +288,16 @@ class RequantSpec(OpSpec):
     the shift narrows it; that transient peak must still fit the radix. The bit-width tracker's
     Requant rule checks this internal peak (:func:`penumbra.bitwidth.requant_internal_bits`),
     mirroring the Rust ``Requant::internal_bits_n`` (``AGENTS.md`` §1.3).
+
+    Per-channel overlay (0.6.0). ``mults``/``shifts``/``round_biases`` + ``channel_size`` are an
+    optional overlay for **per-channel** weight quantization: each output channel carries its own
+    accumulator scale, so a single shared rescale is wrong for all but one channel. When the arrays
+    are non-empty they are indexed by channel — flat element ``idx`` uses channel
+    ``idx // channel_size`` — and the scalar ``shift``/``mult``/``round_bias`` are ignored.
+    ``channel_size`` is the elements-per-channel stride (``1`` for a ``Linear`` head,
+    ``out_h * out_w`` for a ``Conv2d``); it is on the wire because the runtime op sees only the
+    flat tensor, not the producing layer's shape. The arrays are omitted from :meth:`to_dict` when
+    empty, so a per-tensor Requant round-trips byte-identically.
     """
 
     shift: int
@@ -286,6 +307,11 @@ class RequantSpec(OpSpec):
     # the Rust struct's field order by `to_dict`. Defaults reproduce the legacy pure-shift.
     mult: int = 1
     round_bias: int = 0
+    # 0.6.0 per-channel overlay; empty/None = per-tensor (scalar) path, omitted from `to_dict`.
+    mults: list[int] = field(default_factory=list)
+    shifts: list[int] = field(default_factory=list)
+    round_biases: list[int] = field(default_factory=list)
+    channel_size: int | None = None
 
     op_type: str = field(init=False, default="Requant")
 
@@ -302,11 +328,42 @@ class RequantSpec(OpSpec):
             )
         if self.round_bias < 0:
             raise ValueError(f"RequantSpec round_bias must be non-negative, got {self.round_bias}")
+        # Per-channel overlay: if any part is present, all must be consistent (mirror Rust build).
+        has_pc = bool(self.mults or self.shifts or self.round_biases or self.channel_size)
+        if has_pc:
+            if not self.mults:
+                raise ValueError(
+                    "RequantSpec per-channel overlay present but `mults` is empty; supply one "
+                    "multiplier per output channel"
+                )
+            if len(self.shifts) != len(self.mults) or len(self.round_biases) != len(self.mults):
+                raise ValueError(
+                    "RequantSpec per-channel arrays must be equal length: "
+                    f"mults={len(self.mults)}, shifts={len(self.shifts)}, "
+                    f"round_biases={len(self.round_biases)}"
+                )
+            if self.channel_size is None or self.channel_size < 1:
+                raise ValueError(
+                    "RequantSpec per-channel overlay needs channel_size >= 1 (elements per "
+                    "channel: 1 for a Linear head, out_h*out_w for a Conv2d)"
+                )
+            for i, m in enumerate(self.mults):
+                if m < 1:
+                    raise ValueError(
+                        f"RequantSpec mults[{i}] = {m} must be >= 1 (a per-channel fixed-point "
+                        "multiplier; 1 is a pure shift)"
+                    )
+            for i, rb in enumerate(self.round_biases):
+                if rb < 0:
+                    raise ValueError(f"RequantSpec round_biases[{i}] = {rb} must be non-negative")
+            for i, s in enumerate(self.shifts):
+                if s < 0:
+                    raise ValueError(f"RequantSpec shifts[{i}] = {s} must be non-negative")
 
     def to_dict(self) -> dict[str, Any]:
         # Key order matches the Rust struct declaration (shift, mult, round_bias, out_bits,
         # clamp_lut) so the committed JSON diffs cleanly across languages.
-        return {
+        d: dict[str, Any] = {
             "op_type": self.op_type,
             "shift": self.shift,
             "mult": self.mult,
@@ -314,6 +371,14 @@ class RequantSpec(OpSpec):
             "out_bits": self.out_bits,
             "clamp_lut": self.clamp_lut,
         }
+        # Emit the per-channel overlay only when used, so a per-tensor Requant is byte-identical
+        # to 0.5.0 (mirrors the Rust `skip_serializing_if` guards) — keeps legacy fixtures stable.
+        if self.mults:
+            d["mults"] = self.mults
+            d["shifts"] = self.shifts
+            d["round_biases"] = self.round_biases
+            d["channel_size"] = self.channel_size
+        return d
 
 
 @dataclass(frozen=True)

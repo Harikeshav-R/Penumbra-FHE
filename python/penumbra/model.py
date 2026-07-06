@@ -45,10 +45,10 @@ import numpy as np
 
 from penumbra.bitwidth import (
     MESSAGE_BITS,
+    internal_bits,
     propagate_bit_widths,
-    requant_internal_bits,
 )
-from penumbra.compile import insert_requants
+from penumbra.compile import RequantChannelParams, insert_requants
 from penumbra.ir import SCHEMA_VERSION, Graph
 from penumbra.layers import Activation, Conv2d, Layer, LayerContext, Linear, QuantConfig
 from penumbra.quantization.calibration import (
@@ -210,6 +210,7 @@ class Model:
         shifts: dict[str, int] = {}
         mults: dict[str, int] = {}
         round_biases: dict[str, int] = {}
+        per_channel_params: dict[str, RequantChannelParams] = {}
         act_ceiling = (1 << cfg.act_bits) - 1
 
         i = 0
@@ -226,7 +227,7 @@ class Model:
                     "a standalone post-Requant Activation LUT is not yet supported by Model"
                 )
 
-            layer_nodes, out_scale, _out_len = layer.quantize(ctx)
+            layer_nodes, out_scale, _out_len, ch_scales = layer.quantize(ctx)
             nodes.extend(layer_nodes)
             ctx.tensor = layer_nodes[-1].outputs[0]
             ctx.scale = out_scale
@@ -266,17 +267,40 @@ class Model:
                     )
                 # This accumulator will be requantized (fused ReLU). Choose the rescale that maps
                 # the calibrated post-ReLU peak to the top of the act_bits domain, and thread the
-                # post-Requant activation scale to the downstream layer.
+                # post-Requant activation scale to the downstream layer. The activation scale is
+                # shared across channels (one activation domain / clamp LUT).
                 acc_scale = out_scale
                 peak = acc_peaks.get(i, 0.0)
                 act_scale = (peak / act_ceiling) if peak > 0 else acc_scale
-                mult, shift, round_bias = choose_requant_params(
-                    acc_scale, act_scale, out_bits=cfg.act_bits, max_mult_bits=cfg.max_mult_bits
-                )
                 acc_name = layer_nodes[-1].name
-                shifts[acc_name] = shift
-                mults[acc_name] = mult
-                round_biases[acc_name] = round_bias
+                if ch_scales is not None:
+                    # Per-channel: each output channel has its own accumulator scale, so each gets
+                    # its own fixed-point multiplier M_i = acc_scale_i / act_scale. This is the fix
+                    # for the max-scale rescale bug — non-max channels are no longer mis-rescaled.
+                    ch_mults, ch_shifts, ch_rbs = [], [], []
+                    for acc_scale_i in ch_scales:
+                        m_i, s_i, rb_i = choose_requant_params(
+                            acc_scale_i,
+                            act_scale,
+                            out_bits=cfg.act_bits,
+                            max_mult_bits=cfg.max_mult_bits,
+                        )
+                        ch_mults.append(m_i)
+                        ch_shifts.append(s_i)
+                        ch_rbs.append(rb_i)
+                    per_channel_params[acc_name] = RequantChannelParams(
+                        mults=ch_mults, shifts=ch_shifts, round_biases=ch_rbs
+                    )
+                else:
+                    mult, shift, round_bias = choose_requant_params(
+                        acc_scale,
+                        act_scale,
+                        out_bits=cfg.act_bits,
+                        max_mult_bits=cfg.max_mult_bits,
+                    )
+                    shifts[acc_name] = shift
+                    mults[acc_name] = mult
+                    round_biases[acc_name] = round_bias
                 ctx.scale = act_scale  # downstream reads post-Requant activations
                 i += 2  # consume the fused ReLU Activation with its accumulator
                 continue
@@ -295,7 +319,12 @@ class Model:
             nodes=nodes,
         )
         probed = insert_requants(
-            probe, shifts=shifts, mults=mults, round_biases=round_biases, out_bits=cfg.act_bits
+            probe,
+            shifts=shifts,
+            mults=mults,
+            round_biases=round_biases,
+            per_channel=per_channel_params,
+            out_bits=cfg.act_bits,
         )
         num_blocks = self._minimal_num_blocks(probed)
 
@@ -311,6 +340,7 @@ class Model:
             shifts=shifts,
             mults=mults,
             round_biases=round_biases,
+            per_channel=per_channel_params,
             out_bits=cfg.act_bits,
         )
 
@@ -331,10 +361,11 @@ class Model:
         widths = propagate_bit_widths(graph)
         peak_bits = max(widths.values())
         for node in graph.nodes:
-            op = node.op
-            if hasattr(op, "mult"):  # RequantSpec
-                in_bits = widths[node.inputs[0]]
-                peak_bits = max(peak_bits, requant_internal_bits(in_bits, op.mult, op.round_bias))
+            # internal_bits is a no-op (== output width) for non-Requant ops and returns the
+            # transient multiply peak for a Requant — aggregating over channels for a per-channel
+            # Requant, so a large per-channel multiplier is not silently under-budgeted here.
+            in_bits = [widths[name] for name in node.inputs]
+            peak_bits = max(peak_bits, internal_bits(node.op, in_bits))
         return max(2, (peak_bits + MESSAGE_BITS - 1) // MESSAGE_BITS)
 
     def _self_verify(self, graph: Graph, x: np.ndarray) -> None:

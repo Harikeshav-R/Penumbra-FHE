@@ -20,8 +20,16 @@ implementing (`AGENTS.md` §3.2). Do **not** add a binary format or compression 
 ## Versioning
 
 `SCHEMA_VERSION` is a string constant hardcoded identically in `ir.py` and `ir.rs`
-(currently **`"0.5.0"`**). On load, both sides check it and **fail loudly** on a mismatch
+(currently **`"0.6.0"`**). On load, both sides check it and **fail loudly** on a mismatch
 (`AGENTS.md` §1.4) — the version field is the forward-compatibility gate.
+
+> **0.6.0** added an optional **per-channel** overlay to `Requant` — the `mults`, `shifts`,
+> `round_biases` (one entry per output channel) and `channel_size` (elements per channel)
+> fields. It lets per-channel weight quantization rescale each output channel by its own
+> ratio, instead of one shared scalar rescale. All four are **omitted from the JSON when
+> unused**, so a per-tensor `Requant` (and every legacy fixture) serializes byte-identically —
+> but the version string still bumped, which is the breaking change (`AGENTS.md` §8): a 0.5.0
+> runtime rejects a 0.6.0 file and vice versa.
 
 > **0.5.0** generalized `Requant` from a power-of-two-only shift to a fixed-point
 > multiply-then-round-shift rescale, adding the `mult` and `round_bias` fields (both
@@ -75,7 +83,7 @@ so the ops themselves stay serialization-free.
 | `"Conv2d"` | `weights: [[int]]` (row-major `[out_channels][in_channels*kernel_h*kernel_w]`), `bias: [int]` (one per output channel), `weight_bits: int`, `in_h, in_w, in_channels, kernel_h, kernel_w, stride, padding: int` | 2-D convolution vs plaintext kernel. Input/output flat tensors use the channel-major, row-major layout (shared with `Pool`); zero padding is virtual. Kernel-width = fan-in and one-bias-per-channel validated at load. |
 | `"Activation"` | `lut: [int]` (indexed by input value), `output_bits: int` | Single-input LUT via PBS over a narrow domain. |
 | `"Argmax"` | `threshold: int` | 2-class threshold: label `1` iff `z ≥ threshold`. |
-| `"Requant"` | `shift: int`, `mult: int` (≥ 1, default 1), `round_bias: int` (≥ 0, default 0), `out_bits: int` (≤ `MESSAGE_BITS`), `clamp_lut: [int]` (`2^MESSAGE_BITS` entries, each `< 2^MESSAGE_BITS`) | Rescale a wide accumulator → narrow non-negative value: `clamp((max(x, 0) * mult + round_bias) >> shift, 0, 2^out_bits - 1)` (fused ReLU + fixed-point multiply-then-round-shift). `mult / 2^shift` approximates the real scale ratio; `mult = 1, round_bias = 0` is the legacy pure shift. LUT length / range, `mult ≥ 1`, `out_bits ≤ MESSAGE_BITS`, and the **internal peak** `max(x,0)*mult + round_bias ≤ radix capacity` all validated at load. |
+| `"Requant"` | `shift: int`, `mult: int` (≥ 1, default 1), `round_bias: int` (≥ 0, default 0), `out_bits: int` (≤ `MESSAGE_BITS`), `clamp_lut: [int]` (`2^MESSAGE_BITS` entries, each `< 2^MESSAGE_BITS`); **optional per-channel overlay** `mults: [int]`, `shifts: [int]`, `round_biases: [int]` (one per output channel), `channel_size: int` (≥ 1) | Rescale a wide accumulator → narrow non-negative value: `clamp((max(x, 0) * mult + round_bias) >> shift, 0, 2^out_bits - 1)` (fused ReLU + fixed-point multiply-then-round-shift). `mult / 2^shift` approximates the real scale ratio; `mult = 1, round_bias = 0` is the legacy pure shift. **Per-channel (0.6.0):** when `mults` is non-empty, flat element `idx` uses channel `idx / channel_size` — `clamp((max(x,0)*mults[ch] + round_biases[ch]) >> shifts[ch], …)` — and the scalar `shift`/`mult`/`round_bias` are ignored; `channel_size` is `1` for a `Linear` head, `out_h*out_w` for a `Conv2d`. The four overlay fields are omitted when per-tensor (byte-identical to 0.5.0). LUT length / range, `mult ≥ 1` (per channel too), `out_bits ≤ MESSAGE_BITS`, per-channel array-length consistency + `channel_size ≥ 1`, and the **internal peak** `max(x,0)*mult + round_bias ≤ radix capacity` (max over channels) all validated at load. |
 | `"Pool"` | `mode: string` (`"avg"`\|`"max"`), `in_h, in_w, channels, pool_h, pool_w, stride: int` | Spatial pooling over a flattened **channel-major, row-major** `[channels][in_h][in_w]` map. `avg` emits the window sum (the `/k` is deferred to `Requant`); `max` is pairwise max. Mode and window-fits-input validated at load. |
 | `"Add"` | *(none)* | Element-wise addition of **two** input tensors (residuals). The node carries two `inputs`; the payload is the bare `{"op_type": "Add"}`. Multi-input — see [Node](#node). |
 
@@ -99,7 +107,7 @@ layer produces `logit`, the threshold produces the output `label`:
 
 ```json
 {
-  "schema_version": "0.5.0",
+  "schema_version": "0.6.0",
   "num_blocks": 8,
   "input_bits": 4,
   "inputs": ["x"],

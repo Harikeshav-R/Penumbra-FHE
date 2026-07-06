@@ -99,10 +99,15 @@ The lowest-SQNR layers are the ones worth more bits or per-channel scales.
 
 Per-tensor uses **one scale per weight tensor**; per-channel uses **one scale per output channel**
 (`per_channel=True`). Per-channel keeps a small-magnitude output channel from being crushed by a
-large-magnitude one — the main accuracy lever per-tensor leaves on the table — and it stays
-entirely within the existing backend (each output row carries its own integer scale, folded into
-the int weights/bias and a single shared Requant). **Weights are always symmetric** (zero-point
-free); start per-tensor and turn on per-channel for weights if a layer's SQNR is low.
+large-magnitude one — the main accuracy lever per-tensor leaves on the table. Each output channel
+is quantized with its own weight scale, so its integer accumulator lives in its own units
+(`in_scale · weight_scale_ch`). Because that scale differs per channel, a single shared rescale
+would be wrong for all but one channel, so the fused `Requant` carries a **per-channel overlay**:
+one fixed-point multiplier `(mult, shift, round_bias)` per output channel (IR 0.6.0 — see
+`docs/IR-SPEC.md`). Every channel still narrows into the **same** activation domain (one shared
+`clamp_lut`/`out_bits`), so only the multiply-then-shift varies per channel. **Weights are always
+symmetric** (zero-point free); start per-tensor and turn on per-channel for weights if a layer's
+SQNR is low.
 
 ## The bit-width budget (why requantization exists)
 
