@@ -37,6 +37,31 @@ import numpy as np
 from penumbra.quantization.spec import QuantSpec, symmetric_spec
 
 
+def _rebin_counts(
+    counts: np.ndarray, old_peak: float, new_peak: float, num_bins: int
+) -> np.ndarray:
+    """Re-bin a fixed-range histogram from ``[0, old_peak]`` onto ``[0, new_peak]`` (peak grew).
+
+    The streaming observers keep an ``O(num_bins)`` histogram of ``|x|`` over ``[0, peak]``. When a
+    later batch grows ``peak``, the retained counts were binned against the *old* edges; leaving
+    them in place silently reinterprets their mass at the new, larger magnitudes — a huge
+    over-estimate (a batch of ``~1`` values followed by a single ``100`` reported ``p99 ~= 96``
+    instead of ``~1``). Since ``new_peak > old_peak`` the old range is a sub-range of the new one,
+    so each old bin's mass moves to a *lower* new-bin index. We map each old bin by its **right
+    edge** (``(i+1)/num_bins * old_peak``) into the new histogram: the new bin holding that edge
+    has a right edge ``>=`` the old one, so the percentile read-out stays an upper bound and never
+    under-clips (the module's documented safe direction).
+    """
+    new_counts = np.zeros(num_bins, dtype=np.int64)
+    if counts.sum() == 0:
+        return new_counts
+    # Right edge of each old bin, remapped to a new-bin index over [0, new_peak].
+    right_edges = np.arange(1, num_bins + 1) / num_bins * old_peak
+    new_idx = np.minimum((right_edges / new_peak * num_bins).astype(np.int64), num_bins - 1)
+    np.add.at(new_counts, new_idx, counts)
+    return new_counts
+
+
 class Observer(ABC):
     """Abstract range observer: fold in float batches, then emit a :class:`QuantSpec`.
 
@@ -100,9 +125,10 @@ class PercentileObserver(Observer):
 
     Memory: an exact percentile needs the samples, so a streaming observer must either retain
     them or histogram them. We use a **fixed-range running histogram** (``num_bins`` bins over
-    ``[0, hist_max]`` of ``|x|``) so memory is O(num_bins) regardless of data volume. The
-    histogram range auto-grows: if a batch exceeds the current ``hist_max`` the histogram is
-    rebuilt at a larger range (peaks are tracked exactly, so the top bin is never lost). The
+    ``[0, peak]`` of ``|x|``) so memory is O(num_bins) regardless of data volume. The histogram
+    range auto-grows: if a batch exceeds the current ``peak`` the retained counts are **re-binned**
+    onto the wider range (:func:`_rebin_counts`) *before* the new batch is folded in, so old mass
+    keeps its magnitude instead of being silently reinterpreted at the larger scale. The
     percentile is read as the right edge of the bin containing the target rank — an upper bound
     on the true percentile, so it never under-clips (it errs toward keeping range, the safe
     direction). Larger ``num_bins`` tightens the estimate.
@@ -125,12 +151,13 @@ class PercentileObserver(Observer):
             return
         mags = np.abs(values).ravel()
         batch_peak = float(np.max(mags))
-        # Grow the histogram range if this batch overflows it. We cannot re-bin past samples
-        # (their values are gone), but the existing counts are all <= the old peak <= new peak,
-        # so rescaling their bin *edges* up is a conservative widening: each old bin's mass moves
-        # to a bin at >= its old magnitude, which can only push the percentile estimate outward
-        # (toward keeping range — the safe direction). Rebuild edges, keep counts in place.
+        # Grow the histogram range if this batch overflows it, re-binning the retained counts onto
+        # the wider range first so their mass keeps its true magnitude (see _rebin_counts). This is
+        # the fix for the streaming bug where old counts left in place get reinterpreted at the new
+        # larger peak, inflating the percentile ~100x.
         if batch_peak > self._peak:
+            if self._peak > 0.0:
+                self._counts = _rebin_counts(self._counts, self._peak, batch_peak, self.num_bins)
             self._peak = batch_peak
         self._counts += np.histogram(mags, bins=self.num_bins, range=(0.0, self._peak))[0].astype(
             np.int64
@@ -161,7 +188,8 @@ class MSEObserver(Observer):
     is deferred to :meth:`spec`, when ``bits``/``signed`` are known.
 
     Memory/search: like :class:`PercentileObserver` it keeps a fixed-range running histogram of
-    ``|x|`` (the MSE of a symmetric quantizer depends only on the magnitude distribution). At
+    ``|x|`` (re-binned on peak growth via :func:`_rebin_counts`, so streaming multiple
+    peak-growing batches gives the same clip as one-shot). At
     ``spec`` time it sweeps a **grid of candidate maxima** — ``grid_size`` fractions of the
     observed peak, ``peak * i / grid_size`` for ``i = 1..grid_size`` — simulates symmetric
     quantize->dequantize of the histogram at each candidate, and returns the min-MSE clip. The
@@ -190,7 +218,11 @@ class MSEObserver(Observer):
             return
         mags = np.abs(values).ravel()
         batch_peak = float(np.max(mags))
+        # Re-bin retained counts onto the wider range on peak growth (see _rebin_counts), so the
+        # histogram the MSE sweep reads keeps each bin's true magnitude across streaming batches.
         if batch_peak > self._peak:
+            if self._peak > 0.0:
+                self._counts = _rebin_counts(self._counts, self._peak, batch_peak, self.num_bins)
             self._peak = batch_peak
         self._counts += np.histogram(mags, bins=self.num_bins, range=(0.0, self._peak))[0].astype(
             np.int64

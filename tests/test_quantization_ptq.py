@@ -118,6 +118,50 @@ def test_percentile_observer_streaming_range_growth() -> None:
     assert pct.magnitude() >= 50.0 - 1e-9
 
 
+def test_percentile_observer_streaming_rebins_on_peak_growth() -> None:
+    """A peak-growing later batch must NOT inflate the percentile of the earlier bulk.
+
+    Regression guard for the re-binning bug: with 1000 values near 1.0 then a single 100.0, the
+    99th percentile of the *combined* set is still ~1.0 (the 100.0 is the top ~0.1%). Before the
+    fix the earlier bulk's counts stayed at their old bin indices and were reinterpreted at the
+    new peak (~100x), reporting p99 ~= 96. The estimate must stay a tight upper bound near 1.0,
+    matching a one-shot observer over the same data.
+    """
+    data = np.concatenate([np.full(1000, 1.0), np.array([100.0])])
+
+    streamed = PercentileObserver(99.0, num_bins=2048)
+    streamed.update(np.full(1000, 1.0))
+    streamed.update(np.array([100.0]))  # grows the peak 1 -> 100
+
+    one_shot = PercentileObserver(99.0, num_bins=2048)
+    one_shot.update(data)
+
+    # p99 sits in the bulk near 1.0 (one bin of 100/2048 ~= 0.05 slack), nowhere near 100.
+    assert streamed.magnitude() < 2.0
+    # Streaming with peak growth agrees with the one-shot histogram (both bin over [0, 100]).
+    assert streamed.magnitude() == pytest.approx(one_shot.magnitude())
+
+
+def test_mse_observer_streaming_rebins_on_peak_growth() -> None:
+    """MSEObserver's clip is unaffected by batch order once the peak has grown (re-binning)."""
+    rng = np.random.default_rng(3)
+    bulk = rng.normal(0.0, 1.0, size=50_000)
+    tail = np.array([80.0])  # a lone far outlier that grows the peak
+    data = np.concatenate([bulk, tail])
+
+    streamed = MSEObserver(grid_size=200, num_bins=4096)
+    streamed.update(bulk)
+    streamed.update(tail)  # grows the peak ~5 -> 80
+    streamed.spec(4, signed=True)
+
+    one_shot = MSEObserver(grid_size=200, num_bins=4096)
+    one_shot.update(data)
+    one_shot.spec(4, signed=True)
+
+    # Same histogram after re-binning -> same MSE-optimal clip regardless of streaming order.
+    assert streamed.magnitude() == pytest.approx(one_shot.magnitude())
+
+
 def test_mse_observer_picks_subpeak_clip_on_gaussian() -> None:
     """On a Gaussian, MSE clips below the empirical peak and lowers round-trip MSE vs no-clip."""
     rng = np.random.default_rng(0)
