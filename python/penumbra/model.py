@@ -64,6 +64,29 @@ from penumbra.reference import evaluate_graph_int
 # Accumulator layer types whose output is rescaled by a (possibly ReLU-fused) Requant.
 _ACCUMULATOR_LAYERS = (Conv2d, Linear)
 
+
+def _is_relu_like(fn: object) -> bool:
+    """True if ``fn`` behaves like a ReLU (``max(x, 0)``) on a sampled probe.
+
+    The fused-requant path realizes an accumulator's following ``Activation`` as the Requant's
+    hard ``max(x, 0)`` (``runtime/src/ops/requant.rs``), so fusing a *non*-ReLU activation
+    (sigmoid, tanh, ...) would silently compute the wrong function — the exported graph diverges
+    from the float model even though the integer oracle (also ReLU) still agrees, hiding the bug.
+    ``Activation.fn`` is an opaque ``Callable`` (production ReLUs are lambdas, so a name check is
+    useless), so we verify it *behaviorally*: negatives clamp to 0 and non-negatives pass through
+    unchanged. Sampling a handful of points is enough to reject the common non-ReLU activations
+    while accepting every ReLU form the examples use.
+    """
+    probes = [-100.0, -3.5, -1.0, -1e-6, 0.0, 1e-6, 1.0, 2.5, 7.0, 100.0]
+    try:
+        for x in probes:
+            if abs(float(fn(x)) - max(x, 0.0)) > 1e-9:  # type: ignore[operator]
+                return False
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 # Named calibration strategies for the post-ReLU activation range an accumulator's Requant
 # targets. MinMax (no clipping) is the reproducible default; percentile/MSE clip outliers, which
 # can materially help accuracy when activations are heavy-tailed (``PROJECT.md`` §8).
@@ -208,12 +231,39 @@ class Model:
             ctx.tensor = layer_nodes[-1].outputs[0]
             ctx.scale = out_scale
 
-            followed_by_relu = (
+            followed_by_activation = (
                 isinstance(layer, _ACCUMULATOR_LAYERS)
                 and i + 1 < n_layers
                 and isinstance(self.layers[i + 1], Activation)
             )
-            if followed_by_relu:
+            if followed_by_activation:
+                # The fused-requant path realizes the Activation as the Requant's hard max(x, 0)
+                # (`runtime/src/ops/requant.rs`), so it is only correct for a ReLU. Verify the
+                # activation behaves like a ReLU before fusing — a sigmoid/tanh would otherwise be
+                # silently replaced by a ReLU (`AGENTS.md` §1.4). See `_is_relu_like`.
+                act = self.layers[i + 1]
+                assert isinstance(act, Activation)
+                if not _is_relu_like(act.fn):
+                    raise ValueError(
+                        f"Activation at layer {i + 1} (following the accumulator at layer {i}) is "
+                        "not a ReLU. Model only supports fusing a ReLU into the preceding layer's "
+                        "Requant (it applies max(x, 0)); a non-ReLU activation would be silently "
+                        "computed as a ReLU. Use a ReLU here, or drop the activation."
+                    )
+                # A ReLU on the *terminal* accumulator cannot be fused: the head is left wide (its
+                # accumulator output is a graph output, so `insert_requants` inserts no Requant —
+                # logits are decrypted and argmaxed client-side, `PROJECT.md` §11). Fusing here
+                # would need a terminal Requant that narrows the logits to act_bits, which is wrong
+                # for a classification head. Rather than silently drop the ReLU, fail loudly
+                # (`AGENTS.md` §1.4): the ReLU has nowhere to go.
+                if i + 2 >= n_layers:
+                    raise ValueError(
+                        f"the terminal ReLU at layer {i + 1} cannot be fused: it follows the final "
+                        f"accumulator (layer {i}), whose output is the model's wide logit head "
+                        "(left un-narrowed for client-side argmax, `PROJECT.md` §11). A trailing "
+                        "ReLU has no Requant to fuse into — drop it (argmax is unaffected by a "
+                        "monotonic ReLU on the logits), or add a layer after it."
+                    )
                 # This accumulator will be requantized (fused ReLU). Choose the rescale that maps
                 # the calibrated post-ReLU peak to the top of the act_bits domain, and thread the
                 # post-Requant activation scale to the downstream layer.

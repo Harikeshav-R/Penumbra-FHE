@@ -119,6 +119,46 @@ def test_activation_without_accumulator_fails():
         model.quantize(np.random.default_rng(0).uniform(0, 16, size=(8, 4)), n_bits=4)
 
 
+def test_non_relu_activation_fusion_rejected():
+    """A non-ReLU activation after an accumulator fails loudly — the Requant only fuses a ReLU.
+
+    Guard for the silent-wrong-function bug: the fused Requant applies max(x, 0), so a sigmoid
+    would be computed as a ReLU. `Model.quantize` verifies the activation is ReLU-like and raises.
+    """
+    rng = np.random.default_rng(11)
+
+    def _sigmoid(x: float) -> float:
+        return 1.0 / (1.0 + np.exp(-x))
+
+    model = Model(
+        [
+            Linear(weight=rng.normal(size=(8, 8)), bias=rng.normal(size=8)),
+            Activation(_sigmoid),
+            Linear(weight=rng.normal(size=(10, 8)), bias=rng.normal(size=10)),
+        ],
+        input_bits=4,
+    )
+    cal = rng.uniform(0.0, 16.0, size=(32, 8))
+    with pytest.raises(ValueError, match="not a ReLU"):
+        model.quantize(cal, n_bits=4, act_bits=2)
+
+
+def test_terminal_relu_fusion_rejected():
+    """A trailing ReLU on the final accumulator fails loudly — it has no Requant to fuse into.
+
+    Guard for the silent-layer-loss bug: `[Linear, Activation(relu)]` used to consume the ReLU
+    (i += 2) but emit no terminal Requant (the head is left wide), silently dropping the ReLU.
+    """
+    rng = np.random.default_rng(12)
+    model = Model(
+        [Linear(weight=rng.normal(size=(3, 8)), bias=rng.normal(size=3)), Activation(_relu)],
+        input_bits=4,
+    )
+    cal = rng.uniform(0.0, 16.0, size=(32, 8))
+    with pytest.raises(ValueError, match="terminal ReLU"):
+        model.quantize(cal, n_bits=4, act_bits=2)
+
+
 def _float_forward(layers, x):
     """Plain float forward through a list of penumbra float layers (the reference to track)."""
     acts = x
