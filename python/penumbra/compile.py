@@ -120,8 +120,14 @@ def insert_requants(
     rewire: dict[str, str] = {}
 
     for node in graph.nodes:
-        # Rewire this node's inputs to any requantized upstream tensors.
-        if any(name in rewire for name in node.inputs):
+        # Rewire this node's inputs to any requantized upstream tensors — but ONLY for narrow-input
+        # ops. A wide-input op (Argmax) must keep reading the original *wide* logit even when the
+        # producer fans out to a narrow consumer that triggered a Requant: rewiring it to the
+        # narrowed `__rq` tensor would silently threshold a value clamped to `2^act_bits - 1`,
+        # making a high threshold unreachable (a silent classification error). The insertion gate
+        # (`consumed_by_narrow`) already excludes Argmax from *forcing* a Requant; this excludes it
+        # from *consuming* one.
+        if not isinstance(node.op, _WIDE_INPUT_OPS) and any(name in rewire for name in node.inputs):
             node = replace(node, inputs=[rewire.get(name, name) for name in node.inputs])
         new_nodes.append(node)
 
