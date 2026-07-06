@@ -36,3 +36,5 @@ data/             # downloaded datasets (MNIST, faces, ...)
 
 # ---- Agent / session scaffolding (local only, never tracked) ----
 .claude/
+# local code-review notes — not project source
+CODE_REVIEW_*.md
