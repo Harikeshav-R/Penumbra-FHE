@@ -448,6 +448,34 @@ def test_choose_requant_params_rejects_bad_scales() -> None:
         choose_requant_params(1.0, -1.0)
 
 
+def test_choose_requant_params_rejects_amplifying_ratio() -> None:
+    """ratio > 1 (would amplify) is rejected loudly — a Requant only narrows (`AGENTS.md` §1.4).
+
+    Regression guard: the search could otherwise return an amplifying ``(mult>1, shift=0)`` for a
+    ratio just above 1, or silently collapse a large ratio to the identity ~1.0. Both are wrong;
+    an amplifying rescale is now a loud error, not a silent one.
+    """
+    # A modest amplification (2.5x) that used to yield (mult=2, shift=0) ~= 2.0.
+    with pytest.raises(ValueError, match="only narrows|cannot amplify"):
+        choose_requant_params(2.5, 1.0)
+    # A large ratio (100x) that used to silently collapse to ~1.0.
+    with pytest.raises(ValueError, match="only narrows|cannot amplify"):
+        choose_requant_params(100.0, 1.0)
+
+
+def test_choose_requant_params_never_amplifies_for_narrowing_ratio() -> None:
+    """For every narrowing ratio (<= 1) the chosen mult/2**shift never exceeds 1 (narrows-only)."""
+    for acc, out in [(1.0, 1.0), (0.99, 1.0), (0.85, 1.0), (0.7, 1.0), (1.0, 64.0), (1.0, 3.0)]:
+        mult, shift, _ = choose_requant_params(acc, out, max_mult_bits=6)
+        assert mult / (1 << shift) <= 1.0 + 1e-9, (acc, out, mult, shift)
+
+
+def test_choose_requant_params_ratio_one_is_identity() -> None:
+    """ratio == 1 (acc_scale == out_scale) yields the no-op pure shift (mult=1, shift=0)."""
+    mult, shift, round_bias = choose_requant_params(1.0, 1.0)
+    assert (mult, shift, round_bias) == (1, 0, 0)
+
+
 # ======================================================================================
 # Edge cases
 # ======================================================================================

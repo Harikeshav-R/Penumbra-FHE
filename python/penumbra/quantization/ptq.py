@@ -241,9 +241,23 @@ def choose_requant_params(
     if max_mult_bits < 1:
         raise ValueError(f"max_mult_bits must be >= 1, got {max_mult_bits}")
 
-    ratio = acc_scale / out_scale  # the real rescale M (expected <= 1: narrowing a wide acc)
+    ratio = acc_scale / out_scale  # the real rescale M (must be <= 1: narrowing a wide acc)
     if ratio <= 0:
         raise ValueError(f"rescale ratio must be positive, got {ratio}")
+    # A Requant only ever *narrows* a wide accumulator down to the activation domain, so the real
+    # rescale is <= 1. An amplifying request (ratio > 1) has no faithful (mult, shift) form here:
+    # the search would either return an amplifying (mult>1, shift=0) — silently violating the
+    # narrows-only contract — or, for a large ratio, collapse to the identity ~1.0 (dropping the
+    # requested rescale). Reject it loudly (`AGENTS.md` §1.4) rather than emit a wrong rescale; a
+    # small floating-point overshoot above 1 is tolerated and treated as the ratio==1 no-op below.
+    if ratio > 1.0 + 1e-9:
+        raise ValueError(
+            f"rescale ratio {ratio:.6g} > 1 (acc_scale={acc_scale:.6g} > out_scale={out_scale:.6g})"
+            ": a Requant only narrows a wide accumulator, it cannot amplify. This means the target "
+            "activation scale is finer than the accumulator scale — raise act_bits, or check the "
+            "calibrated activation range."
+        )
+    ratio = min(ratio, 1.0)  # clamp a tiny fp overshoot so log2 stays <= 0 (a pure no-op shift)
 
     # Candidate 1: the pure power-of-two shift (mult = 1). shift = round(-log2(ratio)), clamped
     # to >= 0 (a Requant only narrows). This is the legacy, zero-extra-width path.
