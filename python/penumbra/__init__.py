@@ -53,6 +53,7 @@ from penumbra.ir import (
 )
 from penumbra.layers import Activation, Conv2d, Linear, Pool, QuantConfig
 from penumbra.model import Model
+from penumbra.onnx_loader import UnsupportedModelError, load_onnx
 from penumbra.reference import evaluate_graph_int
 
 __version__ = "0.0.0"
@@ -87,6 +88,7 @@ __all__ = [
     "Activation",
     "QuantConfig",
     "evaluate_graph_int",
+    # ONNX front door: parse + validate + lower a .onnx to a Model (Phase 6, PROJECT.md §10)
+    "load_onnx",
+    "UnsupportedModelError",
 ]
-
-# TODO(phase-6): re-export `load_onnx`.
