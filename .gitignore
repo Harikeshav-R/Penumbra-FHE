@@ -22,11 +22,19 @@ venv/
 .env
 
 # ---- Penumbra artifacts ----
-*.fhe             # serialized IR / exported models
-*.onnx            # exported model artifacts (examples regenerate these)
-*.key             # crypto key material — never commit
+# NOTE: gitignore does not support inline comments — a trailing `# ...` becomes part of the
+# pattern, so these must stand on their own lines to actually match.
+*.fhe
+# serialized IR / exported models
+*.onnx
+# exported model artifacts (examples regenerate these) — EXCEPT the small committed ONNX
+# fixture the loader's framework-proof test reloads in CI (tests/test_onnx_fixture.py).
+!examples/mnist/digit_cnn.onnx
+*.key
+# crypto key material — never commit
 *.ckpt
-data/             # downloaded datasets (MNIST, faces, ...)
+# downloaded datasets (MNIST, faces, ...)
+data/
 
 # ---- Editors / OS ----
 .idea/
