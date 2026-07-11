@@ -329,7 +329,7 @@ def _lower_chain(
         elif node.op_type == "Conv":
             layers.append(_lower_conv(node, consts, shapes, act_in))
         elif node.op_type in ("Gemm", "MatMul"):
-            layers.append(_lower_linear(node, consts))
+            layers.append(_lower_linear(node, consts, act_in))
         elif cat == op_registry.CAT_ACTIVATION:  # Relu
             layers.append(Activation(lambda v: max(v, 0.0)))
         elif cat == op_registry.CAT_POOL:
@@ -356,9 +356,15 @@ def _activation_input(node: onnx.NodeProto, consts: dict[str, np.ndarray]) -> st
 
 
 def _nonbatch(
-    name: str, shapes: dict[str, tuple[int | None, ...]], node_name: str
+    name: str, shapes: dict[str, tuple[int | None, ...]], node_name: str, *, expect: int
 ) -> tuple[int, ...]:
-    """Non-batch dims of a tensor, all resolved to concrete ints (raises loudly otherwise)."""
+    """The ``expect`` non-batch dims of a tensor, resolved to concrete ints (else raises loudly).
+
+    ``expect`` is the required non-batch rank (3 = NCHW for both Conv and 2-D Pool). A tensor with
+    a different rank — e.g. a 1-D (NCL) or 3-D (NCDHW) pool, both valid ONNX that pass
+    ``onnx.checker`` — is rejected here with an actionable message (``AGENTS.md`` §1.4) rather than
+    crashing on the caller's fixed-arity tuple unpack.
+    """
     shape = shapes.get(name)
     if shape is None or len(shape) < 2:
         raise UnsupportedModelError(
@@ -368,6 +374,14 @@ def _nonbatch(
             ]
         )
     nonbatch = shape[1:]
+    if len(nonbatch) != expect:
+        raise UnsupportedModelError(
+            [
+                f"node {node_name!r}: input tensor {name!r} has shape {shape} with {len(nonbatch)} "
+                f"non-batch dims; only {expect}-D feature maps (NCHW, i.e. 2-D conv/pool) are "
+                "supported"
+            ]
+        )
     if any(d is None for d in nonbatch):
         raise UnsupportedModelError(
             [
@@ -396,7 +410,7 @@ def _lower_conv(
     if len(node.input) >= 3 and node.input[2]:
         bias = np.asarray(consts[node.input[2]], dtype=np.float64)
 
-    in_ch, in_h, in_w = _nonbatch(act_in, shapes, name)
+    in_ch, in_h, in_w = _nonbatch(act_in, shapes, name, expect=3)
     if weight.shape[1] != in_ch:
         raise UnsupportedModelError(
             [
@@ -419,9 +433,25 @@ def _lower_conv(
     )
 
 
-def _lower_linear(node: onnx.NodeProto, consts: dict[str, np.ndarray]) -> Linear:
-    """Gemm/MatMul -> layers.Linear with weight resolved to (n_out, n_in) and optional bias."""
+def _lower_linear(node: onnx.NodeProto, consts: dict[str, np.ndarray], act_in: str) -> Linear:
+    """Gemm/MatMul -> layers.Linear with weight resolved to (n_out, n_in) and optional bias.
+
+    The weight is the *constant* matrix operand and the activation is ``act_in``. A dense layer
+    ``x @ W`` exports with the activation as the first operand (``input[0]``), which is the case
+    the lowering supports. ``MatMul`` is operand-symmetric, so a weight-first ``W @ x`` (constant at
+    ``input[0]``, activation at ``input[1]``) is also valid ONNX but lowers to a different layout
+    (``y = W @ x`` is not ``x @ W.T``); rather than index ``input[1]`` blindly (a raw ``KeyError``
+    when the weight is at ``input[0]``), reject it loudly (``AGENTS.md`` §1.4).
+    """
     name = node.name or f"<{node.op_type}>"
+    if not node.input or node.input[0] != act_in:
+        raise UnsupportedModelError(
+            [
+                f"{node.op_type} (node {name!r}): the activation must be the first operand "
+                f"(x @ W); a weight-first {node.op_type} (W @ x) lowers to a different layout and "
+                "is not supported (transpose the export, or Phase 8)"
+            ]
+        )
     b = np.asarray(consts[node.input[1]], dtype=np.float64)
     if b.ndim != 2:
         raise UnsupportedModelError(
@@ -452,7 +482,7 @@ def _lower_pool(
 ) -> Pool:
     """MaxPool/AveragePool/GlobalAveragePool -> layers.Pool (avg emits the window sum)."""
     name = node.name or f"<{node.op_type}>"
-    channels, in_h, in_w = _nonbatch(act_in, shapes, name)
+    channels, in_h, in_w = _nonbatch(act_in, shapes, name, expect=3)
     mode = "max" if node.op_type == "MaxPool" else "avg"
 
     if node.op_type == "GlobalAveragePool":

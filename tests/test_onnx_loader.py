@@ -20,7 +20,7 @@ import onnx
 from onnx import TensorProto, helper, numpy_helper
 
 import penumbra as fhe
-from penumbra.layers import Activation, Conv2d
+from penumbra.layers import Activation, Conv2d, Pool
 from penumbra.reference import evaluate_graph_int
 
 OPSET = 13
@@ -132,6 +132,60 @@ def test_lowers_conv_relu_flatten_gemm(tmp_path):
     assert isinstance(conv, Conv2d)
     assert conv.weight.shape == (3, 1, 3, 3)
     assert (conv.in_h, conv.in_w, conv.in_channels, conv.stride, conv.padding) == (8, 8, 1, 2, 0)
+
+
+def test_lowers_conv_maxpool_flatten_gemm(tmp_path):
+    """Conv -> MaxPool -> Flatten -> Gemm lowers the MaxPool to a Pool('max') with the right fields.
+
+    Guards the pooling lowering path (`_lower_pool`): a MaxPool's kernel/stride and the input
+    feature dims (from shape inference) must land on `layers.Pool`. Conv 1->2ch, 3x3 stride-1 on
+    8x8 -> 6x6; MaxPool 2x2 stride-2 -> 3x3; Flatten -> 2*3*3 = 18 features into the Gemm.
+    """
+    rng = np.random.default_rng(6)
+    wc = rng.normal(size=(2, 1, 3, 3))  # (out, in, kh, kw); stride-1 on 8x8 -> 6x6
+    wg = rng.normal(size=(4, 2 * 3 * 3))  # 2 channels * 3x3 pooled map = 18 features
+    nodes = [
+        helper.make_node("Conv", ["x", "wc"], ["c"], name="conv1", strides=[1, 1], group=1),
+        helper.make_node(
+            "MaxPool", ["c"], ["p"], name="pool1", kernel_shape=[2, 2], strides=[2, 2]
+        ),
+        helper.make_node("Flatten", ["p"], ["f"], name="flat", axis=1),
+        helper.make_node("Gemm", ["f", "wg"], ["y"], name="fc", transB=1),
+    ]
+    inits = [_f32(wc, "wc"), _f32(wg, "wg")]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 8, 8])], [_vi("y", [1, 4])], tmp_path)
+
+    model = fhe.load_onnx(path)
+    assert [type(layer).__name__ for layer in model.layers] == ["Conv2d", "Pool", "Linear"]
+    pool = model.layers[1]
+    assert isinstance(pool, Pool)
+    assert pool.mode == "max"
+    assert (pool.channels, pool.in_h, pool.in_w) == (2, 6, 6)
+    assert (pool.pool_h, pool.pool_w, pool.stride) == (2, 2, 2)
+
+
+def test_lowers_global_average_pool(tmp_path):
+    """GlobalAveragePool lowers to a Pool('avg') whose window is the whole feature map."""
+    rng = np.random.default_rng(7)
+    wc = rng.normal(size=(3, 1, 3, 3))  # stride-1 on 8x8 -> 6x6, 3 channels
+    wg = rng.normal(size=(4, 3))  # GAP collapses each channel's 6x6 map to 1 value -> 3 features
+    nodes = [
+        helper.make_node("Conv", ["x", "wc"], ["c"], name="conv1", strides=[1, 1], group=1),
+        helper.make_node("GlobalAveragePool", ["c"], ["g"], name="gap"),
+        helper.make_node("Flatten", ["g"], ["f"], name="flat", axis=1),
+        helper.make_node("Gemm", ["f", "wg"], ["y"], name="fc", transB=1),
+    ]
+    inits = [_f32(wc, "wc"), _f32(wg, "wg")]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 8, 8])], [_vi("y", [1, 4])], tmp_path)
+
+    model = fhe.load_onnx(path)
+    assert [type(layer).__name__ for layer in model.layers] == ["Conv2d", "Pool", "Linear"]
+    pool = model.layers[1]
+    assert isinstance(pool, Pool)
+    # avg mode; the window spans the whole 6x6 map (kernel = full spatial size) -> a 1x1 output.
+    assert pool.mode == "avg"
+    assert (pool.channels, pool.in_h, pool.in_w) == (3, 6, 6)
+    assert (pool.pool_h, pool.pool_w) == (6, 6)
 
 
 def test_terminal_softmax_and_reshape_are_dropped_and_folded(tmp_path):

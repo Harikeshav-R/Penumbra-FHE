@@ -158,3 +158,32 @@ def test_terminal_relu_fails_in_quantize(tmp_path):
     model = fhe.load_onnx(path)
     with pytest.raises(ValueError, match="terminal ReLU"):
         model.quantize(np.random.default_rng(0).uniform(0, 16, size=(16, 4)), n_bits=4)
+
+
+def test_weight_first_matmul_fails_loudly(tmp_path):
+    """A weight-first MatMul (W @ x, constant at input[0]) is rejected, not a raw KeyError.
+
+    MatMul is operand-symmetric, so the constant weight can be the *first* operand. Our lowering
+    supports only the activation-first ``x @ W`` layout; the weight-first form must fail loudly
+    (``AGENTS.md`` §1.4) rather than crash indexing ``input[1]`` (which is the activation here).
+    """
+    w = np.eye(4)
+    # `w` is input[0] (constant), `x` is input[1] (activation) — i.e. y = W @ x.
+    nodes = [helper.make_node("MatMul", ["w", "x"], ["y"], name="mm")]
+    path = _model(nodes, [_f32(w, "w")], [_vi("x", [4, 1])], [_vi("y", [4, 1])], tmp_path)
+    with pytest.raises(UnsupportedModelError, match="first operand"):
+        fhe.load_onnx(path)
+
+
+def test_1d_pool_fails_loudly(tmp_path):
+    """A 1-D pool (NCL activation) is rejected loudly, not a raw tuple-unpack ValueError.
+
+    1-D pooling is valid ONNX (passes ``onnx.checker``) but its activation has only 2 non-batch
+    dims, not the 3 (NCHW) the 2-D ``Pool`` layer needs. The loader must name the rank problem
+    (``AGENTS.md`` §1.4) instead of crashing on ``channels, in_h, in_w = _nonbatch(...)``.
+    """
+    # (N, C, L) = (1, 3, 8); a 1-D MaxPool over the length axis.
+    nodes = [helper.make_node("MaxPool", ["x"], ["y"], name="p", kernel_shape=[2], strides=[2])]
+    path = _model(nodes, [], [_vi("x", [1, 3, 8])], [_vi("y", [1, 3, 4])], tmp_path)
+    with pytest.raises(UnsupportedModelError, match="non-batch dims|2-D"):
+        fhe.load_onnx(path)
