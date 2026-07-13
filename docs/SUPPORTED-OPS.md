@@ -106,6 +106,7 @@ equals `op_registry.supported_onnx_ops()` exactly, so doc and validator never dr
 | `Reshape` | dropped (layout no-op) | must not reorder the flat channel-major vector |
 | `Flatten` | dropped (layout no-op) | — |
 | `Transpose` | dropped (layout no-op) | `perm` must not change flat element order (else rejected) |
+| `Cast` | dropped (layout no-op) | `to` must be a floating type (int/bool cast rejected) |
 | `Softmax` | dropped (terminal) | must be the graph-output node; client argmaxes the wide logits |
 | `LogSoftmax` | dropped (terminal) | must be the graph-output node |
 | `Sigmoid` | dropped (terminal) | must be the graph-output node |
@@ -126,9 +127,21 @@ equals `op_registry.supported_onnx_ops()` exactly, so doc and validator never dr
   `PROJECT.md` §11), so they emit no op. A *non-terminal* one is a real activation and is rejected.
 - **Layout ops fold to nothing.** The runtime carries a flat channel-major vector and is
   shape-blind, so `Reshape`/`Flatten` (and an order-preserving `Transpose`) between a conv and a
-  dense layer are identity on the wire. A genuinely reordering `Transpose` is rejected.
+  dense layer are identity on the wire. A genuinely reordering `Transpose` is rejected. A `Cast`
+  to a floating type is likewise an identity on the real-valued wire (exporters routinely emit one
+  at the input — skl2onnx casts the input to float) and folds away; a cast to an int/bool type
+  changes the value and is rejected.
 - **No new dependency, no new crypto.** `onnx>=1.16` is already a core dep; the loader is pure
   Python (NumPy + `onnx`). It does not touch `runtime/` or the IR schema.
+- **Two frameworks, one front door ("train anywhere").** The same `load_onnx` lowers a **PyTorch**
+  CNN (`examples/mnist/onnx_export.py` → `Conv2d → Requant → Linear`) and a **scikit-learn** linear
+  classifier (`examples/mnist/sklearn_export.py`, exported with `skl2onnx` → a single `Linear`, the
+  leading `Cast` folded away) with no framework-specific code — the ONNX waist is the only
+  integration point. Each has a committed fixture and an FHE bit-for-bit golden gate
+  (`runtime/tests/golden_onnx.rs`, `golden_sklearn.rs`). Note: `skl2onnx` lowers
+  `LogisticRegression`/`MLPClassifier` to the `ai.onnx.ml` custom-op domain (`LinearClassifier`,
+  `ZipMap`) with a two-output graph — outside the supported subset; a no-hidden-layer regressor
+  exports as a clean single-output `ai.onnx` graph, which is the supported shape.
 
 ## Planned (later phases)
 

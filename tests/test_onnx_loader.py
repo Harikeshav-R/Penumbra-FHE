@@ -188,6 +188,26 @@ def test_lowers_global_average_pool(tmp_path):
     assert (pool.pool_h, pool.pool_w) == (6, 6)
 
 
+def test_leading_float_cast_folds_away(tmp_path):
+    """A leading Cast(to=FLOAT) — as skl2onnx emits at the input — folds to a layout no-op.
+
+    Exporters routinely insert a dtype-normalizing Cast at the graph input; casting to a float type
+    is identity on Penumbra's real-valued wire, so it must emit no layer and leave the dense chain
+    intact (Cast -> Gemm lowers to just Linear).
+    """
+    rng = np.random.default_rng(8)
+    w = rng.normal(size=(4, 6))  # (n_out, n_in), transB=1
+    nodes = [
+        helper.make_node("Cast", ["x"], ["xf"], name="cast", to=TensorProto.FLOAT),
+        helper.make_node("Gemm", ["xf", "w"], ["y"], name="fc", transB=1),
+    ]
+    path = _save(nodes, [_f32(w, "w")], [_vi("x", [1, 6])], [_vi("y", [1, 4])], tmp_path)
+
+    model = fhe.load_onnx(path)
+    assert [type(layer).__name__ for layer in model.layers] == ["Linear"]
+    assert model.layers[0].weight.shape == (4, 6)
+
+
 def test_terminal_softmax_and_reshape_are_dropped_and_folded(tmp_path):
     """A terminal Softmax is dropped; a Reshape between layers folds to a layout no-op."""
     rng = np.random.default_rng(4)

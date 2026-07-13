@@ -560,11 +560,13 @@ def _check_shape_op_is_noop(
     """Confirm a Reshape/Flatten/Transpose does not reorder the flat channel-major wire.
 
     Reshape/Flatten only reinterpret a row-major buffer, so they never reorder the flat elements —
-    always foldable. A Transpose *does* permute; it is a no-op only when its perm leaves the
-    row-major flattening unchanged (identity, or permuting only size-1 axes). A genuinely
-    reordering Transpose is rejected loudly (baking it into the next weight is Phase-8 work).
+    always foldable. A Cast to a float type is an identity on the real-valued wire (the registry
+    rejects a non-float ``to``), so it too is always foldable. A Transpose *does* permute; it is a
+    no-op only when its perm leaves the row-major flattening unchanged (identity, or permuting only
+    size-1 axes). A genuinely reordering Transpose is rejected loudly (baking it into the next
+    weight is Phase-8 work).
     """
-    if node.op_type in ("Reshape", "Flatten"):
+    if node.op_type in ("Reshape", "Flatten", "Cast"):
         return
     # Transpose: decide from the concrete input shape whether the flat order is preserved.
     name = node.name or "<Transpose>"

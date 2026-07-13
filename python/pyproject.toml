@@ -40,6 +40,11 @@ ml = [
     # golden invariant structurally cannot see because our float forward *is* the lowering. CI
     # never installs the `ml` extra, so the test skips there and CI stays hermetic.
     "onnxruntime>=1.17",
+    # scikit-learn -> ONNX exporter for the second-framework example (examples/mnist/
+    # sklearn_export.py). Proves "train anywhere" (ROADMAP Phase 6 exit criterion: two
+    # frameworks) by exporting a real sklearn model to ONNX and loading it through the same front
+    # door as the torch CNN. Only the example generator needs it; CI reads the committed fixture.
+    "skl2onnx>=1.16",
 ]
 
 [project.urls]

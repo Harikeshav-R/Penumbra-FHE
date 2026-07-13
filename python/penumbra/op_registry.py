@@ -195,6 +195,19 @@ REGISTRY: dict[str, OnnxOpRule] = {
         ),
         attribute_constraints="perm must not change flat element order (else rejected).",
     ),
+    "Cast": OnnxOpRule(
+        onnx_op="Cast",
+        internal_op="(layout no-op)",
+        category=CAT_SHAPE,
+        rationale=(
+            "A Cast to a floating type is an identity on Penumbra's already-real wire (the runtime "
+            "quantizes from floats regardless of the source float width), so it folds away and "
+            "emits no IR node. Exporters routinely insert one at the input (skl2onnx casts the "
+            "input to float; torch/tf2onnx emit dtype-normalizing Casts). A Cast to an integer or "
+            "boolean type would change the represented value and is rejected."
+        ),
+        attribute_constraints="to must be a floating type (FLOAT/FLOAT16/DOUBLE/BFLOAT16).",
+    ),
     "Softmax": OnnxOpRule(
         onnx_op="Softmax",
         internal_op="(terminal, dropped)",
@@ -348,6 +361,17 @@ def check_attributes(op_type: str, attrs: dict[str, object], node_name: str) -> 
                 problems.append(
                     f"AveragePool (node {node_name!r}): count_include_pad={cip} not understood"
                 )
+    elif op_type == "Cast":
+        # A Cast folds away only if it preserves the represented value. Casting to a float type is
+        # an identity on Penumbra's real-valued wire; casting to an int/bool type truncates and is
+        # rejected. ONNX TensorProto dtype codes: FLOAT=1, FLOAT16=10, DOUBLE=11, BFLOAT16=16.
+        _FLOAT_DTYPES = {1, 10, 11, 16}
+        to = attrs.get("to")
+        if to is None or int(to) not in _FLOAT_DTYPES:
+            problems.append(
+                f"Cast (node {node_name!r}): to={to} not supported (only a cast to a floating type "
+                "is a value-preserving no-op; an int/bool cast changes the value — Phase 8)"
+            )
     return problems
 
 

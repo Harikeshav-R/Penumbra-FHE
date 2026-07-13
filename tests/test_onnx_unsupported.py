@@ -175,6 +175,22 @@ def test_weight_first_matmul_fails_loudly(tmp_path):
         fhe.load_onnx(path)
 
 
+def test_integer_cast_fails_loudly(tmp_path):
+    """A Cast to an integer type changes the represented value and is rejected (float casts fold).
+
+    A float Cast folds away (test_onnx_loader.py); an int/bool Cast truncates, so it is not a
+    value-preserving no-op and must fail loudly at load time (``AGENTS.md`` §1.4).
+    """
+    w = np.eye(4)
+    nodes = [
+        helper.make_node("Cast", ["x"], ["xi"], name="cast", to=TensorProto.INT64),
+        helper.make_node("Gemm", ["xi", "w"], ["y"], name="fc", transB=1),
+    ]
+    path = _model(nodes, [_f32(w, "w")], [_vi("x", [1, 4])], [_vi("y", [1, 4])], tmp_path)
+    with pytest.raises(UnsupportedModelError, match="Cast"):
+        fhe.load_onnx(path)
+
+
 def test_1d_pool_fails_loudly(tmp_path):
     """A 1-D pool (NCL activation) is rejected loudly, not a raw tuple-unpack ValueError.
 
