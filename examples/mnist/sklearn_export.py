@@ -26,7 +26,7 @@ minutes per sample.
 
 Two committed artifacts are written next to this script:
 
-* ``digit_linear_sklearn.onnx`` — the real skl2onnx-exported ONNX model (the second framework proof).
+* ``digit_linear_sklearn.onnx`` — the real skl2onnx-exported ONNX model (second-framework proof).
 * ``phase6_sklearn_fixture.json`` — the same fixture shape as the other examples. CI reads only the
   JSON (hermetic); ``tests/test_sklearn_fixture.py`` reloads the committed ``.onnx`` with the core
   ``onnx`` dep (no sklearn) and asserts it lowers to this committed graph/labels, and
@@ -43,11 +43,11 @@ import json
 from pathlib import Path
 
 import numpy as np
+from skl2onnx import to_onnx
+from skl2onnx.common.data_types import FloatTensorType
 from sklearn.datasets import load_digits
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPRegressor
-from skl2onnx import to_onnx
-from skl2onnx.common.data_types import FloatTensorType
 
 import penumbra as fhe
 from penumbra.quantization import accuracy_report
@@ -136,14 +136,15 @@ def main() -> None:
 
     fixture = {
         "_comment": (
-            "Phase-6 SECOND-FRAMEWORK example: a scikit-learn linear digit classifier (MLPRegressor "
-            "with no hidden layer, trained on one-hot targets) exported to digit_linear_sklearn.onnx "
-            "with skl2onnx, then loaded THROUGH THE ONNX FRONT DOOR (penumbra.load_onnx) and "
-            "quantized via penumbra.Model.quantize. The leading Cast(to=FLOAT) skl2onnx emits folds "
-            "away; the graph is a single Linear whose 10 logits are the graph output, and the client "
-            "argmaxes them. FHE output must equal these quantized-cleartext logits/labels "
-            "bit-for-bit. Together with the torch CNN (phase6_onnx_fixture.json) this is the "
-            "'train anywhere, two frameworks' proof (ROADMAP Phase 6)."
+            "Phase-6 SECOND-FRAMEWORK example: a scikit-learn linear digit classifier "
+            "(MLPRegressor with no hidden layer, trained on one-hot targets) exported to "
+            "digit_linear_sklearn.onnx with skl2onnx, then loaded THROUGH THE ONNX FRONT DOOR "
+            "(penumbra.load_onnx) and quantized via penumbra.Model.quantize. The leading "
+            "Cast(to=FLOAT) skl2onnx emits folds away; the graph is a single Linear whose 10 "
+            "logits are the graph output, and the client argmaxes them. FHE output must equal "
+            "these quantized-cleartext logits/labels bit-for-bit. Together with the torch CNN "
+            "(phase6_onnx_fixture.json) this is the 'train anywhere, two frameworks' proof "
+            "(ROADMAP Phase 6)."
         ),
         "graph": graph.to_dict(),
         "scales": {"input": in_scale},
