@@ -18,14 +18,19 @@ computes on ciphertext and never sees your input or output.
 ```python
 import penumbra as fhe
 
-model = fhe.load_onnx("model.onnx")           # ONNX front door (roadmap Phase 6)
+model = fhe.load_onnx("model.onnx")           # ONNX front door: parse + validate + lower to a Model
 model.quantize(calibration_data, n_bits=6)   # float graph → int graph + lookup tables
-model.compile()                               # map ONNX ops → internal op registry
-pred = model.predict_encrypted(x)             # client encrypts → server evaluates → client decrypts
+model.export("model.fhe")                     # serialize the IR for the Rust runtime
+
+# Coming in Phase 9 — the one-call encrypted round trip (not yet implemented):
+# pred = model.predict_encrypted(x)           # client encrypts → server evaluates → client decrypts
 ```
 
-The **quantization service works today** (Phase 5) — assemble a model from the op vocabulary,
-quantize it with calibration data (no manual scale math), and export the IR the runtime walks:
+The **ONNX front door and quantization service work today** (Phases 5–6). `load_onnx` parses an
+ONNX model, **validates every op at load time** (failing loudly with all problems at once if a
+model uses an unsupported op — validation *is* the compile step), and lowers it to an `fhe.Model`;
+the wire-up to run that model on real ciphertext in-process (`predict_encrypted`) is Phase 9. You
+can also assemble a model by hand from the op vocabulary — the same `Model` `load_onnx` produces:
 
 ```python
 import penumbra as fhe

@@ -78,9 +78,76 @@ per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
   node's inputs in declared order and dispatches `Op::eval_n`; single-input ops keep working
   through the default `eval_n` (`AGENTS.md` §1.2 — the loop never special-cases an op).
 
+## ONNX front door (Phase 6)
+
+`penumbra.load_onnx("model.onnx")` is the front door: it parses an ONNX graph, **validates every
+node at load time** (failing loudly, all problems at once — `AGENTS.md` §1.4), and **lowers** it
+to a `penumbra.Model` that flows through the unchanged Phase-5 `quantize()`/`export()`. It emits
+**nothing new at the IR layer** — every ONNX op maps onto the existing internal ops above — so
+the golden invariant holds by construction (`AGENTS.md` §1.1, §1.2).
+
+Supported ONNX opset range (ai.onnx domain): **11–22**. A model exported against an opset outside
+this window is rejected at load time (re-export in range).
+
+The table below is the authoritative **ONNX op → internal op** mapping the loader's registry
+(`python/penumbra/op_registry.py`) accepts; `tests/test_supported_ops_doc.py` asserts this list
+equals `op_registry.supported_onnx_ops()` exactly, so doc and validator never drift.
+
+| ONNX op | Internal op | Attribute constraints |
+|---|---|---|
+| `Gemm` | `Linear` | `transA=0`; `alpha=1.0`; `beta=1.0` (loader resolves `transB`) |
+| `MatMul` | `Linear` | 2-D operands; a following constant-`Add` folds into the bias |
+| `Conv` | `Conv2d` | `group=1`; `dilations=[1,1]`; symmetric equal `pads`; square strides; 2-D kernel |
+| `Relu` | `Activation` | must follow an accumulator (fused into its `Requant`); not terminal |
+| `MaxPool` | `Pool` (`max`) | `pads=0`; `ceil_mode=0`; uniform 2-D kernel/stride |
+| `AveragePool` | `Pool` (`avg`) | `pads=0`; `ceil_mode=0`; uniform 2-D kernel/stride (emits window **sum**) |
+| `GlobalAveragePool` | `Pool` (`avg`) | kernel = full spatial size (emits window **sum**) |
+| `Add` | `Linear` bias | fold-only: one operand must be a constant initializer (residual `Add` is Phase 8) |
+| `Reshape` | dropped (layout no-op) | must not reorder the flat channel-major vector |
+| `Flatten` | dropped (layout no-op) | — |
+| `Transpose` | dropped (layout no-op) | `perm` must not change flat element order (else rejected) |
+| `Cast` | dropped (layout no-op) | `to` must be a floating type (int/bool cast rejected) |
+| `Softmax` | dropped (terminal) | must be the graph-output node; client argmaxes the wide logits |
+| `LogSoftmax` | dropped (terminal) | must be the graph-output node |
+| `Sigmoid` | dropped (terminal) | must be the graph-output node |
+| `ArgMax` | dropped (terminal) | must be the graph-output node |
+
+### Notes — Phase 6
+
+- **What "any ONNX model" means (bounded).** The front door accepts a model iff (1) every node
+  is in the table above, (2) the graph is a **single linear chain** from input to output (a chain
+  of `Conv`/`Gemm`/`MatMul` accumulators, each optionally ReLU'd, plus pooling, ending in a wide
+  logit head), (3) it quantizes acceptably, and (4) it is small enough to run in feasible FHE time
+  (`PROJECT.md` §10, §16). Anything else fails loudly at `load_onnx()`.
+- **Branching is Phase 8.** Residual `Add` (both operands activations), `Concat`, and any fan-out
+  are rejected — the Rust eval loop already walks DAGs, but `Model.quantize`'s compile pass is
+  linear-chain-only, and widening it is Phase-8 work.
+- **Terminal classifier tails are dropped, not lowered.** `Softmax`/`LogSoftmax`/`Sigmoid`/`ArgMax`
+  at the graph output are argmax-invariant (Penumbra leaves logits wide and argmaxes client-side,
+  `PROJECT.md` §11), so they emit no op. A *non-terminal* one is a real activation and is rejected.
+- **Layout ops fold to nothing.** The runtime carries a flat channel-major vector and is
+  shape-blind, so `Reshape`/`Flatten` (and an order-preserving `Transpose`) between a conv and a
+  dense layer are identity on the wire. A genuinely reordering `Transpose` is rejected. A `Cast`
+  to a floating type is likewise an identity on the real-valued wire (exporters routinely emit one
+  at the input — skl2onnx casts the input to float) and folds away; a cast to an int/bool type
+  changes the value and is rejected.
+- **No new dependency, no new crypto.** `onnx>=1.16` is already a core dep; the loader is pure
+  Python (NumPy + `onnx`). It does not touch `runtime/` or the IR schema.
+- **Two frameworks, one front door ("train anywhere").** The same `load_onnx` lowers a **PyTorch**
+  CNN (`examples/mnist/onnx_export.py` → `Conv2d → Requant → Linear`) and a **scikit-learn** linear
+  classifier (`examples/mnist/sklearn_export.py`, exported with `skl2onnx` → a single `Linear`, the
+  leading `Cast` folded away) with no framework-specific code — the ONNX waist is the only
+  integration point. Each has a committed fixture and an FHE bit-for-bit golden gate
+  (`runtime/tests/golden_onnx.rs`, `golden_sklearn.rs`). Note: `skl2onnx` lowers
+  `LogisticRegression`/`MLPClassifier` to the `ai.onnx.ml` custom-op domain (`LinearClassifier`,
+  `ZipMap`) with a two-output graph — outside the supported subset; a no-hidden-layer regressor
+  exports as a clean single-output `ai.onnx` graph, which is the supported shape.
+
 ## Planned (later phases)
 
 | Op | Phase | Notes |
 |---|---|---|
 | `Concat` / branching | 8 | multi-input graphs; true topological eval |
+| `BatchNormalization` | 8 | fold into the preceding Conv/Linear at quantize time |
+| non-ReLU activation LUTs (`Tanh`, `Sigmoid` mid-graph, GELU, …) | 8 | single-input LUTs; un-stub the standalone-`Activation` path |
 | `>2`-class `Argmax` (in-FHE) | later | pairwise `max`/`gt` over a score vector; Phase 4 decrypts the logits and argmaxes client-side |

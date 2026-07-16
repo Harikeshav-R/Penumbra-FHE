@@ -41,6 +41,21 @@ model.export("model.fhe")                         # serialize for the runtime
    samples to confirm the graph actually evaluates; a scale/wiring bug fails *here*, inside
    `quantize`, with an actionable message — not as a confusing Rust golden violation later.
 
+### From ONNX: same service, no separate quantizer
+
+`fhe.load_onnx("model.onnx")` (the ONNX front door, `docs/SUPPORTED-OPS.md`) returns an ordinary
+`fhe.Model` — it parses and validates the ONNX graph and lowers it to the same float layers you
+would build by hand. There is **no separate ONNX quantizer**: the returned model flows through the
+*exact same* `.quantize(calibration_data, ...)` / `.export(path)` shown above. So everything on
+this page — PTQ, calibration strategies, `n_bits`, per-channel scales, the Requant rescale, the
+self-verify — applies unchanged whether the model was hand-built or loaded from ONNX.
+
+```python
+model = fhe.load_onnx("model.onnx")          # parse + validate + lower (fails loudly if unsupported)
+model.quantize(calibration_data, n_bits=6)   # identical service, identical golden invariant
+model.export("model.fhe")
+```
+
 ## PTQ vs QAT
 
 **Post-Training Quantization (PTQ)** quantizes an already-trained float model using calibration
