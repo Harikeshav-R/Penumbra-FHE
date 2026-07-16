@@ -208,6 +208,30 @@ def test_leading_float_cast_folds_away(tmp_path):
     assert model.layers[0].weight.shape == (4, 6)
 
 
+def test_order_preserving_transpose_over_size1_axis_folds_away(tmp_path):
+    """A Transpose that only permutes size-1 axes preserves the flat wire and folds to a no-op.
+
+    The input is (1, 1, 6); perm=[1, 0, 2] swaps the two size-1 axes, so the row-major flattening is
+    unchanged (a size-1 axis contributes no stride). The loader must fold it away, leaving just the
+    dense layer — proving the analytical order-preservation check accepts a genuine layout no-op
+    (and, with a size-1 batch, without materializing a prod(dims) index array).
+    """
+    rng = np.random.default_rng(9)
+    w = rng.normal(size=(4, 6))  # (n_out, n_in), transB=1
+    nodes = [
+        helper.make_node("Transpose", ["x"], ["xt"], name="t", perm=[1, 0, 2]),
+        helper.make_node("Reshape", ["xt", "shp"], ["xf"], name="rs"),
+        helper.make_node("Gemm", ["xf", "w"], ["y"], name="fc", transB=1),
+    ]
+    shp = numpy_helper.from_array(np.array([-1, 6], dtype=np.int64), "shp")
+    inits = [shp, _f32(w, "w")]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 6])], [_vi("y", [1, 4])], tmp_path)
+
+    model = fhe.load_onnx(path)
+    assert [type(layer).__name__ for layer in model.layers] == ["Linear"]
+    assert model.layers[0].weight.shape == (4, 6)
+
+
 def test_terminal_softmax_and_reshape_are_dropped_and_folded(tmp_path):
     """A terminal Softmax is dropped; a Reshape between layers folds to a layout no-op."""
     rng = np.random.default_rng(4)

@@ -203,3 +203,41 @@ def test_1d_pool_fails_loudly(tmp_path):
     path = _model(nodes, [], [_vi("x", [1, 3, 8])], [_vi("y", [1, 3, 4])], tmp_path)
     with pytest.raises(UnsupportedModelError, match="non-batch dims|2-D"):
         fhe.load_onnx(path)
+
+
+def test_reordering_transpose_fails_loudly(tmp_path):
+    """A Transpose that permutes non-size-1 axes reorders the flat wire and is rejected."""
+    rng = np.random.default_rng(5)
+    w = rng.normal(size=(4, 24))
+    # (1, 4, 6) with perm=[0, 2, 1] swaps the 4 and 6 axes — a real reorder of the flat vector.
+    nodes = [
+        helper.make_node("Transpose", ["x"], ["xt"], name="t", perm=[0, 2, 1]),
+        helper.make_node("Reshape", ["xt", "shp"], ["xf"], name="rs"),
+        helper.make_node("Gemm", ["xf", "w"], ["y"], name="fc", transB=1),
+    ]
+    shp = numpy_helper.from_array(np.array([-1, 24], dtype=np.int64), "shp")
+    inits = [shp, _f32(w, "w")]
+    path = _model(nodes, inits, [_vi("x", [1, 4, 6])], [_vi("y", [1, 4])], tmp_path)
+    with pytest.raises(UnsupportedModelError, match="reorders the flat"):
+        fhe.load_onnx(path)
+
+
+def test_perm_less_transpose_on_dynamic_batch_fails_loudly(tmp_path):
+    """A bare Transpose (no perm) defaults to reversing all axes — a real reorder, never folded.
+
+    ONNX's default perm is a full axis reversal, NOT identity. With a dynamic (symbolic) batch the
+    reversal moves the batch axis into the per-sample block, so it must be rejected loudly rather
+    than silently folded away (that would produce a wrong lowered model — ``AGENTS.md`` §1.1).
+    """
+    rng = np.random.default_rng(6)
+    w = rng.normal(size=(4, 24))
+    nodes = [
+        helper.make_node("Transpose", ["x"], ["xt"], name="t"),  # no perm -> reverse all axes
+        helper.make_node("Reshape", ["xt", "shp"], ["xf"], name="rs"),
+        helper.make_node("Gemm", ["xf", "w"], ["y"], name="fc", transB=1),
+    ]
+    shp = numpy_helper.from_array(np.array([-1, 24], dtype=np.int64), "shp")
+    inits = [shp, _f32(w, "w")]
+    path = _model(nodes, inits, [_vi("x", [None, 4, 6])], [_vi("y", [None, 4])], tmp_path)
+    with pytest.raises(UnsupportedModelError, match="reorders the flat"):
+        fhe.load_onnx(path)

@@ -568,24 +568,42 @@ def _check_shape_op_is_noop(
     """
     if node.op_type in ("Reshape", "Flatten", "Cast"):
         return
-    # Transpose: decide from the concrete input shape whether the flat order is preserved.
+    # Transpose: fold it away iff its permutation leaves the row-major flat order unchanged.
     name = node.name or "<Transpose>"
     shape = shapes.get(act_in)
-    perm = _attrs(node).get("perm")
-    if shape is None or any(d is None for d in shape):
-        # Can't prove it's a no-op without a concrete shape; only an identity perm is safe.
-        if perm is not None and list(perm) != list(range(len(list(perm)))):
-            raise UnsupportedModelError(
-                [
-                    f"Transpose (node {name!r}): cannot prove it preserves flat order without a "
-                    f"resolved input shape (shape={shape}, perm={list(perm)})"
-                ]
-            )
-        return
-    dims = [int(d) for d in shape]  # type: ignore[arg-type]
-    perm = list(perm) if perm is not None else list(reversed(range(len(dims))))
-    flat = np.arange(int(np.prod(dims))).reshape(dims).transpose(perm).reshape(-1)
-    if not np.array_equal(flat, np.arange(flat.size)):
+    perm_attr = _attrs(node).get("perm")
+    perm = list(perm_attr) if perm_attr is not None else None
+
+    # Resolve the rank so we can materialize ONNX's *default* perm — an absent `perm` means
+    # "reverse all axes" (NOT identity), a genuine reorder for rank >= 2. (The prior code treated a
+    # missing perm as safe when the shape had unresolved dims, silently folding a real reversal.)
+    if shape is not None:
+        rank = len(shape)
+    elif perm is not None:
+        rank = len(perm)
+    else:
+        # Neither a shape nor an explicit perm: we cannot even determine the rank to reason about
+        # the reversal default, so we cannot prove it is a no-op — fail loudly (`AGENTS.md` §1.4).
+        raise UnsupportedModelError(
+            [
+                f"Transpose (node {name!r}): no perm and no resolved input shape; cannot prove it "
+                "preserves flat order"
+            ]
+        )
+    if perm is None:
+        perm = list(reversed(range(rank)))  # ONNX default
+
+    # A transpose preserves the row-major flattening iff the axes that actually iterate — those
+    # *not known* to be size 1 — keep their ascending relative order (a size-1 axis contributes no
+    # stride, so moving it never reorders elements). Decided analytically in O(rank): no need to
+    # materialize a prod(dims)-sized index array. Unknown/dynamic dims (e.g. a symbolic batch) are
+    # treated as order-constraining, so a genuinely reordering transpose is never silently folded.
+    if shape is not None:
+        constraining = {ax for ax, d in enumerate(shape) if d != 1}  # None != 1 -> constraining
+    else:
+        constraining = set(range(rank))  # nothing is known to be size 1
+    ordered_axes = [ax for ax in perm if ax in constraining]
+    if ordered_axes != sorted(ordered_axes):
         raise UnsupportedModelError(
             [
                 f"Transpose (node {name!r}): perm={perm} reorders the flat channel-major vector "
