@@ -21,7 +21,9 @@ import penumbra as fhe
 model = fhe.load_onnx("model.onnx")           # ONNX front door: parse + validate + lower to a Model
 model.quantize(calibration_data, n_bits=6)   # float graph → int graph + lookup tables
 model.export("model.fhe")                     # serialize the IR for the Rust runtime
-pred = model.predict_encrypted(x)             # client encrypts → server evaluates → decrypts (Phase 9)
+
+# Coming in Phase 9 — the one-call encrypted round trip (not yet implemented):
+# pred = model.predict_encrypted(x)           # client encrypts → server evaluates → client decrypts
 ```
 
 The **ONNX front door and quantization service work today** (Phases 5–6). `load_onnx` parses an
