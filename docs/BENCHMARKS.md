@@ -105,6 +105,33 @@ small-test-set noise on ~360 samples) the float model, the quantization acting a
 regularizer. The example proves the QAT path runs end to end through the exact int export and the
 golden invariant.
 
+### Phase-7 — closed-set faces, Olivetti (`examples/faces/phase7_faces_fixture.json`)
+
+The **second use case** and the abstraction-validation milestone: closed-set face recognition
+over the first 8 people of the Olivetti dataset (AT&T "Database of Faces"), run through the
+**unchanged** backend. 64×64 images are 4×4 block-mean downsampled to 16×16 (NumPy preprocessing,
+not a graph op), then `Conv2d(1→8, 3×3, stride 4) → Requant+ReLU → Linear(128→8 logits)` — the
+*same* IR op vocabulary the digit CNN lowers to, via the same `load_onnx → quantize` path. Adding
+it touched **no `runtime/src/ops/` and no `eval.rs`** — the narrow waist held (`PROJECT.md` §4).
+
+| Metric | Value |
+|---|---|
+| Float accuracy | 0.95 |
+| Quantized accuracy | 0.90 |
+| Quantization gap | 0.05 |
+| Weight / activation bits | 6-bit weights, 2-bit activations |
+| Calibration | MSE (clip minimizing round-trip error), per-channel weights |
+| Radix | 11 blocks (22-bit signed) |
+| Bootstraps / sample | 128 (one `Requant` PBS per post-conv activation, 8 ch × 4×4) |
+| Latency / sample (encrypted) | minutes (`golden_faces.rs` is `#[ignore]`d; see below) |
+
+The ~0.05 gap is the cost of an 8-way decision from tiny 16×16 inputs with activations capped at a
+single 2-bit block (`MESSAGE_BITS`, the hard backend limit). The value of this example is **not**
+its accuracy — it is that a completely different task (faces, not digits) ran encrypted end to end
+with zero crypto-backend edits, exactly like `load_onnx` promised. The FHE golden test
+(`golden_faces.rs`) is `#[ignore]`d because at 128 bootstraps/sample it is minutes per sample; the
+fast Python guard (`tests/test_faces_fixture.py`) checks fixture self-consistency on every CI run.
+
 ## Reproducing
 
 ```bash
@@ -116,6 +143,7 @@ uv run python ../examples/mnist/cnn_export.py               # Phase-4 CNN
 # Regenerate the real-data fixtures (needs the optional `ml` extra: torch + sklearn + brevitas):
 uv run --extra ml --system-certs python ../examples/mnist/real_digits_export.py  # Phase-5 PTQ
 uv run --extra ml --system-certs python ../examples/mnist/qat_export.py          # Phase-5 QAT
+uv run --extra ml --system-certs python ../examples/faces/olivetti_export.py     # Phase-7 faces (one-time ~4 MB download)
 
 # Time the encrypted forward pass (release; the golden tests carry the timing):
 cd ../runtime
@@ -123,6 +151,7 @@ cargo test --release --test golden_logreg -- --nocapture                  # ~30 
 cargo test --release --test golden_cnn    -- --nocapture                  # ~3-4 min/sample
 cargo test --release --test golden_digits -- --ignored --nocapture        # minutes/sample (real digits)
 cargo test --release --test golden_qat    -- --ignored --nocapture        # minutes/sample (QAT)
+cargo test --release --test golden_faces  -- --ignored --nocapture        # minutes/sample (faces)
 
 # Inspect a model's per-tensor bit-widths without running FHE:
 cargo run --release --bin inspect ../examples/mnist/phase5_digits_fixture.json
