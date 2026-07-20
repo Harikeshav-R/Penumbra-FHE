@@ -122,9 +122,7 @@ def train() -> tuple[FaceCNN, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     x = _downsample(x[enrolled])  # (80, 16, 16)
     y = y[enrolled]
 
-    x_tr, x_te, y_tr, y_te = train_test_split(
-        x, y, test_size=0.25, random_state=SEED, stratify=y
-    )
+    x_tr, x_te, y_tr, y_te = train_test_split(x, y, test_size=0.25, random_state=SEED, stratify=y)
 
     model = FaceCNN()
     opt = torch.optim.Adam(model.parameters(), lr=1e-2)
@@ -239,7 +237,9 @@ def main() -> None:
         f"  num_blocks         = {graph.num_blocks} "
         f"({fhe.radix_capacity_bits(graph.num_blocks)}-bit radix)"
     )
-    print(f"  bootstraps/sample  = {CONV_CH * OUT_H * OUT_W}  (one requant PBS per conv activation)")
+    print(
+        f"  bootstraps/sample  = {CONV_CH * OUT_H * OUT_W}  (one requant PBS per conv activation)"
+    )
     print(f"  float accuracy     = {report.float_accuracy:.4f}")
     print(f"  quantized accuracy = {report.quantized_accuracy:.4f}  (gap {report.gap:+.4f})")
     print(f"  test batch         = {len(labels_batch)} samples")
