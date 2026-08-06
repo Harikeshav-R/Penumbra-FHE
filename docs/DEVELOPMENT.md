@@ -56,9 +56,9 @@ without the heavy `torch`/`brevitas` ML extra.
 
 ## Running encrypted inference from Python
 
-`model.predict_encrypted(x)` runs the real encrypted forward pass (ROADMAP Phase 9, first
-slice). It quantizes `x`, hands the exported IR + the quantized batch to the Rust runtime, and
-returns the client-side prediction:
+`model.predict_encrypted(x)` runs the real encrypted forward pass (ROADMAP Phase 9). It
+quantizes `x`, hands the exported IR + the quantized batch to the Rust runtime, and returns the
+client-side prediction:
 
 ```python
 import penumbra as fhe
@@ -93,6 +93,52 @@ cd python && PENUMBRA_E2E=1 uv run pytest ../tests/test_predict_bridge.py
 
 It is skipped by default (needs `cargo`, minutes/sample) so CI stays hermetic — the fast tests
 in that file inject a cleartext-oracle fake for the runtime and run everywhere.
+
+### Reusing keys + the client/server split
+
+By default `predict_encrypted` runs the whole round trip (keygen → encrypt → evaluate →
+decrypt) in one `predict` process with **ephemeral** keys. To **reuse** a key pair across calls
+— keygen is the expensive per-model step — generate a `KeySet` once and pass it in:
+
+```python
+from penumbra import KeySet
+
+keys = KeySet.generate(model.graph.num_blocks)   # client-side key ceremony (once)
+keys = keys.save("my_keys/")                       # persist for later runs; KeySet.load("my_keys/")
+pred = model.predict_encrypted(x, keys=keys)      # reuse across as many calls as you like
+```
+
+Passing `keys=` also switches to the **client/server split**: the client `encrypt`s with its
+secret key, a *separate* server process `serve`s holding **only** the public `server.key` +
+graph (it cannot decrypt), and the client `decrypt`s — the faithful privacy boundary
+(`PROJECT.md` §11). A key pair is tied to a model's radix width (`num_blocks`); using it with a
+differently-sized model fails loudly. `*.key` files are git-ignored — never commit key material.
+
+The runnable, self-contained demo is [`examples/client_server/`](../examples/client_server/):
+
+```bash
+cd python && uv run python ../examples/client_server/demo.py    # tiny model, ~seconds
+```
+
+You can also drive the split binaries by hand (each is a thin CLI over the runtime's public
+API): `keygen <num_blocks> <client.key> <server.key>`, `encrypt <client.key> <out.cts>` (JSON
+batch on stdin), `serve <model> <server.key> <in.cts> <out.cts>`, `decrypt <client.key>
+<cts>` (prints `{"outputs": …}`).
+
+### Failure modes (all caught loudly, `AGENTS.md` §1.4)
+
+The encrypted path fails at the earliest point with an actionable message, never silently:
+
+| Failure | Where | Message gist |
+|---|---|---|
+| Unsupported ONNX op | `load_onnx` (load time) | `operator X (node '…') not supported` (all at once) |
+| Over-budget bit-width | `check_graph_bit_width_budget` (before keygen) | names the offending node + required-vs-available bits |
+| Model not quantized | `predict_encrypted` | `call quantize() before predict_encrypted()` |
+| No Rust toolchain | `run_encrypted` | `cargo was not found on PATH …` |
+| Missing runtime crate | `run_encrypted` | `runtime crate not found … set PENUMBRA_RUNTIME_DIR` |
+| Key/model `num_blocks` mismatch | `run_encrypted` / `serve` | `key/model mismatch: keys for num_blocks=A, model needs B` |
+| Missing/corrupt key or ciphertext file | key/ciphertext load | `cannot read/deserialize … (is it a Penumbra … file?)` |
+| Runtime binary non-zero exit | `run_encrypted` | surfaces the binary's stderr |
 
 ## Linting & formatting
 
