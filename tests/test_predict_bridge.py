@@ -38,7 +38,7 @@ def _fake_runtime(graph: Graph):
     (encrypt/eval/decrypt) -> decode path deterministically, with no cargo and no FHE.
     """
 
-    def _run(g: Graph, int_inputs: list[list[int]]) -> list[list[int]]:
+    def _run(g: Graph, int_inputs: list[list[int]], *, keys=None) -> list[list[int]]:
         assert g is graph
         return [evaluate_graph_int(g, {"x": row})[g.outputs[0]] for row in int_inputs]
 
@@ -56,7 +56,7 @@ def test_input_quantization_matches_quantspec(monkeypatch):
 
     seen: list[list[int]] = []
 
-    def _capture(graph, int_inputs):
+    def _capture(graph, int_inputs, *, keys=None):
         seen.extend(int_inputs)
         # Return a well-formed output so decode succeeds (values irrelevant here).
         return [[0, 0, 0] for _ in int_inputs]
@@ -78,7 +78,7 @@ def test_decode_wide_logits_argmaxes(monkeypatch):
     model.quantize(rng.uniform(0.0, 16.0, size=(32, 6)), n_bits=4)
 
     # class 2 is the argmax of this logit row
-    monkeypatch.setattr("penumbra.model.run_encrypted", lambda g, xs: [[3, 1, 9, 4]])
+    monkeypatch.setattr("penumbra.model.run_encrypted", lambda g, xs, **kw: [[3, 1, 9, 4]])
     label = model.predict_encrypted(rng.uniform(0.0, 16.0, size=6))
     assert label == 2
     assert isinstance(label, int)
@@ -91,7 +91,7 @@ def test_decode_batch_returns_list_and_logits(monkeypatch):
     model.quantize(rng.uniform(0.0, 16.0, size=(32, 5)), n_bits=4)
 
     rows = [[5, 2, 1], [0, 7, 3]]
-    monkeypatch.setattr("penumbra.model.run_encrypted", lambda g, xs: rows)
+    monkeypatch.setattr("penumbra.model.run_encrypted", lambda g, xs, **kw: rows)
     labels, logits = model.predict_encrypted(
         rng.uniform(0.0, 16.0, size=(2, 5)), return_logits=True
     )

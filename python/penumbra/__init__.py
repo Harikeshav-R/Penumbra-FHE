@@ -36,6 +36,7 @@ from penumbra.bitwidth import (
     propagate_bit_widths,
     radix_capacity_bits,
 )
+from penumbra.client import KeySet
 from penumbra.compile import insert_requants
 from penumbra.ir import (
     SCHEMA_VERSION,
@@ -91,4 +92,6 @@ __all__ = [
     # ONNX front door: parse + validate + lower a .onnx to a Model (Phase 6, PROJECT.md §10)
     "load_onnx",
     "UnsupportedModelError",
+    # Encrypted inference bridge + key management (Phase 9, PROJECT.md §11, §12)
+    "KeySet",
 ]
