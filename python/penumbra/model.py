@@ -48,7 +48,7 @@ from penumbra.bitwidth import (
     internal_bits,
     propagate_bit_widths,
 )
-from penumbra.client import run_encrypted
+from penumbra.client import KeySet, run_encrypted
 from penumbra.compile import RequantChannelParams, insert_requants
 from penumbra.ir import SCHEMA_VERSION, ArgmaxSpec, Graph
 from penumbra.layers import Activation, Conv2d, Layer, LayerContext, Linear, QuantConfig
@@ -404,7 +404,9 @@ class Model:
 
     # -- encrypted inference ---------------------------------------------------------------
 
-    def predict_encrypted(self, x: np.ndarray, *, return_logits: bool = False):
+    def predict_encrypted(
+        self, x: np.ndarray, *, return_logits: bool = False, keys: KeySet | None = None
+    ):
         """Run the encrypted forward pass on ``x`` and return the prediction(s).
 
         The one-call round trip (``PROJECT.md`` §12): quantize ``x`` to the graph's integer
@@ -419,6 +421,12 @@ class Model:
         raw decrypted output tensors (a single row / a list of rows to match ``x``) — useful for
         inspection and for the golden cross-check against the
         :func:`penumbra.reference.evaluate_graph_int` oracle.
+
+        ``keys`` selects the round-trip path (:func:`penumbra.client.run_encrypted`): omit it for
+        the convenient single-process ``predict`` (ephemeral keys), or pass a
+        :class:`~penumbra.client.KeySet` to **reuse** persisted keys and run the faithful
+        client/server split (the server evaluates with only the public key). The keys must match
+        this model's radix width or the call fails loudly (``AGENTS.md`` §1.4).
 
         Because TFHE is exact, the returned label equals the quantized-cleartext label bit-for-bit
         (``AGENTS.md`` §1.1); this method adds no crypto — it only quantizes the input and argmaxes
@@ -437,7 +445,7 @@ class Model:
         in_spec = QuantSpec(scale=self.input_scale, bits=self.input_bits, signed=False)
         int_inputs = [in_spec.quantize(row).tolist() for row in batch]
 
-        outputs = run_encrypted(self.graph, int_inputs)
+        outputs = run_encrypted(self.graph, int_inputs, keys=keys)
         return self._decode(outputs, single=single, return_logits=return_logits)
 
     def _decode(self, outputs: list[list[int]], *, single: bool, return_logits: bool):
