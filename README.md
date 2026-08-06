@@ -20,17 +20,18 @@ import penumbra as fhe
 
 model = fhe.load_onnx("model.onnx")           # ONNX front door: parse + validate + lower to a Model
 model.quantize(calibration_data, n_bits=6)   # float graph → int graph + lookup tables
-model.export("model.fhe")                     # serialize the IR for the Rust runtime
-
-# Coming in Phase 9 — the one-call encrypted round trip (not yet implemented):
-# pred = model.predict_encrypted(x)           # client encrypts → server evaluates → client decrypts
+pred = model.predict_encrypted(x)             # client encrypts → server evaluates → client decrypts
 ```
 
-The **ONNX front door and quantization service work today** (Phases 5–6). `load_onnx` parses an
-ONNX model, **validates every op at load time** (failing loudly with all problems at once if a
-model uses an unsupported op — validation *is* the compile step), and lowers it to an `fhe.Model`;
-the wire-up to run that model on real ciphertext in-process (`predict_encrypted`) is Phase 9. You
-can also assemble a model by hand from the op vocabulary — the same `Model` `load_onnx` produces:
+The **ONNX front door, quantization service, and the encrypted round trip work today**
+(Phases 5–6, plus the first Phase-9 slice). `load_onnx` parses an ONNX model, **validates every
+op at load time** (failing loudly with all problems at once if a model uses an unsupported op —
+validation *is* the compile step), and lowers it to an `fhe.Model`. `predict_encrypted` then runs
+the real encrypted forward pass (keygen → encrypt → evaluate → decrypt) via the Rust runtime and
+returns the client-side prediction — it needs a Rust toolchain (`cargo`) and takes seconds-to-
+minutes per sample. The current bridge shells out to the runtime; in-process PyO3 bindings and
+wheels are the remaining Phase-9 work. You can also assemble a model by hand from the op
+vocabulary — the same `Model` `load_onnx` produces:
 
 ```python
 import penumbra as fhe

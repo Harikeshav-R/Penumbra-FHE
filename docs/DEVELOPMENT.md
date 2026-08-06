@@ -54,6 +54,46 @@ without the heavy `torch`/`brevitas` ML extra.
 > `uv python install 3.12 --native-tls` and `uv sync --dev --native-tls`. You can make this
 > the default by setting `UV_NATIVE_TLS=1` in your environment.
 
+## Running encrypted inference from Python
+
+`model.predict_encrypted(x)` runs the real encrypted forward pass (ROADMAP Phase 9, first
+slice). It quantizes `x`, hands the exported IR + the quantized batch to the Rust runtime, and
+returns the client-side prediction:
+
+```python
+import penumbra as fhe
+
+model = fhe.load_onnx("model.onnx")
+model.quantize(calibration_data, n_bits=6)
+pred = model.predict_encrypted(x)             # single sample -> int label; batch -> list[int]
+labels, logits = model.predict_encrypted(X, return_logits=True)   # also get the raw logits
+```
+
+This is the **subprocess bridge**: Python shells out to the runtime's `predict` binary via
+`cargo run --release --bin predict`, so it needs a **Rust toolchain** on `PATH` and a checkout
+of this repo (or set `PENUMBRA_RUNTIME_DIR` to the `runtime/` crate). Keygen runs once per call
+and is reused across the batch; FHE is seconds-to-minutes per sample. The server side only ever
+sees the quantized integer input and the graph — never a float or a scale (`PROJECT.md` §11).
+In-process PyO3 bindings and wheels are the remaining Phase-9 work.
+
+You can also drive the binary directly for debugging (a JSON batch of quantized int rows on
+stdin, decrypted outputs on stdout):
+
+```bash
+cd runtime
+echo '[[10,14,10, ...]]' | cargo run --release --bin predict -- ../examples/mnist/phase2_fixture.json
+```
+
+The bridge's golden gate — decrypted output equals the quantized-cleartext oracle bit-for-bit
+(`AGENTS.md` §1.1) — is the opt-in test `tests/test_predict_bridge.py`, run with real FHE via:
+
+```bash
+cd python && PENUMBRA_E2E=1 uv run pytest ../tests/test_predict_bridge.py
+```
+
+It is skipped by default (needs `cargo`, minutes/sample) so CI stays hermetic — the fast tests
+in that file inject a cleartext-oracle fake for the runtime and run everywhere.
+
 ## Linting & formatting
 
 These run in CI and are enforced on PRs. Run them locally before pushing — **warnings are
