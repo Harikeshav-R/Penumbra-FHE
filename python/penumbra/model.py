@@ -48,8 +48,9 @@ from penumbra.bitwidth import (
     internal_bits,
     propagate_bit_widths,
 )
+from penumbra.client import run_encrypted
 from penumbra.compile import RequantChannelParams, insert_requants
-from penumbra.ir import SCHEMA_VERSION, Graph
+from penumbra.ir import SCHEMA_VERSION, ArgmaxSpec, Graph
 from penumbra.layers import Activation, Conv2d, Layer, LayerContext, Linear, QuantConfig
 from penumbra.quantization.calibration import (
     MinMaxObserver,
@@ -58,7 +59,7 @@ from penumbra.quantization.calibration import (
     PercentileObserver,
 )
 from penumbra.quantization.ptq import choose_requant_params
-from penumbra.quantization.spec import symmetric_spec
+from penumbra.quantization.spec import QuantSpec, symmetric_spec
 from penumbra.reference import evaluate_graph_int
 
 # Accumulator layer types whose output is rescaled by a (possibly ReLU-fused) Requant.
@@ -400,3 +401,62 @@ class Model:
             raise RuntimeError("call quantize() before export()")
         with open(path, "w") as f:
             f.write(self.graph.to_json())
+
+    # -- encrypted inference ---------------------------------------------------------------
+
+    def predict_encrypted(self, x: np.ndarray, *, return_logits: bool = False):
+        """Run the encrypted forward pass on ``x`` and return the prediction(s).
+
+        The one-call round trip (``PROJECT.md`` §12): quantize ``x`` to the graph's integer
+        input domain, hand the exported IR + quantized batch to the Rust runtime (which does
+        keygen -> encrypt -> evaluate -> decrypt under FHE, :mod:`penumbra.client`), and decode
+        the decrypted outputs client-side (argmax, ``PROJECT.md`` §11). Requires :meth:`quantize`
+        first.
+
+        ``x`` is a float array: a single sample ``(feature_len,)`` or a batch ``(N, feature_len)``.
+        Returns the predicted class label (an ``int``) for a single sample or a ``list[int]`` for a
+        batch. With ``return_logits=True`` it returns ``(labels, logits)`` where ``logits`` are the
+        raw decrypted output tensors (a single row / a list of rows to match ``x``) — useful for
+        inspection and for the golden cross-check against the
+        :func:`penumbra.reference.evaluate_graph_int` oracle.
+
+        Because TFHE is exact, the returned label equals the quantized-cleartext label bit-for-bit
+        (``AGENTS.md`` §1.1); this method adds no crypto — it only quantizes the input and argmaxes
+        the output, delegating the encrypted evaluation to the runtime.
+        """
+        if self.graph is None or self.input_scale is None:
+            raise RuntimeError("call quantize() before predict_encrypted()")
+
+        arr = np.asarray(x, dtype=np.float64)
+        single = arr.ndim == 1
+        batch = arr[None, :] if single else arr
+
+        # Reconstruct the input spec from the stored scale (quantize() keeps only the scalar
+        # input_scale, not the QuantSpec) and quantize each row into the integer input domain.
+        # The input is unsigned (pixel-like), matching _calibrate_input.
+        in_spec = QuantSpec(scale=self.input_scale, bits=self.input_bits, signed=False)
+        int_inputs = [in_spec.quantize(row).tolist() for row in batch]
+
+        outputs = run_encrypted(self.graph, int_inputs)
+        return self._decode(outputs, single=single, return_logits=return_logits)
+
+    def _decode(self, outputs: list[list[int]], *, single: bool, return_logits: bool):
+        """Turn the runtime's raw output rows into class labels (``PROJECT.md`` §11).
+
+        The output shape depends on the graph's terminal op: a 2-class ``Argmax`` head already
+        emits the label bit (return it as-is), while a wide multi-logit ``Linear`` head is
+        argmaxed client-side (NumPy's first-max tie-break matches the Rust ``max_by`` in the
+        golden tests, so client and runtime agree). ``single`` unwraps the batch of one back to a
+        scalar to mirror the caller's input shape.
+        """
+        assert self.graph is not None
+        terminal_is_argmax = bool(self.graph.nodes) and isinstance(
+            self.graph.nodes[-1].op, ArgmaxSpec
+        )
+        labels = [int(row[0]) if terminal_is_argmax else int(np.argmax(row)) for row in outputs]
+
+        result_labels = labels[0] if single else labels
+        if not return_logits:
+            return result_labels
+        result_logits = outputs[0] if single else outputs
+        return result_labels, result_logits
