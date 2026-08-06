@@ -21,6 +21,12 @@ tfhe = { version = "1.6", features = ["shortint", "integer"] }
 # IR (de)serialization. The IR is the bridge to the Python front end (PROJECT.md §7, §13).
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Binary (de)serialization for keys + ciphertext — the client/server split's wire format
+# (PROJECT.md §11, ROADMAP Phase 9). The `tfhe` key/ciphertext types derive serde, and their
+# own integer-API docs use bincode; the tfhe-native `safe_serialization` is unavailable here
+# (the integer-API types don't implement its `Named` trait). Keeping keys/ciphertext in a
+# compact binary format (not the human-readable IR JSON) — server keys are large.
+bincode = "1"
 
 [dev-dependencies]
 # (placeholder for future test-only deps)
