@@ -42,7 +42,7 @@ The 16×16 downsample is deliberate: FHE cost ≈ number of bootstraps, here
 | Bootstraps / sample | 128 |
 
 Full numbers and methodology are in [`docs/BENCHMARKS.md`](../../docs/BENCHMARKS.md). The gap is
-the cost of capping activations at a single 2-bit block (`MESSAGE_BITS`, the hard backend limit)
+the cost of capping activations at a single 2-bit block (`MESSAGE_BITS`, the hard TFHE-backend limit)
 on an 8-way task from tiny 16×16 inputs.
 
 ## Regenerating

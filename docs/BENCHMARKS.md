@@ -2,18 +2,22 @@
 
 Accuracy and latency for the committed example models. Numbers are honest and reproducible
 from the committed fixtures — **not** marketing figures. Latency is "seconds-to-minutes per
-inference, research/prototype territory" (`PROJECT.md` §16), dominated by programmable
-bootstraps (`runtime ≈ number of bootstraps`, `PROJECT.md` §5).
+inference, research/prototype territory" (`PROJECT.md` §16).
 
-> ⚠️ Always benchmark in `--release`. Debug `tfhe-rs` is orders of magnitude slower and the
-> numbers are meaningless (`docs/DEVELOPMENT.md`).
+**Everything below is the `tfhe` backend**, the reference implementation. CKKS numbers arrive
+with Phase 12 and get their own columns; see [Cross-backend comparison](#cross-backend-comparison).
+
+> ⚠️ Always benchmark in `--release`. Debug FHE is orders of magnitude slower and the numbers
+> are meaningless — true for `poulpy` as much as for `tfhe-rs` (`docs/DEVELOPMENT.md`).
 
 ## Methodology
 
 - **Accuracy** is reported by each example's generator (`float` = the float pipeline,
   `quantized` = the quantized-integer pipeline). The **quantization gap** = float − quantized
-  is the accuracy lost to low-bit integers; the golden tests guarantee the FHE accuracy equals
-  the quantized accuracy *exactly* (bit-for-bit), so there is no separate "FHE accuracy" column.
+  is the accuracy lost to low-bit integers. Under TFHE the golden tests guarantee the FHE
+  accuracy equals the quantized accuracy *exactly* (bit-for-bit), so there is no separate "FHE
+  accuracy" column. Under CKKS there **will** be one — an approximate scheme adds its own
+  error term on top of the quantization gap.
 - **Latency** is wall-clock for the encrypted forward pass of **one** sample, from the golden
   tests (`cargo test --release`), on the development machine. It is indicative, not a
   controlled benchmark; absolute numbers vary by CPU. The committed test batches are kept tiny
@@ -21,6 +25,14 @@ bootstraps (`runtime ≈ number of bootstraps`, `PROJECT.md` §5).
 - **Crypto profile:** the default `PARAM_MESSAGE_2_CARRY_2_KS_PBS` (`MESSAGE_BITS = 2`), no
   parameter tuning (that is Phase 10). `num_blocks` is sized by the library to the model's
   widest accumulator.
+- **Cost proxy:** bootstraps per sample — `runtime ≈ number of bootstraps` (`PROJECT.md` §5).
+  This is a **TFHE** proxy; CKKS's is multiplicative depth, rotations, and rescales.
+
+> ⚠️ **These numbers are not yet comparison-grade.** They are hand-recorded wall clock from
+> golden-test output on one developer machine. Phase 12.3 replaces that with a shared
+> `criterion` harness measuring both backends through the same code path, on a pinned machine
+> and a pinned `poulpy` HAL backend. Until then, do not compare a number here against a CKKS
+> number produced any other way ([`docs/COMPARISON.md`](./COMPARISON.md)).
 
 ## Models
 
@@ -75,7 +87,7 @@ The first example on a **real dataset** and a **real trained PyTorch model**: sc
 | Latency / sample (encrypted) | minutes (the golden test is `#[ignore]`d; see below) |
 
 The remaining ~0.03 gap is the cost of capping activations at a single 2-bit block
-(`MESSAGE_BITS`) — the hard backend limit. Three service levers close most of the naive gap:
+(`MESSAGE_BITS`) — the hard TFHE-backend limit. Three service levers close most of the naive gap:
 6-bit **per-channel** weights, **MSE** activation calibration (the clip minimizing round-trip
 quantization error, not the raw peak), and — the big one — quantizing the head against the
 **post-Requant activation scale** (not the wide pre-Requant accumulator scale; getting that wrong
@@ -96,7 +108,7 @@ exported through the same PTQ service (so the int graph and the golden gate are 
 | Quantization gap | ~0.00 |
 | Weight / activation bits | 6-bit weights, 2-bit activations |
 | Calibration | MSE, per-channel weights |
-| Radix | 10 blocks (20-bit signed) |
+| Radix | 11 blocks (22-bit signed) |
 | Latency / sample (encrypted) | minutes (`golden_qat.rs` is `#[ignore]`d) |
 
 With the head correctly quantized against the post-Requant scale, QAT closes the gap essentially
@@ -126,11 +138,32 @@ it touched **no `runtime/src/ops/` and no `eval.rs`** — the narrow waist held 
 | Latency / sample (encrypted) | minutes (`golden_faces.rs` is `#[ignore]`d; see below) |
 
 The ~0.05 gap is the cost of an 8-way decision from tiny 16×16 inputs with activations capped at a
-single 2-bit block (`MESSAGE_BITS`, the hard backend limit). The value of this example is **not**
+single 2-bit block (`MESSAGE_BITS`, the hard TFHE-backend limit). The value of this example is **not**
 its accuracy — it is that a completely different task (faces, not digits) ran encrypted end to end
 with zero crypto-backend edits, exactly like `load_onnx` promised. The FHE golden test
 (`golden_faces.rs`) is `#[ignore]`d because at 128 bootstraps/sample it is minutes per sample; the
 fast Python guard (`tests/test_faces_fixture.py`) checks fixture self-consistency on every CI run.
+
+## Cross-backend comparison
+
+*Pending Phase 12.4 (`ROADMAP.md`).* When the CKKS backend lands, each model's table above
+gains a backend dimension — latency, accuracy against the shared quantized-cleartext
+reference, ciphertext and key sizes, and each scheme's own cost proxy — all produced by the
+shared `penumbra-bench` harness on a single pinned machine and HAL backend.
+
+This document will own the **numbers**; [`docs/COMPARISON.md`](./COMPARISON.md) owns the
+**argument** — the hypothesis under test, what is held constant, and the threats to validity
+that bound what the numbers mean. Do not restate results in both places; cite across.
+
+Three things must be stated wherever a cross-backend number appears:
+
+1. **The slot-packing decision.** If the CKKS backend runs one value per ciphertext, its
+   latency reflects our implementation, not the scheme ([`docs/BACKENDS.md`](./BACKENDS.md)).
+2. **That the graph is quantized for TFHE.** The 2-bit activation cap is a PBS constraint;
+   imposing it on CKKS is what makes the comparison fair *and* what handicaps CKKS on accuracy
+   (`docs/QUANTIZATION.md`).
+3. **The maturity asymmetry.** `tfhe-rs` is a mature production library; `poulpy-ckks` is at
+   0.8.x, and its Penumbra backend is new.
 
 ## Reproducing
 

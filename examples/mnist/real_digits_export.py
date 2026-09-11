@@ -28,7 +28,8 @@ The fixture is **committed**, so CI never retrains or imports torch — it just 
     cd python && uv run --extra ml --system-certs python ../examples/mnist/real_digits_export.py
 
 Accuracy is honest, not headline: ~0.96 float, ~0.94 quantized. The small remaining gap is the
-cost of capping activations at a single 2-bit block (``MESSAGE_BITS``) — the hard backend limit.
+cost of capping activations at a single 2-bit block (``MESSAGE_BITS``) — the hard
+TFHE-backend limit.
 Closing most of the gap took three levers, all in the service: 6-bit per-channel weights, MSE
 activation calibration (clip minimizing round-trip error, not the raw peak), and quantizing the
 head against the *post-Requant* activation scale. The QAT example (``qat_export.py``) trains with
