@@ -12,14 +12,33 @@ for the working rules (they apply to humans too).
 | Python | 3.10–3.12 | Pinned in `python/pyproject.toml` (`>=3.10,<3.13`). 3.13+ not yet supported by the ML stack. |
 | [uv](https://docs.astral.sh/uv/) | latest | **The project standard** for Python env/deps — not poetry/pip/conda. |
 
+> ⚠️ The CKKS backend may require a **different toolchain**: `poulpy` pins a nightly upstream
+> and depends on `libm`'s `unstable-float`. Whether the workspace needs nightly is a blocking
+> question for the Phase-12.0 spike, and the answer gets recorded in
+> [`docs/NOTES-ckks.md`](./NOTES-ckks.md). Whatever it turns out to be, the **TFHE backend
+> stays on stable** so an upstream toolchain change cannot break the reference backend's gate.
+>
+> `poulpy`'s CPU backend is also architecture-specific — `poulpy-cpu-arm` (NEON) on Apple
+> Silicon, `poulpy-cpu-avx` (AVX2/FMA) on x86-64. Benchmarks must pin one.
+
 ## Layout
 
 ```
 python/      # Python front end: ONNX loader, quantization, IR emitter (Layer 3)
-runtime/     # Rust TFHE backend: ops, IR deserialization, eval loop (Layers 1–2)
+runtime/     # Rust runtime: ops, IR deserialization, eval loop (Layers 1–2)
 examples/    # use cases (mnist, faces) — graphs only, NO crypto
 tests/       # cross-cutting + golden exactness tests
 docs/        # this guide and the spec docs
+```
+
+After the Phase-12.1 workspace refactor, `runtime/` becomes a Cargo workspace under `crates/`
+(`PROJECT.md` §13):
+
+```
+crates/penumbra-core/    # Layer 2: IR, eval loop, bit-width, the `Backend` trait — NO crypto
+crates/penumbra-tfhe/    # Layer 1: the tfhe-rs backend (the reference)
+crates/penumbra-ckks/    # Layer 1: the poulpy-ckks backend
+crates/penumbra-bench/   # the shared comparison harness
 ```
 
 ## Building & testing
@@ -32,10 +51,18 @@ cargo build                # debug build (fine for correctness)
 cargo test --release       # run tests — ALWAYS use --release for FHE
 ```
 
-> ⚠️ **Build in `--release` for anything that runs FHE.** Debug builds of `tfhe-rs` are
-> *extremely* slow (orders of magnitude). The first compile is slow regardless — `tfhe`
-> pulls a large dependency tree. The `hello_fhe` test proves the toolchain works
-> (encrypt → plaintext-weight arithmetic → LUT-via-PBS → decrypt).
+After the workspace refactor, a single backend can be built or tested on its own:
+
+```bash
+cargo test --release -p penumbra-tfhe     # the reference backend
+cargo test --release -p penumbra-ckks     # the CKKS backend
+cargo bench -p penumbra-bench             # both, through the same measurement code
+```
+
+> ⚠️ **Build in `--release` for anything that runs FHE.** Debug builds are *extremely* slow
+> (orders of magnitude) — true of `poulpy` as much as of `tfhe-rs`. The first compile is slow
+> regardless; both libraries pull large dependency trees. The `hello_fhe` test proves the
+> toolchain works (encrypt → plaintext-weight arithmetic → LUT-via-PBS → decrypt).
 
 ### Python front end
 
@@ -75,6 +102,16 @@ of this repo (or set `PENUMBRA_RUNTIME_DIR` to the `runtime/` crate). Keygen run
 and is reused across the batch; FHE is seconds-to-minutes per sample. The server side only ever
 sees the quantized integer input and the graph — never a float or a scale (`PROJECT.md` §11).
 In-process PyO3 bindings and wheels are the remaining Phase-9 work.
+
+> **Choosing a backend.** `predict_encrypted` runs the `tfhe` backend by default; once the
+> CKKS backend lands it is selected by name (`backend="ckks"`), and the exported IR file is
+> unchanged either way — that is the point (`docs/IR-SPEC.md`, Backend neutrality). Keys and
+> ciphertext are **not** portable across backends: a `KeySet` generated for one backend is
+> rejected by the other with an actionable message, not a deserialization panic.
+>
+> Note that the six binary names (`keygen`, `encrypt`, `serve`, `decrypt`, `predict`,
+> `inspect`) are a **public contract with the Python bridge** — `client.py` invokes them by
+> name. A workspace refactor must keep them resolvable.
 
 You can also drive the binary directly for debugging (a JSON batch of quantized int rows on
 stdin, decrypted outputs on stdout):
@@ -139,6 +176,9 @@ The encrypted path fails at the earliest point with an actionable message, never
 | Key/model `num_blocks` mismatch | `run_encrypted` / `serve` | `key/model mismatch: keys for num_blocks=A, model needs B` |
 | Missing/corrupt key or ciphertext file | key/ciphertext load | `cannot read/deserialize … (is it a Penumbra … file?)` |
 | Runtime binary non-zero exit | `run_encrypted` | surfaces the binary's stderr |
+| Op unsupported **on the selected backend** | graph load (before keygen) | names the op, the node, and the backend — never a silent approximation (`AGENTS.md` §1.4) |
+| Key or ciphertext from a **different backend** | key/ciphertext load | `these keys are for backend X, this run uses Y` — not a deserialization panic (Phase 12.1) |
+| Over-budget multiplicative depth (CKKS) | the depth/scale check (before keygen) | names the offending node + required-vs-available levels |
 
 ## Linting & formatting
 
@@ -160,18 +200,30 @@ uv run black --check .
 
 ## The golden invariant (read this)
 
-> FHE output must equal the quantized-cleartext output, **bit-for-bit**.
+> Encrypted output must match the quantized-cleartext output: **bit-for-bit under TFHE,
+> within the declared error bound under CKKS.**
 
-TFHE is exact. If FHE ≠ cleartext, it is a quantization or implementation bug, **never
-crypto noise** — debug the cleartext quantized path first. This test is wired into CI from
-Phase 2 onward and must never regress. See [`AGENTS.md`](../AGENTS.md) §1.
+The reference never changes — `python/penumbra/reference.py`. Only the comparator is
+per-backend, which is what keeps the backends comparable.
+
+TFHE is exact, so if FHE ≠ cleartext it is a quantization or implementation bug, **never
+crypto noise** — debug the cleartext quantized path first. CKKS is approximate, so its gate is
+a committed per-model bound with the measured error always reported; exceeding it is still a
+bug first (scale, level, or polynomial degree). This test is wired into CI from Phase 2 onward
+and must never regress. See [`AGENTS.md`](../AGENTS.md) §1 and
+[`docs/BACKENDS.md`](./BACKENDS.md).
 
 ## Adding an op (the canonical path)
 
 1. Registry entry — map the ONNX op → internal op (`python/penumbra/op_registry.py`).
-2. Rust implementation — against `tfhe-rs` primitives (`runtime/src/ops/`).
-3. Bit-width growth rule — how the op grows the bit-width budget (`PROJECT.md` §9).
-4. Golden test — assert FHE == quantized-cleartext.
-5. Docs — update `docs/SUPPORTED-OPS.md`.
+2. Implementation **in every backend** — or a loud, load-time rejection on backends that
+   cannot realize it.
+3. Bit-width growth rule — how the op grows the bit-width budget (`PROJECT.md` §9), plus its
+   consequence for each backend's resource budget.
+4. Golden test — assert the invariant at each backend's comparator.
+5. Docs — update `docs/SUPPORTED-OPS.md`, including the per-backend support matrix.
+
+Adding a whole **backend** is a different path — see
+[`docs/BACKENDS.md`](./BACKENDS.md#adding-a-backend-the-canonical-path).
 
 See [`CONTRIBUTING.md`](../CONTRIBUTING.md) for the full workflow.
