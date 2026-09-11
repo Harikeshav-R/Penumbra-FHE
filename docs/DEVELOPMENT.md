@@ -121,8 +121,9 @@ cd runtime
 echo '[[10,14,10, ...]]' | cargo run --release --bin predict -- ../examples/mnist/phase2_fixture.json
 ```
 
-The bridge's golden gate — decrypted output equals the quantized-cleartext oracle bit-for-bit
-(`AGENTS.md` §1.1) — is the opt-in test `tests/test_predict_bridge.py`, run with real FHE via:
+The bridge's golden gate — under the `tfhe` backend, decrypted output equals the
+quantized-cleartext oracle bit-for-bit (`AGENTS.md` §1.1) — is the opt-in test
+`tests/test_predict_bridge.py`, run with real FHE via:
 
 ```bash
 cd python && PENUMBRA_E2E=1 uv run pytest ../tests/test_predict_bridge.py

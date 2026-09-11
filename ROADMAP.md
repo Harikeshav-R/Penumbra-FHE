@@ -490,7 +490,7 @@ and a clear statement of scope.
 - [ ] **Examples polished:** `examples/mnist/`, `examples/faces/`, a tabular example, a tree
       example — each with a README and one-command run.
 - [ ] **Scope statement:** prominently document the bounded meaning of "any ONNX model"
-      (`PROJECT.md` §17) and latency expectations, so users aren't surprised.
+      (`PROJECT.md` §10, §16) and latency expectations, so users aren't surprised.
 - [ ] **Security note:** state the threat model (server sees only ciphertext), the parameter
       security level **per backend**, CKKS's IND-CPA^D caveat, and that this is
       research/prototype-grade, not audited production crypto.
