@@ -8,7 +8,9 @@ The first end-to-end use case: **train → quantize → export IR → encrypted 
   bit-width management (`Conv2d`, `Pool`, `Requant`).
 
 This example contains **no cryptography** — only a model graph and quantized weights
-(`PROJECT.md` §4). The crypto lives entirely in the `runtime/` crate.
+(`PROJECT.md` §4). The crypto lives entirely in the backend crates, and these fixtures are
+backend-agnostic: the same committed IR graph is what *every* backend evaluates
+([`docs/BACKENDS.md`](../../docs/BACKENDS.md)).
 
 ## Phase 2 (current)
 
@@ -19,9 +21,10 @@ expected (quantized-cleartext) labels. The Rust runtime hand-assembles the op gr
 (`Linear → Argmax`, plus a standalone `Activation` LUT) from this fixture; the real
 serializable IR arrives in Phase 3.
 
-The committed fixture is the input to the **golden exactness test**
-(`runtime/tests/golden_logreg.rs`): FHE output must equal these quantized-cleartext labels
-bit-for-bit (`AGENTS.md` §1.1).
+The committed fixture is the input to the **golden test**
+(`runtime/tests/golden_logreg.rs`): under the TFHE backend, FHE output must equal these
+quantized-cleartext labels bit-for-bit (`AGENTS.md` §1.1). The same fixture is the CKKS
+backend's input too — same graph, same reference, a tolerance comparator instead of equality.
 
 ```bash
 # Regenerate the fixture (only when the example changes; NumPy-only, no network):
@@ -36,7 +39,20 @@ cd runtime && cargo test --release
 > graph and integer arithmetic are identical to a real MNIST 0-vs-1 model; swapping in a
 > trained MNIST model is a drop-in change. Real MNIST + a small CNN comes with Phase 4.
 
-## Phase 4 (planned)
+## Phases 4–6 (also current)
 
-A small CNN on 10-class MNIST, proving multi-layer eval + automatic bit-width management
-(`Conv2d`, `Pool`, `Requant`).
+The example set grew well past Phase 2; every fixture below is committed, benchmarked
+([`docs/BENCHMARKS.md`](../../docs/BENCHMARKS.md)), and guarded by a Rust golden test plus a
+fast Python self-consistency test.
+
+| Fixture | Generator | Graph | What it proves |
+|---|---|---|---|
+| `phase4_cnn_fixture.json` | `cnn_export.py` | `Conv2d → Requant → Pool → Linear` | multi-layer eval + automatic bit-width management |
+| `phase5_digits_fixture.json` | `real_digits_export.py` | `Conv2d → Requant → Linear` | a **real** dataset and trained model, through the PTQ service |
+| `phase5_qat_fixture.json` | `qat_export.py` | `Conv2d → Requant → Linear` | Brevitas QAT, exported through the same int path |
+| `phase6_onnx_fixture.json` | `onnx_export.py` | `Conv2d → Requant → Linear` | the ONNX front door, from a PyTorch export |
+| `phase6_sklearn_fixture.json` | `sklearn_export.py` | `Linear` | a second framework (`skl2onnx`) through the same waist |
+
+The Phase-5/6 generators need the optional `ml` extra (torch + sklearn + brevitas); see
+`docs/BENCHMARKS.md` for the exact commands. Their FHE golden tests are `#[ignore]`d because
+they run minutes per sample.
