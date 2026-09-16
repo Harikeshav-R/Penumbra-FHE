@@ -1,7 +1,8 @@
 # Penumbra-FHE — Build Roadmap
 
 > A start-to-finish, task-level roadmap for building **Penumbra-FHE**: a library that loads
-> ONNX models and runs encrypted inference on them via `tfhe-rs`.
+> ONNX models and runs encrypted inference on them over pluggable FHE backends — `tfhe-rs`
+> today, `poulpy-ckks` in Phase 12.
 >
 > Read [`PROJECT.md`](./PROJECT.md) first — this roadmap assumes its architecture (the
 > three-layer "narrow waist," the ~8-op vocabulary, the IR bridge, and the quantization +
@@ -13,10 +14,15 @@
   never blocked on the whole system.
 - Every task has a checkbox. Every phase has **Exit Criteria** — do not advance until they
   all pass.
-- The **golden invariant** appears throughout: *FHE output must equal quantized-cleartext
-  output, bit-for-bit.* Wire it in early (Phase 2) and never let it regress.
+- The **golden invariant** appears throughout: *encrypted output must match the
+  quantized-cleartext output — bit-for-bit under TFHE, within the declared error bound under
+  CKKS.* Wire it in early (Phase 2) and never let it regress.
 - Effort estimates assume one developer new to FHE but comfortable with Rust + Python. They
   are relative, not promises.
+- **Phase 12 is out of numeric order by design.** It forks off after Phase 9 and runs *ahead*
+  of the still-unstarted Phases 10–11, because the scheme comparison it produces is the
+  current priority. It was appended rather than inserted so that every existing "Phase N"
+  citation — in these docs and in source comments — stays valid. See the dependency graph.
 
 ### Phase overview
 
@@ -34,6 +40,7 @@
 | 9 | Ergonomics & PyO3 | One-call Python API, real bindings | 2 weeks |
 | 10 | Performance & params | Profiling, PBS reduction, param tuning | 2 weeks |
 | 11 | Hardening & release | Docs, tests, packaging, v1.0 | 2 weeks |
+| 12 | Second backend (CKKS) & scheme comparison | Both backends run the same models under one harness; published comparison numbers | 4 weeks |
 
 ---
 
@@ -446,8 +453,11 @@ is reducing and parallelizing PBS, plus tuning crypto params.
 - [ ] **Binary IR format (optional):** replace JSON with a compact binary format if
       load/serialization shows up in profiles.
 - [ ] **Benchmark suite:** standardized latency/accuracy numbers for MNIST, the CNN, faces,
-      and a tree model. Track regressions in CI.
-- [ ] Document tuning guidance in `docs/PERFORMANCE.md` (what knobs exist, their tradeoffs).
+      and a tree model. Track regressions in CI. If Phase 12 has landed, this is
+      `penumbra-bench` and it covers **both backends** — don't build a second one.
+- [ ] Document tuning guidance in `docs/PERFORMANCE.md` (what knobs exist, their tradeoffs) —
+      per backend, since the knobs differ: PBS count and radix width for TFHE, polynomial
+      degree and slot packing for CKKS.
 
 ### Exit Criteria
 
@@ -470,22 +480,24 @@ and a clear statement of scope.
 
 ### Tasks
 
-- [ ] **Test coverage:** unit tests per op, integration tests per example, the golden
-      exactness test across all models, the unsupported-op failure test, cross-language IR
-      conformance. Target high coverage on Layers 1–2.
-- [ ] **Property/fuzz tests:** random small models → assert FHE == quantized-cleartext.
+- [ ] **Test coverage:** unit tests per op, integration tests per example, the golden test
+      across all models **at each backend's comparator**, the unsupported-op failure test,
+      cross-language IR conformance. Target high coverage on Layers 1–2.
+- [ ] **Property/fuzz tests:** random small models → assert the golden invariant per backend.
 - [ ] **Documentation site:** getting-started, tutorial (MNIST end to end), supported ops,
-      quantization guide, performance guide, API reference, architecture (link `PROJECT.md`).
+      quantization guide, performance guide, backend guide (link `docs/BACKENDS.md`), API
+      reference, architecture (link `PROJECT.md`).
 - [ ] **Examples polished:** `examples/mnist/`, `examples/faces/`, a tabular example, a tree
       example — each with a README and one-command run.
 - [ ] **Scope statement:** prominently document the bounded meaning of "any ONNX model"
-      (`PROJECT.md` §17) and latency expectations, so users aren't surprised.
+      (`PROJECT.md` §10, §16) and latency expectations, so users aren't surprised.
 - [ ] **Security note:** state the threat model (server sees only ciphertext), the parameter
-      security level, and that this is research/prototype-grade, not audited production crypto.
-- [ ] **Packaging:** publish wheels (PyPI) and the Rust crate (crates.io if desired);
+      security level **per backend**, CKKS's IND-CPA^D caveat, and that this is
+      research/prototype-grade, not audited production crypto.
+- [ ] **Packaging:** publish wheels (PyPI) and the Rust crates (crates.io if desired);
       versioning + changelog.
 - [ ] **CONTRIBUTING.md:** how to add an op (the canonical extension path: registry entry +
-      Rust impl + bit-width rule + golden test).
+      impl per backend + bit-width rule + golden test) and how to add a backend.
 - [ ] Tag **v1.0**.
 
 ### Exit Criteria
@@ -497,37 +509,197 @@ and a clear statement of scope.
 
 ---
 
+## Phase 12 — Second Backend (CKKS) & Scheme Comparison
+
+**Goal:** A working CKKS backend conforming to a shared `Backend` trait, plus benchmark
+output — latency, accuracy degradation, ciphertext/computation overhead — comparing it
+against the existing TFHE backend on the same operations, in a form that can go directly into
+a short paper or preprint.
+
+The deliverable is **the comparison**, not a general-purpose FHE toolkit (`PROJECT.md` §18).
+Correctness and reproducibility of the comparison matter more than breadth of feature
+coverage.
+
+> **Out of order on purpose.** This phase forks after Phase 9 and runs ahead of Phases 10–11.
+> Phase 10 (performance) subsequently has two backends to tune, not one.
+
+> **Read first:** [`docs/BACKENDS.md`](./docs/BACKENDS.md) (the boundary and the open forks),
+> [`docs/NOTES-ckks.md`](./docs/NOTES-ckks.md) (the library and its prerequisites),
+> [`docs/COMPARISON.md`](./docs/COMPARISON.md) (what the numbers have to survive).
+
+### Tasks
+
+#### 12.0 — Spike, standalone and blocking
+
+Prove the crypto plumbing before designing anything around it. If something core is missing
+or broken upstream, that must surface **now**, not after a trait boundary has been built
+around it.
+
+- [ ] **Answer the toolchain question.** Does `poulpy-ckks` 0.8.3 build on stable Rust, or
+      does it require the nightly its upstream `rust-toolchain.toml` pins (it depends on
+      `libm`'s `unstable-float`)? Record the answer in `docs/NOTES-ckks.md`.
+- [ ] **Answer the platform question.** Confirm `poulpy-cpu-arm` (NEON) works on the
+      development machine. `poulpy-cpu-avx` is x86-64 only; CI is x86-64. Decide which HAL
+      backend benchmarks are pinned to.
+- [ ] **Confirm coexistence.** `tfhe` 1.6 and the `poulpy` crates must resolve together in one
+      lockfile. Cheaper to discover before the refactor than after.
+- [ ] **Implement one real operation** from Penumbra's inference path — a packed dot product
+      or a single `Linear` layer — directly against `poulpy-ckks`, standalone. Encrypt → op →
+      decrypt → correct output, end to end.
+- [ ] **Implement one nonlinearity** as a polynomial: ReLU via the `approximation` module, and
+      measure its error. This is where CKKS and TFHE genuinely diverge; do not defer it.
+- [ ] Record the parameter profile, the primitives used, and measured costs in
+      `docs/NOTES-ckks.md` — the same way `docs/NOTES-tfhe.md` closed the Phase-1 spike.
+- [ ] **Decide the slot-packing fork** (`docs/BACKENDS.md`) with the spike's evidence in hand.
+
+#### 12.1 — Workspace refactor + `Backend` trait extraction
+
+Keep this **mechanical**. It is a boundary-drawing exercise, not a rewrite.
+
+- [ ] Convert to a Cargo workspace under `crates/`: `penumbra-core`, `penumbra-tfhe`,
+      `penumbra-bench` (`PROJECT.md` §13).
+- [ ] Move `ir.rs` and `eval.rs` into `penumbra-core` unchanged — they already have **zero**
+      `tfhe` imports.
+- [ ] Extract the `Backend` trait from the primitives the ops already call
+      (`docs/BACKENDS.md`). Generalize `CtVec`/`EvalCtx` over it; change op *logic* as little
+      as possible.
+- [ ] Move `keys.rs`, `encrypt.rs`, and `ops/` into `penumbra-tfhe` and implement the trait.
+- [ ] **Tag the key and ciphertext wire formats with a backend/scheme identifier.** Today
+      `.cts` is bare `bincode` with no tag or version, so a cross-backend mix-up would be a
+      deserialization panic rather than an actionable message (`AGENTS.md` §1.4).
+- [ ] Keep the six binary names (`keygen`, `encrypt`, `serve`, `decrypt`, `predict`,
+      `inspect`) resolvable — `python/penumbra/client.py` shells out to them by name.
+- [ ] Update CI: workspace-aware caching and working directories; decide what
+      `--all-features` means now that it could enable two backends at once.
+
+> **Exit criterion for this stage specifically: every existing test passes unchanged.** That
+> is the proof the refactor preserved behavior. If a golden test needs editing to pass, the
+> refactor stopped being mechanical — stop and reassess.
+
+#### 12.2 — The CKKS backend
+
+- [ ] New `penumbra-ckks` crate implementing `Backend` against the pinned `poulpy-ckks`.
+- [ ] Implement the op set: `Linear`, `Conv2d`, `Pool`, `Add` (native), `Activation` and
+      `Requant` (polynomial), `Argmax` (polynomial step, or rejected — decide and document).
+- [ ] Any op the backend cannot realize is **rejected loudly at load time**, naming the op,
+      the node, and the backend. Never silently approximated.
+- [ ] Depth/scale budget check at the same seam as the TFHE bit-width budget check, failing
+      loudly with the offending layer named (`AGENTS.md` §1.3).
+- [ ] **Declare and commit a per-model error bound**; correctness tests assert against
+      `reference.py`'s output at that comparator and always report the measured error.
+- [ ] Log every `poulpy` API surprise in `docs/NOTES-ckks.md` rather than working around it
+      quietly.
+
+#### 12.3 — The shared harness
+
+- [ ] Per-node timing and op-counting instrumented once in `penumbra-core`'s graph walker, so
+      both backends are measured by the same code. There is **no** timing instrumentation in
+      the repo today — this is greenfield, which is good for the comparison.
+- [ ] `criterion` benchmarks in `penumbra-bench`, parameterized over backend × model.
+- [ ] Report ciphertext size, key material size, and each scheme's own cost proxy (bootstrap
+      count for TFHE; depth, rotations, rescales for CKKS).
+- [ ] Confirm both backends run the same model/op set through the same entry point.
+
+#### 12.4 — The comparison
+
+- [ ] Run both backends over the committed fixtures (Phase-2 logreg through Phase-7 faces) in
+      `--release`, on the pinned machine and HAL backend.
+- [ ] Fill in `docs/BENCHMARKS.md` (the numbers) and `docs/COMPARISON.md` (the argument,
+      including which threats to validity are live for each number).
+- [ ] State the slot-packing decision prominently wherever results appear.
+
+### Exit Criteria
+
+- The spike's toolchain, platform, and coexistence questions are answered in writing.
+- The workspace refactor preserved behavior: every pre-existing test passes unchanged.
+- `penumbra-ckks` implements the shared trait; adding it required **no IR change, no
+  op-vocabulary change, and no scheme branch in `penumbra-core`** — the backend abstraction
+  held (`PROJECT.md` §4, M6).
+- Both backends run the same IR and the same models under one harness (backend parity).
+- TFHE's bit-for-bit gate still passes, unweakened; CKKS passes at its declared bound with
+  the measured error reported.
+- `docs/BENCHMARKS.md` and `docs/COMPARISON.md` carry real numbers, with threats to validity
+  stated alongside them.
+
+### Pitfalls
+
+- **Skipping the spike.** Building the trait boundary first and discovering upstream gaps
+  afterwards is the expensive failure mode this phase is sequenced to avoid.
+- **Nightly creep.** If `poulpy` forces nightly, do not let it take the *TFHE* backend off
+  stable — gate the CKKS crate so the reference backend's CI gate cannot be broken by an
+  upstream toolchain change.
+- **Wrong HAL backend.** `poulpy-cpu-avx` is x86-64; the dev machine is AArch64. Benchmarks
+  that silently fall back to `poulpy-cpu-ref` (the correctness-oriented reference
+  implementation) will report meaningless latency.
+- **`--all-features` enabling both backends.** CI runs `--all-features`; design for it or
+  change the invocation.
+- **Untagged wire formats.** Keys and ciphertext are not portable between backends. Without a
+  scheme tag the failure is a panic, not a message.
+- **Chasing upstream.** `poulpy-ckks`'s API is explicitly subject to change. Pin it and stay
+  pinned for the duration; flag breakage, don't absorb it.
+- **A hobbled CKKS.** Shipping one value per ciphertext makes the comparison measure our
+  implementation rather than the scheme. This is the headline threat to the whole phase.
+- **Letting scope grow.** Feature completeness beyond what the comparison needs is out of
+  scope, and so is a custom SIMD backend (`PROJECT.md` §18).
+- **Two measurement paths.** Any latency number not produced by the shared harness on the
+  pinned machine is not a comparison result.
+
+---
+
 ## Cross-Cutting Practices (apply in every phase)
 
-- **The golden invariant is sacred:** every model, every phase — FHE output == quantized-
-  cleartext output, bit-for-bit. It's your truth oracle; never let it regress in CI.
+- **The golden invariant is sacred:** every model, every phase — encrypted output matches the
+  quantized-cleartext output, **bit-for-bit under TFHE, within the declared bound under
+  CKKS**. Same reference, one comparator per backend. It's your truth oracle; never let it
+  regress in CI (`AGENTS.md` §1.1).
 - **New use case ⇒ new graph, never new crypto.** If a use case forces backend edits, the
   abstraction leaked (`PROJECT.md` §4). Fix the abstraction.
-- **Fail loudly, early.** Unsupported ops and over-budget bit-widths are caught at
-  compile/load time with actionable messages — never silently at runtime.
-- **Bit-width budget is everything** (`PROJECT.md` §9). Track it centrally; it governs both
-  accuracy and speed.
-- **Runtime ≈ number of bootstraps.** Keep PBS count in mind for every op you add.
-- **Build in release mode for any timing.** Debug FHE is misleadingly slow.
+- **New backend ⇒ new crate, never new IR.** If a scheme forces an IR change, an
+  op-vocabulary change, or a scheme branch in the eval loop, the backend abstraction leaked.
+- **Backend parity.** Both backends consume the same IR, run the same models, and are
+  measured by the same harness. Cross-backend numbers from two measurement paths are not
+  results (`docs/COMPARISON.md`).
+- **Fail loudly, early.** Unsupported ops, over-budget bit-widths, ops a backend cannot
+  realize, and key/ciphertext handed to the wrong backend are all caught at compile/load time
+  with actionable messages — never silently at runtime.
+- **Resource budgets are everything** (`PROJECT.md` §9). Track centrally; TFHE's is radix
+  capacity, CKKS's is depth/scale. They govern both accuracy and speed.
+- **Runtime ≈ number of bootstraps — under TFHE.** Keep PBS count in mind for every op you
+  add. Under CKKS the equivalent discipline is minimizing depth and packing slots.
+- **Build in release mode for any timing.** Debug FHE is misleadingly slow, for `poulpy` as
+  much as for `tfhe-rs`.
 - **Keep the two IR definitions in lockstep** (Python ↔ Rust) via the conformance test +
-  schema version.
+  schema version — and keep the IR **backend-neutral** (`AGENTS.md` §5).
 
 ## Dependency Graph (what unblocks what)
 
 ```
-P0 ──▶ P1 ──▶ P2 ──▶ P3 ──▶ P4 ──▶ P5 ──▶ P6 ──▶ P7 ──▶ P8 ──▶ P9 ──▶ P10 ──▶ P11
-                │             │      │      │
-                └─ golden test established and carried forward ─┘
+P0 ──▶ P1 ──▶ P2 ──▶ P3 ──▶ P4 ──▶ P5 ──▶ P6 ──▶ P7 ──▶ P8 ──▶ P9 ──┬─▶ P10 ──▶ P11
+                │             │      │      │                        │
+                └─ golden test established and carried forward ─┘     └─▶ P12
                                      │
         (P5 quantization + P4 bit-width feed P6 ONNX lowering;
          P6 must exist before P7 faces; P8 broadens after P7 validates the waist)
+
+P12 internals (spike-first, each stage gates the next):
+    12.0 spike ──▶ 12.1 workspace + Backend trait ──▶ 12.2 CKKS backend
+                                                    ──▶ 12.3 shared harness ──▶ 12.4 numbers
 ```
+
+**P12 forks after P9 and runs ahead of P10–P11**, which are unstarted. It needs P9's
+client/server split and key management, and P6–P7's committed models, but nothing from P10 or
+P11. Note the feedback edge: **P10 (performance) inherits two backends to tune**, and P11's
+release scope now includes documenting both.
 
 ## Definition of Done (the whole project)
 
 - [ ] Load an ONNX model from any supported framework, composed of supported ops.
 - [ ] Quantize it via the library (PTQ or QAT) with a measurable, documented accuracy gap.
 - [ ] Run encrypted inference where the server only ever touches ciphertext.
-- [ ] FHE results match quantized-cleartext results exactly.
+- [ ] TFHE results match quantized-cleartext results exactly; CKKS results match within the
+      declared bound, with the measured error reported.
 - [ ] Adding a new use case requires no crypto-backend changes.
+- [ ] Adding a new backend requires no IR, op-vocabulary, or eval-loop changes.
+- [ ] Both backends run the same models under one harness, and the resulting scheme
+      comparison — latency, accuracy, overhead — is published with its threats to validity.
 - [ ] Installable via `pip`, documented, tested, benchmarked, and honestly scoped.

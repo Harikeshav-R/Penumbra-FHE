@@ -3,6 +3,7 @@
 The **Intermediate Representation (IR)** is Penumbra-FHE's backbone (`PROJECT.md` §7): a
 serializable, directed graph of op nodes that the Python front end emits and the Rust
 runtime consumes. A new use case is a new IR graph — never a backend edit (`AGENTS.md` §1.2).
+A new *backend* is a new crate — never an IR edit (see [Backend neutrality](#backend-neutrality)).
 
 This document is the authoritative schema. It is defined **in lockstep** on both sides:
 [`python/penumbra/ir.py`](../python/penumbra/ir.py) ↔
@@ -43,6 +44,40 @@ implementing (`AGENTS.md` §3.2). Do **not** add a binary format or compression 
 > emitter can add metadata without breaking an older reader that has already matched the
 > version. Strictness is enforced at the version field, not per-field.
 
+## Backend neutrality
+
+**Every backend deserializes the same graph, byte for byte.** There is no scheme tag, no
+scheme discriminator, and no per-backend field — and there is not going to be one without an
+explicit architectural decision.
+
+This is load-bearing rather than incidental. The scheme comparison (`docs/COMPARISON.md`)
+is only valid if both backends are handed identical work; a scheme-tagged IR would let the
+two drift and would make any measured difference unattributable.
+
+**Adding the CKKS backend does not bump this schema.** It stays at `0.6.0`.
+
+Some payload fields are historically TFHE-shaped. A second backend **reinterprets** them; it
+does not get fields of its own:
+
+| Field | Origin | How a non-TFHE backend reads it |
+|---|---|---|
+| `Graph.num_blocks` | the TFHE radix width | **Advisory.** A CKKS backend ignores it and derives its own scale/level parameters. It remains the TFHE backend's hard budget. |
+| `Activation.lut` | a PBS lookup table | The tabulated function itself. A CKKS backend fits a polynomial to the same table rather than applying it directly. |
+| `Requant.clamp_lut` | a PBS lookup table | Likewise — the clamp is approximated, not looked up. |
+| `Requant.out_bits ≤ MESSAGE_BITS` | the single-block PBS limit | A TFHE feasibility constraint. It still bounds what the *quantizer* emits, so both backends see the same narrow activations — see `docs/QUANTIZATION.md` on why that is deliberate. |
+| `Requant.shift` / `mult` / `round_bias` | fixed-point integer rescale | A rescale in the approximate domain. |
+
+> ⚠️ If you find yourself wanting to add a field, a tag, or a `backend:` key to the IR to make
+> a scheme work, **stop**. That is the backend abstraction leaking (`AGENTS.md` §1.2), and it
+> is an architectural fork to raise before implementing (`AGENTS.md` §3.2, §5). The right fix
+> is almost always a more general `Backend` trait method, or a loud "unsupported on this
+> backend" at load time.
+
+Note that this applies to the **IR** only. Keys and ciphertext are a separate, binary wire
+format and are **not** portable between backends; they are expected to carry a backend tag so
+a mismatch fails with an actionable message rather than a deserialization panic
+(`ROADMAP.md` Phase 12.1).
+
 ## Schema
 
 ### `Graph` (root)
@@ -50,7 +85,7 @@ implementing (`AGENTS.md` §3.2). Do **not** add a binary format or compression 
 | Field | Type | Meaning |
 |---|---|---|
 | `schema_version` | string | Must equal `SCHEMA_VERSION`. |
-| `num_blocks` | int | The shared radix width — the central **bit-width budget** (`PROJECT.md` §9). Every ciphertext in the model has this many `shortint` blocks; capacity is `num_blocks × MESSAGE_BITS` bits (`MESSAGE_BITS = 2` under the default profile). |
+| `num_blocks` | int | The shared radix width — the central **bit-width budget** (`PROJECT.md` §9). Every ciphertext in the model has this many `shortint` blocks; capacity is `num_blocks × MESSAGE_BITS` bits (`MESSAGE_BITS = 2` under the default profile). **TFHE-specific and advisory to other backends** — see [Backend neutrality](#backend-neutrality). |
 | `input_bits` | int | Declared bit-width of the encrypted model input; seeds the bit-width tracker. |
 | `inputs` | [string] | Names of the graph's input tensors. |
 | `outputs` | [string] | Names of the graph's output tensors. |

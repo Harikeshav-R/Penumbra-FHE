@@ -10,11 +10,16 @@ the IR `OpSpec` (see [`docs/IR-SPEC.md`](./IR-SPEC.md)). The op names below are 
 `op_type` tags the IR accepts; the cross-language conformance test keeps this list and the
 runtime's `OpSpec` enum in sync.
 
-Notation: a value is carried as a **signed radix integer** of `num_blocks` blocks; under
-the default profile each block holds `MESSAGE_BITS = 2` bits, so the radix capacity is
-`num_blocks × 2` bits. `Linear`/`Conv` are *cheap* (plaintext-weight arithmetic, no
-bootstrap); `Activation`/`Requant`/`Compare` are *expensive* (one programmable bootstrap
-per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5).
+The op vocabulary is **the same for every backend** — a scheme never gets an op of its own.
+What differs is how each op is realized and what it costs; see
+[Backend support](#backend-support) below and [`docs/BACKENDS.md`](./BACKENDS.md).
+
+Notation (**TFHE backend**, the reference): a value is carried as a **signed radix integer**
+of `num_blocks` blocks; under the default profile each block holds `MESSAGE_BITS = 2` bits, so
+the radix capacity is `num_blocks × 2` bits. `Linear`/`Conv` are *cheap* (plaintext-weight
+arithmetic, no bootstrap); `Activation`/`Requant`/`Compare` are *expensive* (one programmable
+bootstrap per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5). The "TFHE realization"
+and bit-width columns in the tables below describe this backend specifically.
 
 ## Phase 2 — the narrow waist (`Linear`, `Activation`, `Argmax`)
 
@@ -142,6 +147,34 @@ equals `op_registry.supported_onnx_ops()` exactly, so doc and validator never dr
   `LogisticRegression`/`MLPClassifier` to the `ai.onnx.ml` custom-op domain (`LinearClassifier`,
   `ZipMap`) with a two-output graph — outside the supported subset; a no-hidden-layer regressor
   exports as a clean single-output `ai.onnx` graph, which is the supported shape.
+
+## Backend support
+
+Every backend implements the vocabulary above, or **rejects an op loudly at load time**
+naming the op, the node, and the backend (`AGENTS.md` §1.4). An op is never silently
+approximated, and the vocabulary never forks per backend (`AGENTS.md` §1.2).
+
+| Op | `tfhe` (reference) | `ckks` (Phase 12) | CKKS realization |
+|---|---|---|---|
+| `Linear` | ✅ exact, no PBS | planned | plaintext-mul + adds, SIMD-batched; spends one level |
+| `Conv2d` | ✅ exact, no PBS | planned | same pattern, batched; rotations for the window |
+| `Pool` (`avg`) | ✅ exact, no PBS | planned | adds / rotations |
+| `Pool` (`max`) | ✅ exact, comparison PBS | planned | polynomial max — approximate |
+| `Add` | ✅ exact, no PBS | planned | native ciphertext add |
+| `Activation` | ✅ exact, one PBS | planned | polynomial fitted to the same `lut` table — approximate |
+| `Requant` | ✅ exact, one PBS | planned | ReLU polynomial + native rescale — approximate |
+| `Argmax` | ✅ exact, comparison PBS | **undecided** | a polynomial step function, poor at low degree. May be rejected instead; multi-class heads already decrypt logits and argmax client-side. |
+
+Two notes that explain the whole column:
+
+- **CKKS has no lookup table and no programmable bootstrap.** Every op marked *approximate*
+  above is a fitted polynomial. That is the single largest semantic difference between the
+  backends, and the most interesting thing the scheme comparison measures
+  ([`docs/COMPARISON.md`](./COMPARISON.md)).
+- **The bit-width rules in the tables above still apply**, because they describe the
+  *quantized graph* rather than TFHE. What differs is the budget they are checked against:
+  radix capacity for TFHE, multiplicative depth and scale precision for CKKS
+  (`PROJECT.md` §9).
 
 ## Planned (later phases)
 

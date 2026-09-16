@@ -27,9 +27,12 @@ keys are generated once and **reused** across inferences (keygen is the expensiv
 step). A real deployment swaps the local `serve` process for an RPC to a remote server, with
 the Python side unchanged.
 
-The demo verifies the **golden invariant** (`AGENTS.md` §1.1): the decrypted output equals the
-quantized-cleartext oracle (`penumbra.reference.evaluate_graph_int`) bit-for-bit. TFHE is exact,
-so any mismatch would be a bug, never crypto noise.
+The demo verifies the **golden invariant** (`AGENTS.md` §1.1) on the `tfhe` backend: the
+decrypted output equals the quantized-cleartext oracle
+(`penumbra.reference.evaluate_graph_int`) bit-for-bit. TFHE is exact, so any mismatch would be
+a bug, never crypto noise. The same split runs under any backend — the reference is the same,
+and only the comparator changes ([`docs/BACKENDS.md`](../../docs/BACKENDS.md)). Note that a
+`KeySet` is **backend-specific**: key material is not portable between schemes.
 
 ## Running
 

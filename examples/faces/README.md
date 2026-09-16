@@ -4,6 +4,10 @@ A second, different use case that runs **with zero edits to the Rust backend** (
 This is the proof that the narrow waist holds (`PROJECT.md` §4, `ROADMAP.md` Phase 7): adding
 face recognition is adding a *graph*, never adding *crypto*.
 
+> Phase 12 runs the mirror-image experiment: adding a second *scheme* (CKKS) must require no
+> IR, op-vocabulary, or eval-loop change. Same discipline, other axis — see
+> [`docs/BACKENDS.md`](../../docs/BACKENDS.md).
+
 - **Task:** **closed-set face recognition** — "is this one of the N enrolled people?" — over the
   first 8 identities of the Olivetti faces dataset (AT&T "Database of Faces": 40 people, 10
   grayscale 64×64 images each). A fixed-output softmax head, very FHE-friendly. Open-set
@@ -42,7 +46,7 @@ The 16×16 downsample is deliberate: FHE cost ≈ number of bootstraps, here
 | Bootstraps / sample | 128 |
 
 Full numbers and methodology are in [`docs/BENCHMARKS.md`](../../docs/BENCHMARKS.md). The gap is
-the cost of capping activations at a single 2-bit block (`MESSAGE_BITS`, the hard backend limit)
+the cost of capping activations at a single 2-bit block (`MESSAGE_BITS`, the hard TFHE-backend limit)
 on an 8-way task from tiny 16×16 inputs.
 
 ## Regenerating

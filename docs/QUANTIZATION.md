@@ -9,8 +9,14 @@ library produces the int weights, scales, lookup tables, and the IR graph the ru
 
 > **The golden invariant.** TFHE is *exact*. The FHE output equals the **quantized-cleartext**
 > output **bit-for-bit** (`AGENTS.md` §1.1). Any discrepancy is a quantization or implementation
-> bug, never crypto noise. So there is no separate "FHE accuracy": once a model is quantized, its
-> FHE accuracy *is* its quantized-cleartext accuracy, and the golden tests guarantee it.
+> bug, never crypto noise. So under the TFHE backend there is no separate "FHE accuracy": once a
+> model is quantized, its FHE accuracy *is* its quantized-cleartext accuracy, and the golden
+> tests guarantee it.
+>
+> Under the **CKKS** backend that shortcut does not hold — CKKS is approximate, so it has its own
+> accuracy term on top of the quantization gap, bounded by a declared per-model error bound and
+> always measured. The quantized-cleartext reference is the same for both
+> ([`docs/BACKENDS.md`](./BACKENDS.md)).
 
 ## The one-call path
 
@@ -189,23 +195,48 @@ Python *before* it reaches a PBS, not as wrong-but-confident ciphertext.
 
 ## The accuracy/speed tradeoff, honestly
 
-- **Speed ≈ number of bootstraps.** Linear/Conv with plaintext weights are cheap; activations and
-  requants are bootstraps and dominate runtime. Fewer/narrower requants → faster.
+- **Speed ≈ number of bootstraps — under TFHE.** Linear/Conv with plaintext weights are cheap;
+  activations and requants are bootstraps and dominate runtime. Fewer/narrower requants → faster.
+  Under CKKS the equivalent lever is multiplicative depth and slot packing (`PROJECT.md` §5).
 - **Smaller `n_bits` and smaller `num_blocks`** are faster but lose accuracy; the budget caps how
   small you can go without overflow.
 - **Latency is seconds-to-minutes per inference** — research/prototype territory, not real-time
   serving (`PROJECT.md` §16). See `docs/BENCHMARKS.md` for measured numbers.
 
+## Why the CKKS backend also runs the quantized graph
+
+CKKS computes on **approximate reals**. Nothing about it requires a low-bit integer model — left
+to its own devices, a CKKS pipeline would evaluate something much closer to the float graph, at
+much higher precision. Penumbra's CKKS backend nevertheless consumes **the same quantized integer
+graph** the TFHE backend does.
+
+That is deliberate, and it is a tradeoff worth being explicit about:
+
+- **Why.** A scheme comparison is only valid if both backends are handed identical work. Same IR,
+  same integer weights, same scales, same reference — so a measured difference is attributable to
+  the scheme rather than to two different pipelines (`PROJECT.md` §18,
+  [`docs/COMPARISON.md`](./COMPARISON.md)).
+- **What it costs.** The activation cap of a **single radix block** (`≤ MESSAGE_BITS = 2` bits)
+  exists because a programmable bootstrap is only feasible over a narrow value — it is a *TFHE*
+  constraint. Imposing it on CKKS handicaps CKKS on accuracy, in a regime where it would otherwise
+  be comfortable.
+
+Both halves of that belong in any write-up of the results. The alternative — letting each backend
+quantize to its own comfort — would produce friendlier CKKS numbers and a comparison that cannot
+distinguish the scheme from the pipeline.
+
 ## Verification invariant (the safety net)
 
-Always: **FHE output == quantized-cleartext output, bit-for-bit.** The quantization service must
-never break it. Three layers enforce this:
+Always: **the encrypted output matches the quantized-cleartext output** — bit-for-bit under TFHE,
+within the declared error bound under CKKS. Same reference either way; the quantization service
+must never break it. Three layers enforce this:
 
 1. `Model.quantize` **self-verifies** by running the integer oracle on calibration samples.
 2. The example fixtures commit the integer oracle's `expected_logits`/`expected_labels`, guarded by
    fast NumPy tests.
-3. The Rust **golden tests** run the actual FHE forward pass and assert it equals those committed
-   integers (`cargo test --release`).
+3. The Rust **golden tests** run the actual FHE forward pass and assert it matches those committed
+   integers at the backend's comparator (`cargo test --release`).
 
-If FHE ever disagrees with the quantized cleartext, debug the **cleartext quantized path first** —
-it is almost always an indexing, scale, or bit-width bug, never the crypto.
+If the encrypted result ever disagrees, debug the **cleartext quantized path first** — it is almost
+always an indexing, scale, or bit-width bug, never the crypto. Under CKKS, an error that exceeds
+the declared bound is still a bug first (scale, level, or polynomial degree) and noise second.
