@@ -7,6 +7,12 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "build(deps)"
+    ignore:
+      # bincode 3.0.0 is a `compile_error!` tombstone (upstream archived 2025-08-15) that is
+      # not yanked, so crates.io reports it as the newest stable and this bump is re-proposed
+      # every week. 2.x is a wire-format-breaking rewrite. Reasoning in runtime/Cargo.toml.
+      - dependency-name: "bincode"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: pip
     directory: /python
