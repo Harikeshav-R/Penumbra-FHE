@@ -77,3 +77,17 @@ jobs:
 
       - name: Pytest
         run: uv run pytest
+
+      # Packaging gate. `uv sync` only builds the wheel, so a package that is unbuildable as a
+      # source distribution stays invisible until publish time (ROADMAP Phase 11). Building the
+      # sdist and then installing *from it* in a clean environment is what catches the real
+      # class of bug: metadata that references files outside the project, or an sdist that
+      # builds but is missing what it needs to be rebuilt.
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Install from the sdist and import
+        run: |
+          uv venv "${RUNNER_TEMP}/sdist-check"
+          uv pip install --python "${RUNNER_TEMP}/sdist-check" dist/*.tar.gz
+          "${RUNNER_TEMP}/sdist-check/bin/python" -c "import penumbra; print(penumbra.__version__)"

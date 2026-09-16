@@ -1,12 +1,15 @@
 [project]
 name = "penumbra-fhe"
 version = "0.0.0"
-description = "Encrypted ML inference on ONNX models via TFHE — load a model, run it under FHE, never write crypto code."
-readme = "../README.md"
+description = "Encrypted ML inference on ONNX models over pluggable FHE backends — load a model, run it under FHE, never write crypto code."
+# Must live inside this directory: the package is rooted at `python/`, so an sdist cannot carry
+# a file from the repo root. hatchling enforces this as of 1.32.0; before that `../README.md`
+# was accepted here but would have produced an sdist that could not be rebuilt.
+readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Harikeshav Rameshkumar" }]
 requires-python = ">=3.10,<3.13"
-keywords = ["fhe", "tfhe", "homomorphic", "encryption", "onnx", "inference", "quantization"]
+keywords = ["fhe", "tfhe", "ckks", "homomorphic", "encryption", "onnx", "inference", "quantization"]
 classifiers = [
     "Development Status :: 1 - Planning",
     "License :: OSI Approved :: Apache Software License",
@@ -66,7 +69,11 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [build-system]
-requires = ["hatchling"]
+# Bounded on purpose. `uv.lock` does not lock the build backend, so an unpinned requirement
+# resolves to the newest hatchling on every sync — which is how 1.32.0's new readme-path check
+# broke CI with no commit and no lockfile diff. The upper bound keeps a backend major from
+# changing build behavior out from under us again.
+requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
