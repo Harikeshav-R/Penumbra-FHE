@@ -43,6 +43,34 @@ jobs:
       - name: Test (release)
         run: cargo test --release --all-features
 
+  ckks-spike:
+    name: CKKS spike (fmt, clippy, test - nightly)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/spike-ckks
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Nightly Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/spike-ckks
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (warnings as errors)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test (release)
+        run: cargo test --release
+
   python:
     name: Python front end (ruff, black, pytest)
     runs-on: ubuntu-latest
