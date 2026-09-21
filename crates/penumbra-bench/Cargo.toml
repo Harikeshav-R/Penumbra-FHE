@@ -1,0 +1,13 @@
+[package]
+name = "penumbra-bench"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.83"
+license = "Apache-2.0"
+description = "Penumbra-FHE shared comparison harness: criterion benchmarks parameterized over backend x model (ROADMAP Phase 12.3)."
+repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
+publish = false
+
+[dependencies]
+penumbra-core = { path = "../penumbra-core" }
+penumbra-tfhe = { path = "../penumbra-tfhe" }

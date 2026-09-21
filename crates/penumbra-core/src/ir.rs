@@ -1,4 +1,4 @@
-//! Intermediate Representation (IR) — the serializable op graph.
+//! Intermediate Representation (IR) — the serializable op graph (Layer 2).
 //!
 //! The IR is the product's backbone (`PROJECT.md` §7): a directed graph of op nodes that
 //! the Python front end emits (JSON to start) and this runtime consumes *without
@@ -9,52 +9,22 @@
 //! (`AGENTS.md` §5). Any IR change updates both language sides, bumps [`SCHEMA_VERSION`],
 //! and updates the cross-language conformance test + `docs/IR-SPEC.md` in the **same
 //! change**. A schema-version bump is a breaking change (`AGENTS.md` §8).
-//!
-//! ## Decoupled from the runtime ops (a deliberate design choice)
-//!
-//! [`OpSpec`] is the *wire format* — it owns (de)serialization and load-time validation,
-//! and `build`s the runtime [`Op`] (`crate::ops`). The op structs themselves stay
-//! serde-free: they `use tfhe::integer::…` and we do not want the public serialization
-//! contract coupled to crypto-adjacent field layout. As Phase-4 ops (`Conv2d`, `Requant`)
-//! grow fields the wire format shouldn't echo verbatim, this seam keeps both sides clean.
-//!
-//! ## Op payload encoding
-//!
-//! Each node carries its op as a nested, *internally tagged* object keyed on `op_type`
-//! (`#[serde(tag = "op_type")]`), **not** `#[serde(flatten)]`: flatten disables
-//! `deny_unknown_fields` and has known round-trip bugs with internally-tagged enums. An
-//! unknown `op_type` therefore fails loudly for free (`unknown variant 'Conv2d', expected
-//! one of 'Linear', 'Activation', 'Argmax'`).
 
 use serde::{Deserialize, Serialize};
 
-use crate::ops::{Activation, Add, Argmax, Conv2d, Linear, Op, Pool, PoolMode, Requant};
+use crate::bitwidth::MESSAGE_BITS;
+use crate::ops::OpSummary;
 
 /// IR wire-format version. Hardcoded identically in `python/penumbra/ir.py`; a mismatch is
 /// a breaking change caught loudly at load time (`AGENTS.md` §5, §8).
-///
-/// Version 0.5.0 generalized `Requant` to a fixed-point multiply-then-round-shift rescale (the
-/// `mult`/`round_bias` fields below) — a breaking schema change (`AGENTS.md` §8).
-/// Version 0.6.0 added an optional **per-channel** `Requant` overlay
-/// (`mults`/`shifts`/`round_biases` + `channel_size`): each output channel gets its own
-/// fixed-point multiplier so per-channel weight quantization rescales each channel by its true
-/// ratio. The fields are omitted when empty, so a per-tensor `Requant` (and every legacy fixture)
-/// serializes byte-identically — but the version still bumps because a 0.6.0 reader is required
-/// to interpret them.
 pub const SCHEMA_VERSION: &str = "0.6.0";
 
-/// Serde default for `Requant.mult`: `1` makes the rescale a pure power-of-two shift, the
-/// Phase-4 semantics. Defaulting lets a 0.5.0 reader accept a `Requant` node emitted without
-/// the field (and keeps the legacy-equivalent JSON minimal).
+/// Serde default for `Requant.mult`: `1` makes the rescale a pure power-of-two shift.
 fn default_requant_mult() -> u64 {
     1
 }
 
 /// The root IR object: a directed graph of op nodes in a valid topological order.
-///
-/// `num_blocks` is the central bit-width budget (the radix width every ciphertext shares,
-/// `keys::keygen`); `input_bits` is the declared width of the encrypted model input that
-/// seeds the bit-width tracker. `inputs`/`outputs` name the graph's boundary tensors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Graph {
     pub schema_version: String,
@@ -66,9 +36,6 @@ pub struct Graph {
 }
 
 /// One op in the graph: a name, the tensor names it reads/writes, and its op payload.
-///
-/// Phase-2 ops are single-input/single-output; the `Vec`s are general so branching graphs
-/// (Phase 8) reuse the same shape without a schema change.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Node {
     pub name: String,
@@ -77,10 +44,14 @@ pub struct Node {
     pub op: OpSpec,
 }
 
-/// The op payload — the serializable mirror of the runtime ops (`crate::ops`).
-///
-/// Internally tagged on `op_type` (see module docs). Carries the same fields as the op
-/// structs but lives in IR-land so the ops stay serde-free and validation has a home.
+/// Spatial pooling mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PoolMode {
+    Avg,
+    Max,
+}
+
+/// The op payload — the serializable mirror of the runtime ops.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op_type")]
 pub enum OpSpec {
@@ -89,9 +60,6 @@ pub enum OpSpec {
         bias: Vec<i64>,
         weight_bits: usize,
     },
-    /// 2-D convolution against plaintext kernel weights. `weights` is row-major
-    /// `[out_channels][in_channels*kernel_h*kernel_w]`; the input/output flat tensors use the
-    /// channel-major, row-major layout shared with `Pool`. See [`crate::ops::Conv2d`].
     Conv2d {
         weights: Vec<Vec<i64>>,
         bias: Vec<i64>,
@@ -111,18 +79,6 @@ pub enum OpSpec {
     Argmax {
         threshold: i64,
     },
-    /// Rescale a wide accumulator down to a narrow, LUT-able value:
-    /// `clamp((max(x,0) * mult + round_bias) >> shift, 0, 2^out_bits - 1)`. `mult`/`round_bias`
-    /// (serde-defaulted to `1`/`0` = the legacy pure-shift) implement a fixed-point
-    /// multiply-then-round-shift rescale. See [`crate::ops::Requant`].
-    ///
-    /// The `mults`/`shifts`/`round_biases` arrays + `channel_size` are the optional 0.6.0
-    /// **per-channel** overlay: when non-empty they are indexed by channel (flat element `idx`
-    /// maps to channel `idx / channel_size`), and the scalar `shift`/`mult`/`round_bias` are
-    /// ignored. `channel_size` is the elements-per-channel stride (`1` for a `Linear` head,
-    /// `out_h*out_w` for a `Conv2d`); it must be on the wire because the op sees only the flat
-    /// tensor, not the producer's shape. All four are omitted from the JSON when unused, so a
-    /// per-tensor `Requant` round-trips byte-identically.
     Requant {
         shift: u32,
         #[serde(default = "default_requant_mult")]
@@ -140,8 +96,6 @@ pub enum OpSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         channel_size: Option<usize>,
     },
-    /// Spatial pooling over a flattened `[channels][in_h][in_w]` feature map. `mode` is
-    /// `"avg"` (window sum, rescale deferred to `Requant`) or `"max"`. See [`crate::ops::Pool`].
     Pool {
         mode: String,
         in_h: usize,
@@ -151,21 +105,11 @@ pub enum OpSpec {
         pool_w: usize,
         stride: usize,
     },
-    /// Element-wise addition of two input tensors (residuals). The first **multi-input** op:
-    /// its node carries two entries in `inputs`. No payload fields — the operands come from
-    /// the graph wiring, not the spec.
     Add {},
 }
 
 impl Graph {
     /// Deserialize an IR graph from JSON, validating the schema version loudly.
-    ///
-    /// Returns `Err` (never panics) on malformed JSON, an unknown `op_type`, or a version
-    /// mismatch — all actionable load-time failures (`AGENTS.md` §1.4). Semantic graph
-    /// checks (tensor wiring, topo order) live in [`crate::eval`], not here: this is purely
-    /// the parse + version gate. Forward-compat is gated by the version field, so we do
-    /// **not** `deny_unknown_fields` — a future compatible key must not hard-fail an older
-    /// reader that has already matched the version.
     pub fn from_json(s: &str) -> Result<Graph, String> {
         let graph: Graph = serde_json::from_str(s).map_err(|e| format!("IR parse error: {e}"))?;
         if graph.schema_version != SCHEMA_VERSION {
@@ -179,31 +123,29 @@ impl Graph {
         Ok(graph)
     }
 
-    /// Serialize the graph to pretty JSON (the human-inspectable wire format, `PROJECT.md`
-    /// §7). Infallible: every field is a plain integer/string container.
+    /// Serialize this IR graph to JSON.
     pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self).expect("IR graph is composed of serializable types")
+        serde_json::to_string(self).expect("Graph serialization to JSON is infallible")
     }
 }
 
 impl OpSpec {
-    /// Construct the runtime [`Op`] this spec describes, validating its parameters loudly
-    /// *before* any crypto (`AGENTS.md` §1.4) — keygen is slow, so a malformed layer should
-    /// fail at load, not after.
-    ///
-    /// Returns `Err` rather than panicking so the graph loader ([`crate::eval`]) surfaces a
-    /// clean, named error. The op structs additionally assert their own invariants in
-    /// `eval`/`output_bits` (defense in depth); this just catches them earlier.
-    pub fn build(&self) -> Result<Box<dyn Op>, String> {
+    pub fn op_type(&self) -> &'static str {
         match self {
-            OpSpec::Linear {
-                weights,
-                bias,
-                weight_bits,
-            } => {
-                // Mirror the `assert!`s in `Linear::eval`, but as load-time errors: a `zip`
-                // mismatch would otherwise silently truncate, and a ragged matrix would
-                // panic deep in eval after keygen.
+            OpSpec::Linear { .. } => "Linear",
+            OpSpec::Conv2d { .. } => "Conv2d",
+            OpSpec::Activation { .. } => "Activation",
+            OpSpec::Argmax { .. } => "Argmax",
+            OpSpec::Requant { .. } => "Requant",
+            OpSpec::Pool { .. } => "Pool",
+            OpSpec::Add { .. } => "Add",
+        }
+    }
+
+    /// Validate the op specification fields at load time, failing loudly on invalid configuration.
+    pub fn validate(&self) -> Result<(), String> {
+        match self {
+            OpSpec::Linear { weights, bias, .. } => {
                 if weights.is_empty() {
                     return Err("Linear op has no weight rows".to_string());
                 }
@@ -222,16 +164,10 @@ impl OpSpec {
                         row.len()
                     ));
                 }
-                Ok(Box::new(Linear {
-                    weights: weights.clone(),
-                    bias: bias.clone(),
-                    weight_bits: *weight_bits,
-                }))
             }
             OpSpec::Conv2d {
                 weights,
                 bias,
-                weight_bits,
                 in_h,
                 in_w,
                 in_channels,
@@ -239,8 +175,8 @@ impl OpSpec {
                 kernel_w,
                 stride,
                 padding,
+                ..
             } => {
-                // Load-time validation mirroring `Conv2d::eval`'s asserts (`AGENTS.md` §1.4).
                 if weights.is_empty() {
                     return Err("Conv2d op has no output channels (empty weights)".to_string());
                 }
@@ -266,7 +202,6 @@ impl OpSpec {
                         row.len()
                     ));
                 }
-                // The padded kernel must fit the padded input, or `out_dims` underflows.
                 if kernel_h > &(in_h + 2 * padding) || kernel_w > &(in_w + 2 * padding) {
                     return Err(format!(
                         "Conv2d kernel ({kernel_h}x{kernel_w}) does not fit the padded input \
@@ -275,88 +210,55 @@ impl OpSpec {
                         in_w + 2 * padding
                     ));
                 }
-                Ok(Box::new(Conv2d {
-                    weights: weights.clone(),
-                    bias: bias.clone(),
-                    weight_bits: *weight_bits,
-                    in_h: *in_h,
-                    in_w: *in_w,
-                    in_channels: *in_channels,
-                    kernel_h: *kernel_h,
-                    kernel_w: *kernel_w,
-                    stride: *stride,
-                    padding: *padding,
-                }))
             }
-            // Activation/Argmax own their remaining invariants in `eval`/`output_bits`. The
-            // Phase-2 model graph is `Linear → Argmax` (the activation LUT is exercised
-            // standalone, not in the inference path), so an in-graph Activation is dormant
-            // until Phase 4 adds a Requant in front of it.
-            OpSpec::Activation { lut, output_bits } => Ok(Box::new(Activation {
-                lut: lut.clone(),
-                output_bits: *output_bits,
-            })),
-            OpSpec::Argmax { threshold } => Ok(Box::new(Argmax {
-                threshold: *threshold,
-            })),
+            OpSpec::Activation { .. } => {}
+            OpSpec::Argmax { .. } => {}
             OpSpec::Requant {
-                shift,
                 mult,
-                round_bias,
                 out_bits,
                 clamp_lut,
                 mults,
                 shifts,
                 round_biases,
                 channel_size,
+                ..
             } => {
-                // Mirror the asserts in `Requant::eval`/`output_bits` as load-time errors so a
-                // malformed table fails before keygen (`AGENTS.md` §1.4), not deep in eval.
-                let domain = 1usize << crate::keys::MESSAGE_BITS;
+                let domain = 1usize << MESSAGE_BITS;
                 if clamp_lut.len() != domain {
                     return Err(format!(
                         "Requant clamp_lut must have {domain} entries (the \
-                         {}-bit message space); got {}",
-                        crate::keys::MESSAGE_BITS,
+                         {MESSAGE_BITS}-bit message space); got {}",
                         clamp_lut.len()
                     ));
                 }
                 if let Some((i, &e)) = clamp_lut
                     .iter()
                     .enumerate()
-                    .find(|&(_, &e)| e >= (1u64 << crate::keys::MESSAGE_BITS))
+                    .find(|&(_, &e)| e >= (1u64 << MESSAGE_BITS))
                 {
                     return Err(format!(
                         "Requant clamp_lut[{i}] = {e} does not fit one shortint block \
                          (must be < {})",
-                        1u64 << crate::keys::MESSAGE_BITS
+                        1u64 << MESSAGE_BITS
                     ));
                 }
-                if *out_bits > crate::keys::MESSAGE_BITS {
+                if *out_bits > MESSAGE_BITS {
                     return Err(format!(
-                        "Requant out_bits ({out_bits}) exceeds MESSAGE_BITS ({}); the narrowed \
-                         value must fit a single shortint block",
-                        crate::keys::MESSAGE_BITS
+                        "Requant out_bits ({out_bits}) exceeds MESSAGE_BITS ({MESSAGE_BITS}); the narrowed \
+                         value must fit a single shortint block"
                     ));
                 }
-                // A zero multiplier would annihilate the value (every output 0); a non-positive
-                // rescale is never what the quantization service means. Catch it loudly here.
                 if *mult == 0 {
                     return Err(
                         "Requant mult must be >= 1 (a fixed-point multiplier; 1 is a pure shift)"
                             .to_string(),
                     );
                 }
-                // Per-channel overlay (0.6.0): if any of the arrays / channel_size is present, all
-                // must be consistent — equal-length arrays, a positive channel_size, and every
-                // per-channel mult >= 1 (the scalar mult==0 guard, per channel). Element-count vs
-                // channel_size divisibility depends on the runtime tensor length, so it is checked
-                // in `eval` (`AGENTS.md` §1.4), not here.
                 let has_pc = !mults.is_empty()
                     || !shifts.is_empty()
                     || !round_biases.is_empty()
                     || channel_size.is_some();
-                let channel_size = if has_pc {
+                if has_pc {
                     if mults.is_empty() {
                         return Err(
                             "Requant per-channel overlay present but `mults` is empty; supply one \
@@ -387,21 +289,7 @@ impl OpSpec {
                              channel; 1 is a pure shift)"
                         ));
                     }
-                    cs
-                } else {
-                    0 // sentinel: per-tensor (scalar) path
-                };
-                Ok(Box::new(Requant {
-                    shift: *shift,
-                    mult: *mult,
-                    round_bias: *round_bias,
-                    out_bits: *out_bits,
-                    clamp_lut: clamp_lut.clone(),
-                    mults: mults.clone(),
-                    shifts: shifts.clone(),
-                    round_biases: round_biases.clone(),
-                    channel_size,
-                }))
+                }
             }
             OpSpec::Pool {
                 mode,
@@ -412,17 +300,14 @@ impl OpSpec {
                 pool_w,
                 stride,
             } => {
-                // Parse the mode string into the typed enum, failing loudly on a typo rather
-                // than silently picking a default (`AGENTS.md` §1.4).
-                let mode = match mode.as_str() {
-                    "avg" => PoolMode::Avg,
-                    "max" => PoolMode::Max,
+                match mode.as_str() {
+                    "avg" | "max" => {}
                     other => {
                         return Err(format!(
                             "Pool mode must be \"avg\" or \"max\"; got {other:?}"
                         ))
                     }
-                };
+                }
                 if *in_h == 0 || *in_w == 0 || *channels == 0 {
                     return Err("Pool in_h/in_w/channels must be positive".to_string());
                 }
@@ -434,34 +319,28 @@ impl OpSpec {
                         "Pool window ({pool_h}x{pool_w}) must fit the input ({in_h}x{in_w})"
                     ));
                 }
-                Ok(Box::new(Pool {
-                    mode,
-                    in_h: *in_h,
-                    in_w: *in_w,
-                    channels: *channels,
-                    pool_h: *pool_h,
-                    pool_w: *pool_w,
-                    stride: *stride,
-                }))
             }
-            // `Add` has no payload to validate here; its operand-count and equal-length
-            // invariants are enforced in `Add::eval_n` (the wiring is the graph's job). The
-            // two-input requirement is checked by the eval loop / bit-width tracker.
-            OpSpec::Add {} => Ok(Box::new(Add)),
+            OpSpec::Add {} => {}
         }
+        Ok(())
     }
 
-    /// The op-type tag, for human-facing output (`inspect`) and error messages.
-    pub fn op_type(&self) -> &'static str {
-        match self {
-            OpSpec::Linear { .. } => "Linear",
-            OpSpec::Conv2d { .. } => "Conv2d",
-            OpSpec::Activation { .. } => "Activation",
-            OpSpec::Argmax { .. } => "Argmax",
-            OpSpec::Requant { .. } => "Requant",
-            OpSpec::Pool { .. } => "Pool",
-            OpSpec::Add {} => "Add",
-        }
+    /// Build an op summary trait object for bit-width validation and conformance checks.
+    pub fn build(&self) -> Result<Box<dyn OpSummary>, String> {
+        self.validate()?;
+        Ok(Box::new(self.clone()))
+    }
+}
+
+impl OpSummary for OpSpec {
+    fn output_bits(&self, input_bits: usize) -> usize {
+        self.output_bits_n(&[input_bits])
+    }
+    fn output_bits_n(&self, input_bits: &[usize]) -> usize {
+        crate::bitwidth::op_spec_output_bits_n(self, input_bits)
+    }
+    fn internal_bits_n(&self, input_bits: &[usize]) -> usize {
+        crate::bitwidth::op_spec_internal_bits_n(self, input_bits)
     }
 }
 
@@ -469,7 +348,6 @@ impl OpSpec {
 mod tests {
     use super::*;
 
-    /// A minimal Phase-2 graph (`Linear → Argmax`) round-trips through JSON unchanged.
     #[test]
     fn graph_json_round_trip() {
         let graph = Graph {
@@ -477,23 +355,32 @@ mod tests {
             num_blocks: 8,
             input_bits: 4,
             inputs: vec!["x".to_string()],
-            outputs: vec!["label".to_string()],
+            outputs: vec!["pred".to_string()],
             nodes: vec![
                 Node {
-                    name: "fc".to_string(),
+                    name: "linear".to_string(),
                     inputs: vec!["x".to_string()],
-                    outputs: vec!["logit".to_string()],
+                    outputs: vec!["z".to_string()],
                     op: OpSpec::Linear {
                         weights: vec![vec![1, -2, 3]],
-                        bias: vec![-1],
-                        weight_bits: 4,
+                        bias: vec![4],
+                        weight_bits: 3,
                     },
                 },
                 Node {
-                    name: "head".to_string(),
-                    inputs: vec!["logit".to_string()],
-                    outputs: vec!["label".to_string()],
-                    op: OpSpec::Argmax { threshold: 0 },
+                    name: "act".to_string(),
+                    inputs: vec!["z".to_string()],
+                    outputs: vec!["a".to_string()],
+                    op: OpSpec::Activation {
+                        lut: vec![0, 1, 2, 3],
+                        output_bits: 2,
+                    },
+                },
+                Node {
+                    name: "argmax".to_string(),
+                    inputs: vec!["a".to_string()],
+                    outputs: vec!["pred".to_string()],
+                    op: OpSpec::Argmax { threshold: 2 },
                 },
             ],
         };
@@ -501,8 +388,6 @@ mod tests {
         assert_eq!(graph, restored);
     }
 
-    /// The multi-input `Add` op (two `inputs`, empty payload) round-trips unchanged and
-    /// serializes to the bare `{"op_type":"Add"}` the Python `AddSpec` emits.
     #[test]
     fn add_op_json_round_trip() {
         let graph = Graph {
@@ -523,8 +408,6 @@ mod tests {
         assert_eq!(graph.nodes[0].op.op_type(), "Add");
     }
 
-    /// A `Conv2d` node round-trips, and `build` rejects a kernel row whose width disagrees
-    /// with `in_channels*kernel_h*kernel_w`.
     #[test]
     fn conv2d_op_round_trip_and_validation() {
         let graph = Graph {
@@ -538,7 +421,7 @@ mod tests {
                 inputs: vec!["x".to_string()],
                 outputs: vec!["y".to_string()],
                 op: OpSpec::Conv2d {
-                    weights: vec![vec![0i64; 9]], // 1 in-channel * 3 * 3
+                    weights: vec![vec![0i64; 9]],
                     bias: vec![0],
                     weight_bits: 4,
                     in_h: 5,
@@ -554,7 +437,6 @@ mod tests {
         let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
         assert_eq!(graph, restored);
 
-        // Kernel width (8) disagrees with fan-in 1*3*3 = 9.
         let bad = OpSpec::Conv2d {
             weights: vec![vec![0i64; 8]],
             bias: vec![0],
@@ -570,8 +452,6 @@ mod tests {
         assert!(bad.build().is_err(), "kernel/fan-in mismatch must fail");
     }
 
-    /// A `Requant` node round-trips through JSON, and `build` rejects a malformed clamp LUT
-    /// (wrong length / out-of-range entry) at load time rather than panicking deep in eval.
     #[test]
     fn requant_op_round_trip_and_validation() {
         let graph = Graph {
@@ -599,19 +479,10 @@ mod tests {
         };
         let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
         assert_eq!(graph, restored);
-        // A per-tensor Requant must omit the per-channel keys entirely (byte-identical to 0.5.0):
-        // the `skip_serializing_if` guards are what keep every legacy fixture unchanged.
         let json = graph.to_json();
-        assert!(
-            !json.contains("mults"),
-            "per-tensor JSON must not emit `mults`"
-        );
-        assert!(
-            !json.contains("channel_size"),
-            "per-tensor JSON must not emit `channel_size`"
-        );
+        assert!(!json.contains("mults"));
+        assert!(!json.contains("channel_size"));
 
-        // Wrong LUT length fails to build (must cover the whole 2-bit message space).
         let bad_len = OpSpec::Requant {
             shift: 1,
             mult: 1,
@@ -623,12 +494,8 @@ mod tests {
             round_biases: vec![],
             channel_size: None,
         };
-        assert!(
-            bad_len.build().is_err(),
-            "short clamp_lut must fail to build"
-        );
+        assert!(bad_len.build().is_err());
 
-        // An entry that doesn't fit one block fails to build.
         let bad_entry = OpSpec::Requant {
             shift: 1,
             mult: 1,
@@ -640,12 +507,8 @@ mod tests {
             round_biases: vec![],
             channel_size: None,
         };
-        assert!(
-            bad_entry.build().is_err(),
-            "out-of-range clamp_lut entry must fail to build"
-        );
+        assert!(bad_entry.build().is_err());
 
-        // mult == 0 (an annihilating rescale) fails to build.
         let zero_mult = OpSpec::Requant {
             shift: 1,
             mult: 0,
@@ -657,12 +520,9 @@ mod tests {
             round_biases: vec![],
             channel_size: None,
         };
-        assert!(zero_mult.build().is_err(), "mult == 0 must fail to build");
+        assert!(zero_mult.build().is_err());
     }
 
-    /// A `Requant` payload emitted *without* the 0.5.0 `mult`/`round_bias` fields deserializes
-    /// with their defaults (`mult = 1`, `round_bias = 0`) — the legacy pure-shift semantics.
-    /// This is the forward-compat path that keeps a minimal `Requant` JSON valid.
     #[test]
     fn requant_fields_default_when_absent() {
         let json = format!(
@@ -676,14 +536,13 @@ mod tests {
             OpSpec::Requant {
                 mult, round_bias, ..
             } => {
-                assert_eq!(*mult, 1, "absent mult must default to 1");
-                assert_eq!(*round_bias, 0, "absent round_bias must default to 0");
+                assert_eq!(*mult, 1);
+                assert_eq!(*round_bias, 0);
             }
             other => panic!("expected Requant, got {}", other.op_type()),
         }
     }
 
-    /// The generalized `Requant` (mult != 1, round-to-nearest bias) round-trips through JSON.
     #[test]
     fn requant_with_mult_round_trips() {
         let graph = Graph {
@@ -713,8 +572,6 @@ mod tests {
         assert_eq!(graph, restored);
     }
 
-    /// A **per-channel** `Requant` (0.6.0 overlay) round-trips through JSON, and `build` rejects
-    /// inconsistent per-channel arrays.
     #[test]
     fn requant_per_channel_round_trips_and_validates() {
         let graph = Graph {
@@ -733,7 +590,6 @@ mod tests {
                     round_bias: 0,
                     out_bits: 2,
                     clamp_lut: vec![0, 1, 2, 3],
-                    // Two channels with distinct rescales; the scalars above are ignored.
                     mults: vec![1, 3],
                     shifts: vec![0, 5],
                     round_biases: vec![0, 16],
@@ -743,16 +599,9 @@ mod tests {
         };
         let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
         assert_eq!(graph, restored);
-        assert!(
-            graph.to_json().contains("channel_size"),
-            "per-channel JSON must carry channel_size"
-        );
-        assert!(
-            graph.nodes[0].op.build().is_ok(),
-            "valid per-channel builds"
-        );
+        assert!(graph.to_json().contains("channel_size"));
+        assert!(graph.nodes[0].op.build().is_ok());
 
-        // Mismatched array lengths fail to build.
         let bad = OpSpec::Requant {
             shift: 0,
             mult: 1,
@@ -760,13 +609,12 @@ mod tests {
             out_bits: 2,
             clamp_lut: vec![0, 1, 2, 3],
             mults: vec![1, 3],
-            shifts: vec![0], // too short
+            shifts: vec![0],
             round_biases: vec![0, 16],
             channel_size: Some(2),
         };
-        assert!(bad.build().is_err(), "unequal per-channel arrays must fail");
+        assert!(bad.build().is_err());
 
-        // Arrays present but channel_size missing fails to build.
         let no_cs = OpSpec::Requant {
             shift: 0,
             mult: 1,
@@ -778,10 +626,9 @@ mod tests {
             round_biases: vec![0, 16],
             channel_size: None,
         };
-        assert!(no_cs.build().is_err(), "missing channel_size must fail");
+        assert!(no_cs.build().is_err());
     }
 
-    /// A `Pool` node round-trips, and `build` rejects an unknown mode / oversized window.
     #[test]
     fn pool_op_round_trip_and_validation() {
         let graph = Graph {
@@ -817,7 +664,7 @@ mod tests {
             pool_w: 2,
             stride: 2,
         };
-        assert!(bad_mode.build().is_err(), "unknown Pool mode must fail");
+        assert!(bad_mode.build().is_err());
 
         let too_big = OpSpec::Pool {
             mode: "max".to_string(),
@@ -828,10 +675,7 @@ mod tests {
             pool_w: 3,
             stride: 1,
         };
-        assert!(
-            too_big.build().is_err(),
-            "window larger than the input must fail"
-        );
+        assert!(too_big.build().is_err());
     }
 
     #[test]
@@ -844,8 +688,6 @@ mod tests {
 
     #[test]
     fn from_json_rejects_unknown_op_type() {
-        // `BatchNorm` is a still-unsupported op (Conv2d/Pool/Requant/Add became known in
-        // Phase 4); use it as the negative case so the test exercises a genuine rejection.
         let bad = format!(
             r#"{{"schema_version":"{SCHEMA_VERSION}","num_blocks":8,"input_bits":4,
             "inputs":["x"],"outputs":["y"],"nodes":[{{"name":"c","inputs":["x"],
@@ -862,12 +704,9 @@ mod tests {
     fn build_rejects_mismatched_linear() {
         let spec = OpSpec::Linear {
             weights: vec![vec![1, 2], vec![3, 4]],
-            bias: vec![0], // 2 rows, 1 bias
+            bias: vec![0],
             weight_bits: 4,
         };
-        assert!(
-            spec.build().is_err(),
-            "weights/bias length mismatch must fail to build"
-        );
+        assert!(spec.build().is_err());
     }
 }

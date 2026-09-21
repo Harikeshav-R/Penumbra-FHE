@@ -556,20 +556,20 @@ around it.
 
 Keep this **mechanical**. It is a boundary-drawing exercise, not a rewrite.
 
-- [ ] Convert to a Cargo workspace under `crates/`: `penumbra-core`, `penumbra-tfhe`,
+- [x] Convert to a Cargo workspace under `crates/`: `penumbra-core`, `penumbra-tfhe`,
       `penumbra-bench` (`PROJECT.md` §13).
-- [ ] Move `ir.rs` and `eval.rs` into `penumbra-core` unchanged — they already have **zero**
+- [x] Move `ir.rs` and `eval.rs` into `penumbra-core` unchanged — they already have **zero**
       `tfhe` imports.
-- [ ] Extract the `Backend` trait from the primitives the ops already call
+- [x] Extract the `Backend` trait from the primitives the ops already call
       (`docs/BACKENDS.md`). Generalize `CtVec`/`EvalCtx` over it; change op *logic* as little
       as possible.
-- [ ] Move `keys.rs`, `encrypt.rs`, and `ops/` into `penumbra-tfhe` and implement the trait.
-- [ ] **Tag the key and ciphertext wire formats with a backend/scheme identifier.** Today
+- [x] Move `keys.rs`, `encrypt.rs`, and `ops/` into `penumbra-tfhe` and implement the trait.
+- [x] **Tag the key and ciphertext wire formats with a backend/scheme identifier.** Today
       `.cts` is bare `bincode` with no tag or version, so a cross-backend mix-up would be a
       deserialization panic rather than an actionable message (`AGENTS.md` §1.4).
-- [ ] Keep the six binary names (`keygen`, `encrypt`, `serve`, `decrypt`, `predict`,
+- [x] Keep the six binary names (`keygen`, `encrypt`, `serve`, `decrypt`, `predict`,
       `inspect`) resolvable — `python/penumbra/client.py` shells out to them by name.
-- [ ] Update CI: workspace-aware caching and working directories; decide what
+- [x] Update CI: workspace-aware caching and working directories; decide what
       `--all-features` means now that it could enable two backends at once.
 
 > **Exit criterion for this stage specifically: every existing test passes unchanged.** That

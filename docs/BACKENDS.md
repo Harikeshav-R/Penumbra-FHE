@@ -8,8 +8,8 @@ Read [`PROJECT.md`](../PROJECT.md) §4–§6 first for the narrow-waist architec
 
 | Backend | Crate | Scheme | Library | Arithmetic | Status |
 |---|---|---|---|---|---|
-| `tfhe` | `penumbra-tfhe` | TFHE / CGGI | [`tfhe-rs`](https://github.com/zama-ai/tfhe-rs) | exact, small signed integers | reference implementation |
-| `ckks` | `penumbra-ckks` | CKKS | [`poulpy-ckks`](https://github.com/phantomzone-org/poulpy) | approximate reals, SIMD-batched | planned (`ROADMAP.md` Phase 12) |
+| `tfhe` | `penumbra-tfhe` | TFHE / CGGI | [`tfhe-rs`](https://github.com/zama-ai/tfhe-rs) | exact, small signed integers | reference implementation (Phase 12.1) |
+| `ckks` | `penumbra-ckks` | CKKS | [`poulpy-ckks`](https://github.com/phantomzone-org/poulpy) | approximate reals, SIMD-batched | planned (`ROADMAP.md` Phase 12.2) |
 
 The second backend exists to make a **controlled comparison** possible, not to make Penumbra
 a general multi-scheme framework (`PROJECT.md` §1, §18). Everything below is in service of
@@ -25,21 +25,21 @@ schemes multiply.
 ┌─ Layer 3: MODEL ADAPTERS (grows per use case — NO crypto here) ─────┐
 │  MNIST CNN │ face classifier │ tabular MLP │ ...                     │
 └───────────────────────────────┬──────────────────────────────────────┘
-                                 │  ◀── waist 1: the stable IR
+                                │  ◀── waist 1: the stable IR
 ┌─ Layer 2: IR + OP REGISTRY + EVAL LOOP (fixed, backend-neutral) ────┐
 │  a graph of ~8 op types, walked once: Linear, Conv2d, Requant, ...   │
 └───────────────────────────────┬──────────────────────────────────────┘
-                                 │  ◀── waist 2: the `Backend` trait
+                                │  ◀── waist 2: the `Backend` trait
 ┌─ Layer 1: FHE BACKENDS (pluggable — one per scheme) ────────────────┐
 │   penumbra-tfhe (tfhe-rs)      │      penumbra-ckks (poulpy-ckks)    │
 │   exact ints, LUT via PBS      │      approx reals, polynomials      │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-Layer 2 is written once and knows nothing about either scheme. This is not aspirational —
-it is already nearly true: `eval.rs` and `ir.rs` contain **zero** `tfhe` imports today, and
-five of the seven ops (`linear`, `conv2d`, `pool`, `add`, `argmax`) never name a `tfhe` type
-either. The coupling that remains lives in two type aliases and two ops (see below).
+Layer 2 is written once and knows nothing about either scheme. As of Phase 12.1,
+`crates/penumbra-core` contains **zero** cryptographic dependencies, and `crates/penumbra-tfhe`
+realizes the `Backend` trait against `tfhe-rs`. The `runtime` crate serves as a backward-compatible
+facade re-exporting both crates.
 
 ### The discipline, stated both ways
 

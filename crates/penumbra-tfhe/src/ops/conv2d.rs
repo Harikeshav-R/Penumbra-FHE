@@ -3,34 +3,14 @@
 //! Covers CNNs (MNIST, faces). Like [`crate::ops::linear::Linear`], this is the *cheap*
 //! regime (`PROJECT.md` §5): the input is encrypted but the kernel is plaintext, so each
 //! output is `Σ (ciphertext × plaintext_weight) + plaintext_bias` — scalar-multiplies and
-//! additions only, **no programmable bootstrap**. Conv is just `Linear` applied at every
-//! spatial position with a shared kernel; the implementation is a direct (im2col-style) loop
-//! over output positions reusing the same `scalar_mul + add` core.
-//!
-//! ## Tensor layout (shared with [`crate::ops::pool::Pool`])
-//!
-//! Input is a flat [`CtVec`] read as **channel-major, row-major** `[in_channels][in_h][in_w]`:
-//! element `(c, y, x)` at `c*in_h*in_w + y*in_w + x`. Output is `[out_channels][out_h][out_w]`
-//! in the same layout, with `out_h = (in_h + 2*padding - kernel_h)/stride + 1` (likewise
-//! `out_w`). Zero padding is *virtual* — padded taps contribute nothing and are skipped (a
-//! zero ciphertext times a weight is zero), so no real ciphertext zeros are materialized.
-//!
-//! ## Weight layout
-//!
-//! `weights` is row-major `[out_channels][in_channels*kernel_h*kernel_w]` — one flattened
-//! kernel per output channel, the in-channel/kernel-row/kernel-col index running fastest in
-//! that order. `bias` has one entry per output channel. This mirrors how the quantization
-//! service flattens a PyTorch/ONNX `[out_c][in_c][kh][kw]` kernel.
-//!
-//! ## Bit-width growth rule (`PROJECT.md` §9)
-//!
-//! Identical to `Linear` with fan-in `N = in_channels * kernel_h * kernel_w`:
-//! `max(sum_bits, bias_bits) + 2`, where `sum_bits = input_bits + weight_bits + ceil(log2 N)`
-//! and the `+2` is one carry from the bias add plus one sign bit.
+//! additions only, **no programmable bootstrap**.
 
 use tfhe::integer::SignedRadixCiphertext;
 
-use super::{CtVec, EvalCtx, Op};
+use penumbra_core::ops::Op;
+
+use super::{CtVec, EvalCtx};
+use crate::backend::TfheBackend;
 
 /// 2-D convolution with plaintext quantized kernel weights.
 pub struct Conv2d {
@@ -61,9 +41,8 @@ impl Conv2d {
     }
 }
 
-impl Op for Conv2d {
+impl Op<TfheBackend> for Conv2d {
     fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
-        // Fail loudly on a layout/shape mismatch before any crypto (`AGENTS.md` §1.4).
         assert_eq!(
             inputs.len(),
             self.in_channels * self.in_h * self.in_w,
@@ -98,24 +77,16 @@ impl Op for Conv2d {
             );
             for oy in 0..out_h {
                 for ox in 0..out_w {
-                    // Accumulate the MACs for this output position (no PBS). Start from a
-                    // trivial encrypted zero sized to the model's radix.
                     let mut acc: SignedRadixCiphertext =
                         sk.create_trivial_zero_radix(ctx.num_blocks);
 
-                    // Walk the kernel taps in weight-layout order: in-channel, then kernel
-                    // row, then kernel col (the index that runs fastest).
                     for ic in 0..self.in_channels {
                         let in_base = ic * in_hw;
                         for ky in 0..self.kernel_h {
-                            // Signed source row before padding offset.
                             let iy = (oy * self.stride + ky) as isize - self.padding as isize;
                             for kx in 0..self.kernel_w {
                                 let ix = (ox * self.stride + kx) as isize - self.padding as isize;
                                 let w = kernel[(ic * self.kernel_h + ky) * self.kernel_w + kx];
-                                // Skip padded taps (virtual zeros) and zero weights — both
-                                // contribute nothing, and skipping zero weights also trims
-                                // needless scalar-muls.
                                 if w == 0
                                     || iy < 0
                                     || ix < 0
@@ -131,7 +102,6 @@ impl Op for Conv2d {
                         }
                     }
 
-                    // Plaintext bias add (still cheap, no PBS).
                     out.push(sk.scalar_add_parallelized(&acc, b));
                 }
             }
@@ -140,9 +110,6 @@ impl Op for Conv2d {
     }
 
     fn output_bits(&self, input_bits: usize) -> usize {
-        // Same derivation as `Linear` with fan-in N = in_channels*kernel_h*kernel_w. See
-        // `linear.rs` for why the two contributors (summed products vs bias) are max'd and
-        // why the guard is `+2` (one carry from the bias add, one sign bit).
         let n = self.fan_in();
         let sum_growth = if n <= 1 {
             0
@@ -157,7 +124,7 @@ impl Op for Conv2d {
             .map(|b| b.unsigned_abs())
             .max()
             .unwrap_or(0);
-        let bias_bits = crate::keys::magnitude_bits(max_bias);
+        let bias_bits = crate::keys::magnitude_bits(max_bias as i64);
 
         sum_bits.max(bias_bits) + 2
     }

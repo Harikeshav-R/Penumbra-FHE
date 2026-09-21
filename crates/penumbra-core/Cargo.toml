@@ -1,0 +1,13 @@
+[package]
+name = "penumbra-core"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.83"
+license = "Apache-2.0"
+description = "Penumbra-FHE Layer 2: backend-neutral IR, graph evaluation loop, bit-width budget propagation, and Backend trait."
+repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
