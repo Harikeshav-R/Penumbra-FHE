@@ -203,10 +203,13 @@ currency is `CtVec` — conceptually one ciphertext per scalar value.
   become rotation-and-sum patterns. Substantially more implementation work and a real risk of
   the packing layout leaking upward into Layer 2.
 
-**Recommendation: B, with A as the spike's stepping stone.** A single-slot spike proves the
-plumbing (Phase 12.0); shipping A as the final backend would make the headline result an
-artifact of our implementation rather than of the scheme. Whichever is chosen must be stated
-in `docs/COMPARISON.md`'s threats-to-validity section.
+**Decision (settled in Phase 12.0): Option B (tensor slot packing).** Empirical benchmarks in
+the Phase-12.0 spike (`crates/spike-ckks`, `docs/NOTES-ckks.md`) showed that evaluating an
+activation layer across 128 packed slots in a single ciphertext requires only ~0.26 ms in
+`--release`. Evaluating scalar ciphertexts one value at a time (Option A) would require 128
+independent polynomial evaluations, making inference over $100\times$ slower and artificially
+crippling CKKS. Whichever is chosen must be stated in `docs/COMPARISON.md`'s threats-to-validity
+section.
 
 ### 2. What `Requant` means under CKKS
 

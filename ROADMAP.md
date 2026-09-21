@@ -535,22 +535,22 @@ Prove the crypto plumbing before designing anything around it. If something core
 or broken upstream, that must surface **now**, not after a trait boundary has been built
 around it.
 
-- [ ] **Answer the toolchain question.** Does `poulpy-ckks` 0.8.3 build on stable Rust, or
+- [x] **Answer the toolchain question.** Does `poulpy-ckks` 0.8.3 build on stable Rust, or
       does it require the nightly its upstream `rust-toolchain.toml` pins (it depends on
       `libm`'s `unstable-float`)? Record the answer in `docs/NOTES-ckks.md`.
-- [ ] **Answer the platform question.** Confirm `poulpy-cpu-arm` (NEON) works on the
+- [x] **Answer the platform question.** Confirm `poulpy-cpu-arm` (NEON) works on the
       development machine. `poulpy-cpu-avx` is x86-64 only; CI is x86-64. Decide which HAL
       backend benchmarks are pinned to.
-- [ ] **Confirm coexistence.** `tfhe` 1.6 and the `poulpy` crates must resolve together in one
+- [x] **Confirm coexistence.** `tfhe` 1.6 and the `poulpy` crates must resolve together in one
       lockfile. Cheaper to discover before the refactor than after.
-- [ ] **Implement one real operation** from Penumbra's inference path — a packed dot product
+- [x] **Implement one real operation** from Penumbra's inference path — a packed dot product
       or a single `Linear` layer — directly against `poulpy-ckks`, standalone. Encrypt → op →
       decrypt → correct output, end to end.
-- [ ] **Implement one nonlinearity** as a polynomial: ReLU via the `approximation` module, and
+- [x] **Implement one nonlinearity** as a polynomial: ReLU via the `approximation` module, and
       measure its error. This is where CKKS and TFHE genuinely diverge; do not defer it.
-- [ ] Record the parameter profile, the primitives used, and measured costs in
+- [x] Record the parameter profile, the primitives used, and measured costs in
       `docs/NOTES-ckks.md` — the same way `docs/NOTES-tfhe.md` closed the Phase-1 spike.
-- [ ] **Decide the slot-packing fork** (`docs/BACKENDS.md`) with the spike's evidence in hand.
+- [x] **Decide the slot-packing fork** (`docs/BACKENDS.md`) with the spike's evidence in hand.
 
 #### 12.1 — Workspace refactor + `Backend` trait extraction
 
