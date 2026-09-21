@@ -51,21 +51,21 @@ and test in CI, with a trivial `tfhe-rs` program proving the toolchain works.
 
 ### Tasks
 
-- [ ] Create the repo skeleton from `PROJECT.md` §13 (`python/`, `runtime/`, `examples/`,
+- [x] Create the repo skeleton from `PROJECT.md` §13 (`python/`, `runtime/`, `examples/`,
       `tests/`, `docs/`).
-- [ ] Initialize git; add `.gitignore` (Rust `target/`, Python `__pycache__/`, venv, ONNX
+- [x] Initialize git; add `.gitignore` (Rust `target/`, Python `__pycache__/`, venv, ONNX
       artifacts, `*.fhe` files).
-- [ ] **Rust:** `cargo init --lib runtime/`; add `tfhe`, `serde`, `serde_json` to
+- [x] **Rust:** `cargo init --lib runtime/`; add `tfhe`, `serde`, `serde_json` to
       `Cargo.toml`. Confirm `cargo build` works.
-- [ ] **Python:** set up `pyproject.toml` managed with **`uv`** (project standard — not
+- [x] **Python:** set up `pyproject.toml` managed with **`uv`** (project standard — not
       poetry); add `onnx`, `numpy`, `torch`, `brevitas`, `pytest`. Create
       `python/penumbra/__init__.py`.
-- [ ] Add the **Apache 2.0** `LICENSE` file.
-- [ ] Write a minimal `README.md` (one-paragraph pitch + "see PROJECT.md / ROADMAP.md").
-- [ ] **CI:** GitHub Actions (or equivalent) with two jobs — `cargo test` and `pytest`.
+- [x] Add the **Apache 2.0** `LICENSE` file.
+- [x] Write a minimal `README.md` (one-paragraph pitch + "see PROJECT.md / ROADMAP.md").
+- [x] **CI:** GitHub Actions (or equivalent) with two jobs — `cargo test` and `pytest`.
       Make both green on an empty placeholder test.
-- [ ] Add `rustfmt` + `clippy` (Rust) and `ruff` + `black` (Python) to CI; enforce on PRs.
-- [ ] Document the dev setup in `docs/DEVELOPMENT.md` (toolchain versions, how to build/test).
+- [x] Add `rustfmt` + `clippy` (Rust) and `ruff` + `black` (Python) to CI; enforce on PRs.
+- [x] Document the dev setup in `docs/DEVELOPMENT.md` (toolchain versions, how to build/test).
 
 ### Exit Criteria
 
@@ -88,20 +88,20 @@ Throwaway exploration — but keep it as a reference example.
 
 ### Tasks
 
-- [ ] Read the `tfhe-rs` docs for the `shortint` and `integer` high-level APIs. Note the
+- [x] Read the `tfhe-rs` docs for the `shortint` and `integer` high-level APIs. Note the
       types you'll use for small quantized integers.
-- [ ] Spike A — **keygen + encrypt + decrypt**: generate client/server keys, encrypt a small
+- [x] Spike A — **keygen + encrypt + decrypt**: generate client/server keys, encrypt a small
       integer, decrypt it back. Confirm round-trip.
-- [ ] Spike B — **plaintext-weight arithmetic**: multiply an encrypted integer by a *cleartext*
+- [x] Spike B — **plaintext-weight arithmetic**: multiply an encrypted integer by a *cleartext*
       scalar and add a cleartext bias. Decrypt; confirm correctness. (This is the `Linear`
       core.)
-- [ ] Spike C — **programmable bootstrapping / LUT**: build a lookup table (e.g. ReLU on a
+- [x] Spike C — **programmable bootstrapping / LUT**: build a lookup table (e.g. ReLU on a
       small integer range) and apply it to a ciphertext. Decrypt; confirm it matches the
       table. (This is the `Activation`/`Requant` core.)
-- [ ] Spike D — **bit-width experiment**: measure how PBS latency changes as you increase the
+- [x] Spike D — **bit-width experiment**: measure how PBS latency changes as you increase the
       precision (e.g. 2-bit vs 4-bit vs 6-bit vs 8-bit message). Record numbers in
       `docs/NOTES-tfhe.md`. This directly informs the bit-width budget design.
-- [ ] Write down, in `docs/NOTES-tfhe.md`: which concrete `tfhe-rs` types/params you chose,
+- [x] Write down, in `docs/NOTES-tfhe.md`: which concrete `tfhe-rs` types/params you chose,
       the default parameter profile, and the cost ratio between a LUT op and an add/mul.
 
 ### Exit Criteria
@@ -127,27 +127,27 @@ exactness test here.**
 
 ### Tasks
 
-- [ ] **Runtime — op trait:** define a Rust `Op` interface: takes encrypted inputs + server
+- [x] **Runtime — op trait:** define a Rust `Op` interface: takes encrypted inputs + server
       key, returns encrypted outputs. All ops implement it.
-- [ ] **Runtime — `Linear`:** matvec of encrypted inputs against plaintext weights + bias.
+- [x] **Runtime — `Linear`:** matvec of encrypted inputs against plaintext weights + bias.
       Cheap (no PBS).
-- [ ] **Runtime — `Activation(LUT)`:** apply a provided lookup table via PBS. Start with
+- [x] **Runtime — `Activation(LUT)`:** apply a provided lookup table via PBS. Start with
       sigmoid/ReLU on a small range.
-- [ ] **Runtime — `Argmax`:** return the index of the max over a small encrypted vector
+- [x] **Runtime — `Argmax`:** return the index of the max over a small encrypted vector
       (LUT/compare-based). For a first cut, a 2-class threshold is fine.
-- [ ] **Runtime — eval loop:** a hardcoded sequence `Linear → Activation → Argmax` walking a
+- [x] **Runtime — eval loop:** a hardcoded sequence `Linear → Activation → Argmax` walking a
       `Vec<Op>`.
-- [ ] **Python — toy model:** train logistic regression (or a 1-layer net) on a 2-class
+- [x] **Python — toy model:** train logistic regression (or a 1-layer net) on a 2-class
       subset of MNIST (e.g. 0 vs 1) with scikit-learn / PyTorch.
-- [ ] **Python — manual quantization:** by hand, quantize weights to small integers, compute
+- [x] **Python — manual quantization:** by hand, quantize weights to small integers, compute
       scales, and build the activation LUT. (Automated in Phase 5 — manual is fine now.)
-- [ ] **Python — hand-write IR:** emit the model as a hardcoded structure (JSON or even
+- [x] **Python — hand-write IR:** emit the model as a hardcoded structure (JSON or even
       in-code) the Rust side reads. (Real IR is Phase 3.)
-- [ ] **Cleartext reference:** implement the *quantized-integer* forward pass in plain Python
+- [x] **Cleartext reference:** implement the *quantized-integer* forward pass in plain Python
       (no FHE). This is the oracle.
-- [ ] **GOLDEN TEST:** assert FHE output == quantized-cleartext output, **bit-for-bit**, over
+- [x] **GOLDEN TEST:** assert FHE output == quantized-cleartext output, **bit-for-bit**, over
       a batch of test inputs. Wire into CI.
-- [ ] Measure and record end-to-end encrypted-inference latency for one sample.
+- [x] Measure and record end-to-end encrypted-inference latency for one sample.
 
 ### Exit Criteria
 
@@ -171,21 +171,21 @@ defined consistently on both sides. The IR is the product's backbone.
 
 ### Tasks
 
-- [ ] **Design the IR schema** (see `PROJECT.md` §7): a graph of op nodes, each with op type,
+- [x] **Design the IR schema** (see `PROJECT.md` §7): a graph of op nodes, each with op type,
       input/output edges, attributes, quantized params (int weights, bias), scales/zero-points,
       and (for nonlinear ops) the precomputed LUT.
-- [ ] Start with **JSON** as the wire format (human-inspectable, easy to debug). Document the
+- [x] Start with **JSON** as the wire format (human-inspectable, easy to debug). Document the
       schema in `docs/IR-SPEC.md`.
-- [ ] **Python — `ir.py`:** data classes for nodes + graph; `to_json()` / `from_json()`.
-- [ ] **Rust — `ir.rs`:** mirror structs with `serde` deserialization. **Add a schema-version
+- [x] **Python — `ir.py`:** data classes for nodes + graph; `to_json()` / `from_json()`.
+- [x] **Rust — `ir.rs`:** mirror structs with `serde` deserialization. **Add a schema-version
       field** so format changes are detectable.
-- [ ] **Cross-language conformance test:** Python emits an IR file; Rust loads it; assert the
+- [x] **Cross-language conformance test:** Python emits an IR file; Rust loads it; assert the
       op graph matches expectations. Run in CI (Python writes a fixture, Rust reads it).
-- [ ] **Refactor the eval loop** to consume the deserialized IR graph instead of a hardcoded
+- [x] **Refactor the eval loop** to consume the deserialized IR graph instead of a hardcoded
       `Vec` — walk nodes in topological order.
-- [ ] Re-run the Phase 2 logistic-regression example **through the IR** end to end; golden
+- [x] Re-run the Phase 2 logistic-regression example **through the IR** end to end; golden
       test must still pass.
-- [ ] Add a small `penumbra inspect model.fhe` debug command (Rust or Python) that prints the
+- [x] Add a small `penumbra inspect model.fhe` debug command (Rust or Python) that prints the
       op graph + bit-widths for human inspection.
 
 ### Exit Criteria
@@ -209,23 +209,23 @@ management** that keeps multi-layer models feasible. This is where the hard engi
 
 ### Tasks
 
-- [ ] **Runtime — `Conv2d`:** MACs of encrypted input against plaintext kernel weights.
+- [x] **Runtime — `Conv2d`:** MACs of encrypted input against plaintext kernel weights.
       Reuse the `Linear` plaintext-weight pattern.
-- [ ] **Runtime — `Pool`:** average pool (adds) and max pool (LUT/compare).
-- [ ] **Runtime — `Requant`:** rescale a wide accumulator back to a small integer via LUT.
-- [ ] **Runtime — `Add`:** ciphertext addition (for residuals).
-- [ ] **Bit-width tracker (Python):** for each op, compute output bit-width from inputs. A
+- [x] **Runtime — `Pool`:** average pool (adds) and max pool (LUT/compare).
+- [x] **Runtime — `Requant`:** rescale a wide accumulator back to a small integer via LUT.
+- [x] **Runtime — `Add`:** ciphertext addition (for residuals).
+- [x] **Bit-width tracker (Python):** for each op, compute output bit-width from inputs. A
       `Linear`/`Conv` over N terms grows the accumulator by ~`log2(N)` bits (see `PROJECT.md`
       §9).
-- [ ] **Automatic `Requant` insertion:** the compiler step inserts `Requant` nodes wherever
+- [x] **Automatic `Requant` insertion:** the compiler step inserts `Requant` nodes wherever
       accumulator bit-width exceeds the next op's LUT budget. Make this automatic, not manual.
-- [ ] **Budget enforcement:** emit a clear **error/warning** when required precision exceeds
+- [x] **Budget enforcement:** emit a clear **error/warning** when required precision exceeds
       what the PBS/LUT can handle, naming the offending layer.
-- [ ] **Python — small CNN:** define a tiny conv net (e.g. 1–2 conv + pool + 1–2 dense) for
+- [x] **Python — small CNN:** define a tiny conv net (e.g. 1–2 conv + pool + 1–2 dense) for
       10-class MNIST; quantize (still manual or semi-manual).
-- [ ] Run full 10-class MNIST encrypted inference end to end through the IR.
-- [ ] **Golden test extended:** FHE == quantized-cleartext for the CNN over a test batch.
-- [ ] Record accuracy (vs float model) and latency. Note the accuracy lost to quantization.
+- [x] Run full 10-class MNIST encrypted inference end to end through the IR.
+- [x] **Golden test extended:** FHE == quantized-cleartext for the CNN over a test batch.
+- [x] Record accuracy (vs float model) and latency. Note the accuracy lost to quantization.
 
 ### Exit Criteria
 
@@ -250,21 +250,21 @@ trained model + calibration data; the library produces int weights, scales, and 
 
 ### Tasks
 
-- [ ] **Post-Training Quantization (PTQ):** given a trained float model + calibration data,
+- [x] **Post-Training Quantization (PTQ):** given a trained float model + calibration data,
       compute per-tensor (then optionally per-channel) scales and zero-points; quantize
       weights to N bits.
-- [ ] **Calibration:** run calibration data through the model to observe activation ranges;
+- [x] **Calibration:** run calibration data through the model to observe activation ranges;
       choose activation scales. Support a configurable `n_bits`.
-- [ ] **LUT generation:** auto-generate the lookup table for each activation/requant from its
+- [x] **LUT generation:** auto-generate the lookup table for each activation/requant from its
       function + the chosen input/output scales.
-- [ ] **Quantization-Aware Training (QAT) via Brevitas:** integrate Brevitas so users can
+- [x] **Quantization-Aware Training (QAT) via Brevitas:** integrate Brevitas so users can
       train with simulated quantization and export to the same int-graph form. Provide a
       documented example.
-- [ ] **Accuracy harness:** a utility that reports float-accuracy vs quantized-accuracy vs
+- [x] **Accuracy harness:** a utility that reports float-accuracy vs quantized-accuracy vs
       FHE-accuracy on a test set, so users can see the quantization gap.
-- [ ] **Refactor Phases 2 & 4 examples** to use the quantization service instead of manual
+- [x] **Refactor Phases 2 & 4 examples** to use the quantization service instead of manual
       quantization. Golden test still passes.
-- [ ] Document quantization in `docs/QUANTIZATION.md`: PTQ vs QAT, choosing `n_bits`, the
+- [x] Document quantization in `docs/QUANTIZATION.md`: PTQ vs QAT, choosing `n_bits`, the
       accuracy/speed tradeoff, and the bit-width budget link.
 
 ### Exit Criteria
@@ -291,26 +291,26 @@ where Penumbra-FHE becomes a *library*, not a demo.
 
 ### Tasks
 
-- [ ] **Op registry:** a declarative table mapping supported ONNX ops → internal ops. Start
+- [x] **Op registry:** a declarative table mapping supported ONNX ops → internal ops. Start
       with: `Gemm`/`MatMul` → `Linear`, `Conv` → `Conv2d`, `Relu`/`Sigmoid` → `Activation`,
       `MaxPool`/`AveragePool` → `Pool`, `Add` → `Add`, plus shape ops (`Reshape`, `Flatten`).
-- [ ] **Decide which ONNX ops are FHE-viable** before building the registry: an op is viable
+- [x] **Decide which ONNX ops are FHE-viable** before building the registry: an op is viable
       only if it reduces to your TFHE primitives (plaintext-weight arithmetic, adds, or a
       single-input LUT) within the bit-width budget. Document the rationale per op.
-- [ ] **Parser:** load ONNX with the `onnx` package; extract the graph, initializers
+- [x] **Parser:** load ONNX with the `onnx` package; extract the graph, initializers
       (weights), and node attributes.
-- [ ] **Validator:** walk every node; if any op isn't in the registry, **fail at load time**
+- [x] **Validator:** walk every node; if any op isn't in the registry, **fail at load time**
       with `"operator X (node 'name') not supported"`. List all unsupported ops at once, not
       one at a time.
-- [ ] **Lowering:** translate the validated ONNX graph into the internal IR graph, attaching
+- [x] **Lowering:** translate the validated ONNX graph into the internal IR graph, attaching
       quantized params + LUTs from the quantization service.
-- [ ] **Shape handling:** resolve tensor shapes (needed for bit-width tracking and conv/pool).
+- [x] **Shape handling:** resolve tensor shapes (needed for bit-width tracking and conv/pool).
       Handle `Reshape`/`Flatten`/`Transpose` as no-ops or layout changes where possible.
-- [ ] **Round-trip test:** export a PyTorch model → ONNX → `load_onnx()` → IR → encrypted
+- [x] **Round-trip test:** export a PyTorch model → ONNX → `load_onnx()` → IR → encrypted
       inference; assert labels match the original quantized model.
-- [ ] **Multi-framework test:** repeat with a scikit-learn model and (if feasible) a Keras
+- [x] **Multi-framework test:** repeat with a scikit-learn model and (if feasible) a Keras
       model exported to ONNX, proving "train anywhere."
-- [ ] Document supported ops + constraints in `docs/SUPPORTED-OPS.md`. Be explicit about the
+- [x] Document supported ops + constraints in `docs/SUPPORTED-OPS.md`. Be explicit about the
       bounded meaning of "any model" (`PROJECT.md` §10).
 
 ### Exit Criteria
@@ -335,18 +335,18 @@ where Penumbra-FHE becomes a *library*, not a demo.
 
 ### Tasks
 
-- [ ] Pick a **closed-set face classification** task (is this one of N enrolled people?) — a
+- [x] Pick a **closed-set face classification** task (is this one of N enrolled people?) — a
       fixed-output small CNN, very FHE-friendly. Avoid open-set embedding+distance for now
       (`PROJECT.md` §11).
-- [ ] Train a small face classifier (or fine-tune a tiny CNN) on a small face dataset; export
+- [x] Train a small face classifier (or fine-tune a tiny CNN) on a small face dataset; export
       to ONNX.
-- [ ] Run it through the **existing** `load_onnx → quantize → IR → encrypted inference`
+- [x] Run it through the **existing** `load_onnx → quantize → IR → encrypted inference`
       pipeline.
-- [ ] **THE VALIDATION:** confirm this required **zero edits to `runtime/src/ops/` or
+- [x] **THE VALIDATION:** confirm this required **zero edits to `runtime/src/ops/` or
       `eval.rs`**. If it did require backend edits, the abstraction leaked — fix the
       abstraction, not the use case.
-- [ ] Add the example under `examples/faces/` with a README.
-- [ ] Record accuracy + latency in `docs/BENCHMARKS.md`.
+- [x] Add the example under `examples/faces/` with a README.
+- [x] Record accuracy + latency in `docs/BENCHMARKS.md`.
 - [ ] (Optional stretch) Prototype open-set: add an encrypted distance + threshold compare,
       noting any new ops needed.
 
