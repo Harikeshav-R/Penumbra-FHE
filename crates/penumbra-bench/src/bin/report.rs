@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use penumbra_bench::models::{find, load, ModelFixture, MODELS};
-use penumbra_bench::report::{run_model, to_json, to_markdown, ModelRun};
+use penumbra_bench::report::{run_model, to_json, to_markdown, ModelRun, Report, ReportMeta};
 use penumbra_bench::{available_backends, tfhe_backend};
 
 #[cfg(feature = "ckks")]
@@ -195,9 +195,14 @@ fn run() -> Result<(), String> {
         }
     }
 
+    let report = Report {
+        meta: ReportMeta::capture(args.samples),
+        runs,
+    };
+
     let output = match args.format {
-        OutputFormat::Markdown => to_markdown(&runs),
-        OutputFormat::Json => to_json(&runs)?,
+        OutputFormat::Markdown => to_markdown(&report),
+        OutputFormat::Json => to_json(&report)?,
     };
 
     if let Some(path) = args.out_path {

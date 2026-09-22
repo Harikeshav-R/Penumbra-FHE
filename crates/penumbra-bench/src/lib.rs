@@ -8,7 +8,9 @@ pub mod report;
 pub mod session;
 
 pub use models::{find, load, selection_from_env, LoadedModel, ModelFixture, MODELS};
-pub use report::{run_model, to_json, to_markdown, ModelRun, NodeReport, SampleReport};
+pub use report::{
+    run_model, to_json, to_markdown, ModelRun, NodeReport, Report, ReportMeta, SampleReport,
+};
 pub use session::Session;
 
 /// Return a configured instance of the TFHE backend.

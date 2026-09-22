@@ -29,7 +29,10 @@ pub struct SampleReport {
     pub eval_secs: f64,
     pub decrypt_secs: f64,
     pub nodes: Vec<NodeReport>,
+    /// Raw decrypted outputs — keeps any error statistic re-derivable from the artifact.
+    pub decrypted: Vec<i64>,
     pub max_abs_err: Option<f64>,
+    pub mean_abs_err: Option<f64>,
     pub label_matches: Option<bool>,
 }
 
@@ -48,8 +51,50 @@ pub struct ModelRun {
     pub samples: Vec<SampleReport>,
     /// Mean per-sample seconds by op type — the "why one scheme wins" breakdown.
     pub op_type_secs: BTreeMap<String, f64>,
+    /// Mean per-sample seconds spent in `Backend::build_op` (plaintext weight prep), by op type.
+    pub op_type_build_secs: BTreeMap<String, f64>,
     /// Summed counters for one sample — this backend's cost proxy.
     pub cost_proxy: BTreeMap<String, u64>,
+}
+
+/// Where a report came from. A committed result file that cannot be attributed to a machine,
+/// build profile, and HAL backend is not a comparison result (`docs/COMPARISON.md`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportMeta {
+    pub os: String,
+    pub arch: String,
+    /// `false` means debug-build numbers — never publishable.
+    pub release: bool,
+    pub backends_compiled: Vec<String>,
+    /// The `poulpy` HAL backend linked into this build; `None` without the `ckks` feature.
+    pub ckks_hal: Option<String>,
+    pub samples_requested: usize,
+}
+
+impl ReportMeta {
+    pub fn capture(samples_requested: usize) -> Self {
+        Self {
+            os: std::env::consts::OS.to_string(),
+            arch: std::env::consts::ARCH.to_string(),
+            release: !cfg!(debug_assertions),
+            backends_compiled: crate::available_backends()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            #[cfg(feature = "ckks")]
+            ckks_hal: Some(penumbra_ckks::hal_backend_name().to_string()),
+            #[cfg(not(feature = "ckks"))]
+            ckks_hal: None,
+            samples_requested,
+        }
+    }
+}
+
+/// One report: provenance plus every (backend, model) run in it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Report {
+    pub meta: ReportMeta,
+    pub runs: Vec<ModelRun>,
 }
 
 /// Execute a benchmark session over `model` using `backend` for `samples` inputs.
@@ -96,15 +141,21 @@ pub fn run_model<B: Backend>(
         let decrypt_secs = t_dec.elapsed().as_secs_f64();
 
         let mut max_abs_err = None;
+        let mut mean_abs_err = None;
         if let Some(logits) = &model.expected_logits {
             if i < logits.len() {
                 let exp = &logits[i];
-                let err = decrypted
+                let errors: Vec<f64> = decrypted
                     .iter()
                     .zip(exp.iter())
                     .map(|(&a, &b)| (a - b).abs() as f64)
-                    .fold(0.0, f64::max);
-                max_abs_err = Some(err);
+                    .collect();
+                if !errors.is_empty() {
+                    let max_err = errors.iter().copied().fold(0.0, f64::max);
+                    let mean_err = errors.iter().copied().sum::<f64>() / errors.len() as f64;
+                    max_abs_err = Some(max_err);
+                    mean_abs_err = Some(mean_err);
+                }
             }
         }
 
@@ -112,7 +163,7 @@ pub fn run_model<B: Backend>(
         if let Some(labels) = &model.expected_labels {
             if i < labels.len() {
                 let expected_lbl = labels[i];
-                if output_cts.len() == 1 {
+                if decrypted.len() == 1 {
                     let pred = session.decrypt_label(&output_cts);
                     label_matches = Some(pred == expected_lbl);
                 } else if !decrypted.is_empty() {
@@ -151,20 +202,30 @@ pub fn run_model<B: Backend>(
             eval_secs,
             decrypt_secs,
             nodes,
+            decrypted,
             max_abs_err,
+            mean_abs_err,
             label_matches,
         });
     }
 
-    // Mean per-sample seconds by op type
-    let mut op_type_totals: BTreeMap<String, f64> = BTreeMap::new();
+    // Mean per-sample seconds by op type (both eval and op-build)
+    let mut op_type_eval_totals: BTreeMap<String, f64> = BTreeMap::new();
+    let mut op_type_build_totals: BTreeMap<String, f64> = BTreeMap::new();
     for sample in &sample_reports {
         for node in &sample.nodes {
-            *op_type_totals.entry(node.op_type.clone()).or_default() += node.eval_secs;
+            *op_type_eval_totals.entry(node.op_type.clone()).or_default() += node.eval_secs;
+            *op_type_build_totals
+                .entry(node.op_type.clone())
+                .or_default() += node.build_secs;
         }
     }
     let n_f64 = num_samples as f64;
-    let op_type_secs: BTreeMap<String, f64> = op_type_totals
+    let op_type_secs: BTreeMap<String, f64> = op_type_eval_totals
+        .into_iter()
+        .map(|(k, sum)| (k, sum / n_f64))
+        .collect();
+    let op_type_build_secs: BTreeMap<String, f64> = op_type_build_totals
         .into_iter()
         .map(|(k, sum)| (k, sum / n_f64))
         .collect();
@@ -181,12 +242,13 @@ pub fn run_model<B: Backend>(
         output_ct_bytes,
         samples: sample_reports,
         op_type_secs,
+        op_type_build_secs,
         cost_proxy: first_cost_proxy,
     })
 }
 
-pub fn to_json(runs: &[ModelRun]) -> Result<String, String> {
-    serde_json::to_string_pretty(runs).map_err(|e| format!("cannot serialize JSON report: {e}"))
+pub fn to_json(report: &Report) -> Result<String, String> {
+    serde_json::to_string_pretty(report).map_err(|e| format!("cannot serialize JSON report: {e}"))
 }
 
 fn format_bytes(bytes: usize) -> String {
@@ -199,51 +261,117 @@ fn format_bytes(bytes: usize) -> String {
     }
 }
 
-pub fn to_markdown(runs: &[ModelRun]) -> String {
+pub fn to_markdown(report: &Report) -> String {
     let mut out = String::new();
+
+    // Table 0: Provenance
+    out.push_str("### 0. Provenance\n\n");
+    out.push_str("| Property | Value |\n");
+    out.push_str("|---|---|\n");
+    out.push_str(&format!(
+        "| OS / arch | {} / {} |\n",
+        report.meta.os, report.meta.arch
+    ));
+    out.push_str(&format!(
+        "| Build profile | {} |\n",
+        if report.meta.release {
+            "release"
+        } else {
+            "debug"
+        }
+    ));
+    out.push_str(&format!(
+        "| Backends compiled | {} |\n",
+        report.meta.backends_compiled.join(", ")
+    ));
+    out.push_str(&format!(
+        "| CKKS HAL backend | {} |\n",
+        report.meta.ckks_hal.as_deref().unwrap_or("n/a")
+    ));
+    out.push_str(&format!(
+        "| Samples requested | {} |\n\n",
+        report.meta.samples_requested
+    ));
+
+    if !report.meta.release {
+        out.push_str("> **DEBUG BUILD — these numbers are not comparison-grade.**\n\n");
+    }
 
     // Table 1: Latency
     out.push_str("### 1. Latency (Wall-Clock)\n\n");
-    out.push_str("| Model | Backend | Keygen (s) | Encrypt (s) | Eval (s) | Decrypt (s) | Accuracy / Error |\n");
-    out.push_str("|---|---|---:|---:|---:|---:|---:|\n");
-    for run in runs {
+    out.push_str("| Model | Backend | Keygen (s) | Encrypt (s) | Eval total (s) | of which op-build (s) | Decrypt (s) | Accuracy / Error |\n");
+    out.push_str("|---|---|---:|---:|---:|---:|---:|---|\n");
+    for run in &report.runs {
         let n = run.samples.len() as f64;
         let avg_enc = run.samples.iter().map(|s| s.encrypt_secs).sum::<f64>() / n;
         let avg_eval = run.samples.iter().map(|s| s.eval_secs).sum::<f64>() / n;
+        let avg_build = run
+            .samples
+            .iter()
+            .map(|s| s.nodes.iter().map(|node| node.build_secs).sum::<f64>())
+            .sum::<f64>()
+            / n;
         let avg_dec = run.samples.iter().map(|s| s.decrypt_secs).sum::<f64>() / n;
 
-        let acc_str = if let Some(s0) = run.samples.first() {
-            if let Some(err) = s0.max_abs_err {
-                format!("max |err| = {err:.2}")
-            } else if let Some(m) = s0.label_matches {
-                if m {
-                    "exact match (pass)".to_string()
-                } else {
-                    "mismatch (fail)".to_string()
-                }
+        let has_err = run.samples.iter().any(|s| s.max_abs_err.is_some());
+        let has_lbl = run.samples.iter().any(|s| s.label_matches.is_some());
+
+        let mut acc_parts = Vec::new();
+        if has_err {
+            let max_err = run
+                .samples
+                .iter()
+                .filter_map(|s| s.max_abs_err)
+                .fold(0.0, f64::max);
+            let mean_errs: Vec<f64> = run.samples.iter().filter_map(|s| s.mean_abs_err).collect();
+            let mean_err = if !mean_errs.is_empty() {
+                mean_errs.iter().sum::<f64>() / mean_errs.len() as f64
             } else {
-                "n/a".to_string()
-            }
-        } else {
+                0.0
+            };
+            acc_parts.push(format!("max |err| = {max_err:.3}, mean = {mean_err:.3}"));
+        }
+        if has_lbl {
+            let k = run
+                .samples
+                .iter()
+                .filter(|s| s.label_matches == Some(true))
+                .count();
+            let n = run
+                .samples
+                .iter()
+                .filter(|s| s.label_matches.is_some())
+                .count();
+            acc_parts.push(format!("labels {k}/{n}"));
+        }
+        let acc_str = if acc_parts.is_empty() {
             "n/a".to_string()
+        } else {
+            acc_parts.join("; ")
         };
 
         out.push_str(&format!(
-            "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {} |\n",
-            run.model, run.backend, run.keygen_secs, avg_enc, avg_eval, avg_dec, acc_str
+            "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {} |\n",
+            run.model, run.backend, run.keygen_secs, avg_enc, avg_eval, avg_build, avg_dec, acc_str
         ));
     }
     out.push('\n');
 
     // Table 2: Per-Op-Type Eval Breakdown
     out.push_str("### 2. Per-Op-Type Eval Breakdown (Mean Seconds per Sample)\n\n");
-    out.push_str("| Model | Backend | Op Type | Eval (s) |\n");
-    out.push_str("|---|---|---|---:|\n");
-    for run in runs {
-        for (op, &secs) in &run.op_type_secs {
+    out.push_str("| Model | Backend | Op Type | Calls | Build (s) | Eval (s) |\n");
+    out.push_str("|---|---|---|---:|---:|---:|\n");
+    for run in &report.runs {
+        for (op, &eval_secs) in &run.op_type_secs {
+            let calls = run
+                .samples
+                .first()
+                .map(|s| s.nodes.iter().filter(|n| &n.op_type == op).count())
+                .unwrap_or(0);
+            let build_secs = run.op_type_build_secs.get(op).copied().unwrap_or(0.0);
             out.push_str(&format!(
-                "| {} | {} | {} | {:.4} |\n",
-                run.model, run.backend, op, secs
+                "| {} | {} | {} | {} | {:.4} | {:.4} |\n",
+                run.model, run.backend, op, calls, build_secs, eval_secs
             ));
         }
     }
@@ -253,7 +381,7 @@ pub fn to_markdown(runs: &[ModelRun]) -> String {
     out.push_str("### 3. Sizes & Scheme Cost Proxies\n\n");
     out.push_str("| Model | Backend | Input CT | Output CT | Client Key | Server Key | Cost Proxy Counters |\n");
     out.push_str("|---|---|---:|---:|---:|---:|---|\n");
-    for run in runs {
+    for run in &report.runs {
         let in_ct = format_bytes(run.input_ct_bytes);
         let out_ct = format_bytes(run.output_ct_bytes);
         let ck_sz = format_bytes(run.client_key_bytes);
