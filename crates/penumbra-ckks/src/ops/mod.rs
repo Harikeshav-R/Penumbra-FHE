@@ -83,6 +83,17 @@ impl CoreOp<CkksBackend> for Linear {
         let fan_in_bits = (fan_in as f64).log2().ceil() as usize;
         input_bits + self.weight_bits + fan_in_bits
     }
+
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let mut counters = Vec::new();
+        let rots = self.prepared.rotation_count() as u64;
+        if rots > 0 {
+            counters.push(("rotations", rots));
+        }
+        counters.push(("rescales", 1));
+        counters.push(("depth_levels", 1));
+        counters
+    }
 }
 
 // ─── Conv2d Op ──────────────────────────────────────────────────────────────
@@ -117,6 +128,17 @@ impl CoreOp<CkksBackend> for Conv2d {
         let fan_in_bits = (fan_in as f64).log2().ceil() as usize;
         input_bits + self.weight_bits + fan_in_bits
     }
+
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let mut counters = Vec::new();
+        let rots = self.prepared.rotation_count() as u64;
+        if rots > 0 {
+            counters.push(("rotations", rots));
+        }
+        counters.push(("rescales", 1));
+        counters.push(("depth_levels", 1));
+        counters
+    }
 }
 
 // ─── Pool(avg) Op ───────────────────────────────────────────────────────────
@@ -148,6 +170,17 @@ impl CoreOp<CkksBackend> for PoolAvg {
         let fan_in = (self.pool_h * self.pool_w).max(1);
         let fan_in_bits = (fan_in as f64).log2().ceil() as usize;
         input_bits + fan_in_bits
+    }
+
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let mut counters = Vec::new();
+        let rots = self.prepared.rotation_count() as u64;
+        if rots > 0 {
+            counters.push(("rotations", rots));
+        }
+        counters.push(("rescales", 1));
+        counters.push(("depth_levels", 1));
+        counters
     }
 }
 
@@ -182,6 +215,27 @@ impl CoreOp<CkksBackend> for Requant {
     fn output_bits(&self, _input_bits: usize) -> usize {
         self.out_bits
     }
+
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        match &self.kind {
+            RequantKind::PerTensor(pm) => {
+                let depth = pm.depth() as u64;
+                vec![
+                    ("poly_evals", 1),
+                    ("rescales", depth),
+                    ("depth_levels", depth),
+                ]
+            }
+            RequantKind::PerChannel(map) => {
+                let depth = map.depth() as u64;
+                vec![
+                    ("poly_evals", map.branches.len() as u64),
+                    ("rescales", depth),
+                    ("depth_levels", depth),
+                ]
+            }
+        }
+    }
 }
 
 // ─── Activation Op ──────────────────────────────────────────────────────────
@@ -205,6 +259,15 @@ impl CoreOp<CkksBackend> for Activation {
     fn output_bits(&self, _input_bits: usize) -> usize {
         self.output_bits
     }
+
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let depth = self.pm.depth() as u64;
+        vec![
+            ("poly_evals", 1),
+            ("rescales", depth),
+            ("depth_levels", depth),
+        ]
+    }
 }
 
 // ─── Argmax Op ──────────────────────────────────────────────────────────────
@@ -227,8 +290,15 @@ impl CoreOp<CkksBackend> for Argmax {
     fn output_bits(&self, _input_bits: usize) -> usize {
         1
     }
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let depth = self.prepared.depth() as u64;
+        vec![
+            ("poly_evals", 1),
+            ("rescales", depth),
+            ("depth_levels", depth),
+        ]
+    }
 }
-
 // ─── Add Op ─────────────────────────────────────────────────────────────────
 
 pub struct Add;
@@ -261,5 +331,8 @@ impl CoreOp<CkksBackend> for Add {
     fn output_bits_n(&self, input_bits: &[usize]) -> usize {
         assert_eq!(input_bits.len(), 2, "Add expects exactly 2 inputs");
         input_bits.iter().max().copied().unwrap_or(0) + 1
+    }
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        Vec::new()
     }
 }

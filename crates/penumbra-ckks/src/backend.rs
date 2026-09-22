@@ -42,6 +42,22 @@ impl CkksBackend {
             scratch: Mutex::new(scratch),
         }
     }
+
+    pub fn prepare_linear_map(
+        &self,
+        matrix: &crate::ops::PlainMatrix,
+    ) -> Result<crate::ops::PreparedLinearMap, String> {
+        let mut scratch_guard = self
+            .scratch
+            .lock()
+            .map_err(|e| format!("mutex poisoned: {e}"))?;
+        crate::ops::prepare_linear_map(
+            matrix,
+            &self.params,
+            &self.module,
+            &mut scratch_guard.borrow(),
+        )
+    }
 }
 
 impl Default for CkksBackend {
