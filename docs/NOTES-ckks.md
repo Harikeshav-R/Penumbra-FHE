@@ -144,6 +144,8 @@ The mapping from Penumbra's op vocabulary onto these primitives is tabulated in
 | Phase 5 qat | `Conv2d → Requant(per-ch) → Linear` | PASS | $2.38 \times 10^{2}$ | `3.0e2` | YES |
 | Phase 6 onnx | `Conv2d → Requant(per-ch) → Linear` | PASS | $1.88 \times 10^{2}$ | `2.5e2` | YES |
 | Phase 7 faces | `Conv2d → Requant(per-ch) → Linear` | PASS | $1.05 \times 10^{2}$ | `1.5e2` | YES |
+
+*(Note: On multi-sample evaluation in Phase 12.4, Sample 1 measured $1.92 \times 10^2$, exceeding the declared bound of 150.0. The mathematical root cause—an un-truncated continuous `round_bias` offset in `fit_requant` amplified across 128 linear weights—and the step-by-step fix blueprint are documented in [`docs/INVESTIGATION-phase7-ckks-error.md`](./INVESTIGATION-phase7-ckks-error.md)).*
 > ⚠️ Always benchmark in `--release`. Debug FHE is orders of magnitude slower and the numbers
 > are meaningless (`docs/DEVELOPMENT.md`).
 
