@@ -79,16 +79,17 @@ what a general FHE API might look like. Every row below is a real call site.
 | ct ≫ k | `requant.rs:226` | `scalar_right_shift_parallelized` | rescale / plaintext scaling |
 | apply univariate f | `activation.rs:104-115`, `requant.rs:193-232` | `generate_lookup_table` + `apply_lookup_table` (**PBS**) | polynomial approximation of the same tabulated f |
 
-### Key and boundary primitives (client side)
+### Key and boundary primitives (client side & preflight)
 
-| Primitive | Used by | `tfhe-rs` today |
-|---|---|---|
-| keygen | `keys.rs:58` | `gen_keys_radix` |
-| encrypt | `encrypt.rs:21` | `ck.encrypt_signed` |
-| decrypt | `encrypt.rs:35`, `:44` | `ck.decrypt_signed` |
-| key (de)serialize | `keys.rs:98-165` | `bincode` over serde |
-| ciphertext (de)serialize | `encrypt.rs` | `bincode` over serde |
-
+| Primitive | Used by | `tfhe-rs` today | CKKS realization |
+|---|---|---|---|
+| keygen | `keys.rs:58` | `gen_keys_radix` | `keygen(&params)` |
+| encrypt | `encrypt.rs:21` | `ck.encrypt_signed` | `encrypt(ck, input)` |
+| decrypt | `encrypt.rs:35`, `:44` | `ck.decrypt_signed` | `decrypt_vec(ck, out)` / `decrypt_label` |
+| key wire serialize | `keys.rs:45`, `:96` | `TaggedKey` over `bincode` | `TaggedKey` over `bincode` |
+| ciphertext (de)serialize | `encrypt.rs` | `TaggedCts` over `bincode` | `TaggedCts` over `bincode` |
+| budget preflight | `backend.rs:27` | `check_graph_bit_width_budget` | `check_graph_depth_budget` |
+| op cost proxy | `ops/*.rs` | analytic `Op::cost` | analytic `Op::cost` |
 ### The two hard rows
 
 Everything above except the last two rows of the evaluation table maps onto CKKS cleanly.
@@ -136,6 +137,31 @@ property of the chosen scale rather than of the implementation.
 ## Cost models
 
 The two schemes are fast and slow at opposite things. There is no single cost proxy.
+Cost proxies are derived analytically via `Op::cost(&self, input_lens: &[usize]) -> Vec<(&'static str, u64)>`
+so the measurement code in `penumbra-core` and `penumbra-bench` stays completely scheme-neutral:
+
+### TFHE Cost Counters
+
+| Counter | Meaning |
+|---|---|
+| `bootstraps` | explicit programmable bootstraps issued (`apply_lookup_table`) |
+| `cmp_pbs_ops` | PBS-bearing comparison/shift primitives invoked (`scalar_max`, `scalar_min`, `scalar_right_shift`, `scalar_ge`, `max`); each costs >= 1 internal PBS |
+| `scalar_mul` | ciphertext x plaintext scalar (PBS-free) |
+| `scalar_add` | ciphertext + plaintext scalar (PBS-free) |
+| `ct_add` | ciphertext + ciphertext (PBS-free) |
+
+### CKKS Cost Counters
+
+| Counter | Meaning |
+|---|---|
+| `rotations` | slot rotations the BSGS linear map plan performs (`PreparedLinearMap::rotation_count`) |
+| `rescales` | rescales consumed — one per linear-map evaluation, one per polynomial level |
+| `poly_evals` | polynomial approximations evaluated |
+| `depth_levels` | multiplicative levels consumed (realized depth) |
+
+*Note on depth:* `depth_levels` is the **realized** depth of the fitted polynomial (`precision_at_depth(..).depth`),
+whereas `check_graph_depth_budget` budgets the **worst case** `bsgs_eval_depth(max_poly_degree, MinDepth)`.
+Realized <= budgeted is expected, not a bug.
 
 | | TFHE (`penumbra-tfhe`) | CKKS (`penumbra-ckks`) |
 |---|---|---|
@@ -159,7 +185,7 @@ layer named (`AGENTS.md` §1.3). They are not the same budget.
 | The budget | radix capacity: `num_blocks × MESSAGE_BITS` bits | multiplicative depth / level budget, and scale precision |
 | What consumes it | accumulator growth (`b + log2(N)`) | every ciphertext-plaintext multiply and every polynomial degree |
 | What restores it | `Requant` (a PBS) narrows back to `MESSAGE_BITS` | rescale, or bootstrapping |
-| Enforced by | `check_graph_bit_width_budget` (`eval.rs:237`) | a depth/scale check at the same seam |
+| Enforced by | `Backend::check_graph_budget` (radix check) | `Backend::check_graph_budget` (depth/scale check) |
 | Overflow symptom | silently wrong ciphertext | precision collapse, then noise |
 
 The bit-width tracker in Layer 2 (`propagate_bit_widths`, `eval.rs:182`) is scheme-neutral
@@ -177,8 +203,9 @@ in the same change:
    at load time with the op and node named.
 4. **Declare the comparator** — exact, or a per-model error bound — and add correctness tests
    against `reference.py`'s output at that comparator, for the committed fixtures.
-5. **Register with the harness** (`penumbra-bench`) so the backend is measured by the same
-   code as every other backend.
+5. **Register with the harness** (`penumbra-bench`): implement `check_graph_budget`, `serialize_client_key`,
+   `serialize_server_key`, and `Op::cost`, then add the backend constructor to `available_backends()` so
+   the backend is measured by the same code as every other backend.
 6. **Docs**: this file's tables, `docs/SUPPORTED-OPS.md` support columns, and a
    `docs/NOTES-<scheme>.md` spike record.
 

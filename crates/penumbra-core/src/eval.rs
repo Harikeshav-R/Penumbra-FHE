@@ -78,7 +78,7 @@ fn evaluate_graph_inner<B: Backend>(
         ));
     }
 
-    if let Some(prof) = profile.as_deref_mut() {
+    if let Some(prof) = &mut profile {
         prof.backend = backend.name();
         prof.nodes.clear();
     }
@@ -123,7 +123,7 @@ fn evaluate_graph_inner<B: Backend>(
         let result = op.eval_n(ctx, &input_cts);
         let eval = t_eval.map(|t| t.elapsed()).unwrap_or_default();
 
-        if let Some(prof) = profile.as_deref_mut() {
+        if let Some(prof) = &mut profile {
             let counters = op.cost(&input_lens);
             prof.nodes.push(NodeProfile {
                 name: node.name.clone(),
@@ -155,7 +155,7 @@ fn evaluate_graph_inner<B: Backend>(
         env.insert(output_name.clone(), result);
     }
 
-    if let (Some(prof), Some(t_tot)) = (profile.as_deref_mut(), t_total) {
+    if let (Some(prof), Some(t_tot)) = (profile, t_total) {
         prof.total = t_tot.elapsed();
     }
 

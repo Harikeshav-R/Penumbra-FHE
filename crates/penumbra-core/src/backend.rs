@@ -154,8 +154,16 @@ pub trait Backend: 'static + Send + Sync {
     fn deserialize_cts(&self, bytes: &[u8]) -> Result<Vec<Self::Ciphertext>, String>;
 
     /// Serialize the client secret key to its tagged wire bytes (for size accounting).
-    fn serialize_client_key(&self, ck: &Self::ClientKey, num_blocks: usize) -> Result<Vec<u8>, String>;
+    fn serialize_client_key(
+        &self,
+        ck: &Self::ClientKey,
+        num_blocks: usize,
+    ) -> Result<Vec<u8>, String>;
 
     /// Serialize the public server/evaluation key to its tagged wire bytes.
-    fn serialize_server_key(&self, sk: &Self::ServerKey, num_blocks: usize) -> Result<Vec<u8>, String>;
+    fn serialize_server_key(
+        &self,
+        sk: &Self::ServerKey,
+        num_blocks: usize,
+    ) -> Result<Vec<u8>, String>;
 }

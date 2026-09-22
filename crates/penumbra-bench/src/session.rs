@@ -84,8 +84,12 @@ impl<B: Backend> Session<B> {
 
     /// Return wire serialized sizes: (client_key_bytes, server_key_bytes).
     pub fn key_bytes(&self) -> Result<(usize, usize), String> {
-        let ck_bytes = self.backend.serialize_client_key(&self.ck, self.num_blocks)?;
-        let sk_bytes = self.backend.serialize_server_key(&self.sk, self.num_blocks)?;
+        let ck_bytes = self
+            .backend
+            .serialize_client_key(&self.ck, self.num_blocks)?;
+        let sk_bytes = self
+            .backend
+            .serialize_server_key(&self.sk, self.num_blocks)?;
         Ok((ck_bytes.len(), sk_bytes.len()))
     }
 

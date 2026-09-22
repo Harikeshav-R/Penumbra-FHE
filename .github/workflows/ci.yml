@@ -78,9 +78,13 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Clippy (warnings as errors)
-        run: cargo clippy -p penumbra-ckks --features ckks --all-targets -- -D warnings
+        run: |
+          cargo clippy -p penumbra-ckks --features ckks --all-targets -- -D warnings
+          cargo clippy -p penumbra-bench --features ckks --all-targets -- -D warnings
       - name: Test (release)
-        run: cargo test -p penumbra-ckks --features ckks --release
+        run: |
+          cargo test -p penumbra-ckks --features ckks --release
+          cargo test -p penumbra-bench --features ckks --release
   python:
     name: Python front end (ruff, black, pytest)
     runs-on: ubuntu-latest

@@ -51,12 +51,19 @@ cargo build                # debug build (fine for correctness)
 cargo test --release       # run tests — ALWAYS use --release for FHE
 ```
 
-After the workspace refactor, a single backend can be built or tested on its own:
+Each backend can be built, tested, and benchmarked:
 
 ```bash
-cargo test --release -p penumbra-tfhe     # the reference backend
-cargo test --release -p penumbra-ckks     # the CKKS backend
-cargo bench -p penumbra-bench             # both, through the same measurement code
+# TFHE backend (stable toolchain)
+cargo test --release -p penumbra-tfhe
+cargo run -p penumbra-bench --release --bin penumbra-bench-report -- --models phase2_logreg
+cargo bench -p penumbra-bench
+
+# CKKS backend (nightly toolchain, requires --features ckks)
+cargo +nightly test -p penumbra-ckks --features ckks --release
+cargo +nightly test -p penumbra-bench --features ckks --release
+cargo +nightly run -p penumbra-bench --features ckks --release --bin penumbra-bench-report -- --models phase2_logreg
+PENUMBRA_BENCH_MODELS=phase2_logreg cargo +nightly bench -p penumbra-bench --features ckks
 ```
 
 > ⚠️ **Build in `--release` for anything that runs FHE.** Debug builds are *extremely* slow

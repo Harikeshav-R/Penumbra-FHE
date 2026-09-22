@@ -424,11 +424,19 @@ impl Backend for CkksBackend {
         encrypt::deserialize_cts(bytes)
     }
 
-    fn serialize_client_key(&self, ck: &Self::ClientKey, _num_blocks: usize) -> Result<Vec<u8>, String> {
+    fn serialize_client_key(
+        &self,
+        ck: &Self::ClientKey,
+        _num_blocks: usize,
+    ) -> Result<Vec<u8>, String> {
         crate::keys::client_key_bytes(ck)
     }
 
-    fn serialize_server_key(&self, sk: &Self::ServerKey, _num_blocks: usize) -> Result<Vec<u8>, String> {
+    fn serialize_server_key(
+        &self,
+        sk: &Self::ServerKey,
+        _num_blocks: usize,
+    ) -> Result<Vec<u8>, String> {
         crate::keys::server_key_bytes(sk)
     }
 }

@@ -23,7 +23,6 @@ impl Backend for TfheBackend {
         crate::keys::SCHEME_TFHE
     }
 
-
     fn check_graph_budget(&self, graph: &Graph) -> Result<(), String> {
         penumbra_core::bitwidth::check_graph_bit_width_budget(graph)
     }
@@ -243,11 +242,19 @@ impl Backend for TfheBackend {
         crate::encrypt::deserialize_cts(bytes)
     }
 
-    fn serialize_client_key(&self, ck: &Self::ClientKey, num_blocks: usize) -> Result<Vec<u8>, String> {
+    fn serialize_client_key(
+        &self,
+        ck: &Self::ClientKey,
+        num_blocks: usize,
+    ) -> Result<Vec<u8>, String> {
         crate::keys::client_key_bytes(ck, num_blocks)
     }
 
-    fn serialize_server_key(&self, sk: &Self::ServerKey, num_blocks: usize) -> Result<Vec<u8>, String> {
+    fn serialize_server_key(
+        &self,
+        sk: &Self::ServerKey,
+        num_blocks: usize,
+    ) -> Result<Vec<u8>, String> {
         crate::keys::server_key_bytes(sk, num_blocks)
     }
 }

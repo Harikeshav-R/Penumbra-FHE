@@ -50,14 +50,16 @@ is why the shared harness is a hard requirement rather than a convenience
 
 ## Method
 
-1. Both backends are registered with `penumbra-bench` and driven through the same entry point.
-2. For each committed model (Phase-2 logreg through Phase-7 faces), run *N* encrypted
+1. Both backends are registered with `penumbra-bench` and driven through the same entry point:
+   `penumbra_bench::report::run_model` dispatches through `penumbra_core::eval::evaluate_graph_profiled`.
+2. The `penumbra-bench-report` CLI binary runs the models and emits the comparison as Markdown or JSON tables.
+3. For each committed model (Phase-2 logreg through Phase-7 faces), run *N* encrypted
    inferences per backend in `--release`.
-3. Record per-model: wall-clock latency per sample, per-op-type time breakdown, accuracy
+4. Record per-model: wall-clock latency per sample, per-op-type time breakdown, accuracy
    against the shared quantized-cleartext reference, accuracy against the float model,
    ciphertext and key sizes, and each scheme's own cost proxy (bootstrap count for TFHE;
    multiplicative depth, rotation count, and rescale count for CKKS).
-4. Report the TFHE bit-exactness gate as pass/fail and the CKKS error as a measured
+5. Report the TFHE bit-exactness gate as pass/fail and the CKKS error as a measured
    distribution, not a single number.
 
 ## Metrics

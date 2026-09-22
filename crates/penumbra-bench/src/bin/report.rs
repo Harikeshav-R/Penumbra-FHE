@@ -47,16 +47,14 @@ fn parse_args() -> Result<CliArgs, String> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--models" => {
-                models_arg = Some(
-                    args.next()
-                        .ok_or_else(|| "--models requires an argument (e.g. 'all' or 'phase2_logreg')".to_string())?,
-                );
+                models_arg = Some(args.next().ok_or_else(|| {
+                    "--models requires an argument (e.g. 'all' or 'phase2_logreg')".to_string()
+                })?);
             }
             "--backends" => {
-                backends_arg = Some(
-                    args.next()
-                        .ok_or_else(|| "--backends requires an argument (e.g. 'tfhe' or 'tfhe,ckks')".to_string())?,
-                );
+                backends_arg = Some(args.next().ok_or_else(|| {
+                    "--backends requires an argument (e.g. 'tfhe' or 'tfhe,ckks')".to_string()
+                })?);
             }
             "--samples" => {
                 let s = args
@@ -70,9 +68,9 @@ fn parse_args() -> Result<CliArgs, String> {
                 }
             }
             "--format" => {
-                let f = args
-                    .next()
-                    .ok_or_else(|| "--format requires an argument ('markdown' or 'json')".to_string())?;
+                let f = args.next().ok_or_else(|| {
+                    "--format requires an argument ('markdown' or 'json')".to_string()
+                })?;
                 match f.to_lowercase().as_str() {
                     "markdown" | "md" => format = OutputFormat::Markdown,
                     "json" => format = OutputFormat::Json,
@@ -84,10 +82,10 @@ fn parse_args() -> Result<CliArgs, String> {
                 }
             }
             "--out" => {
-                out_path = Some(PathBuf::from(
-                    args.next()
-                        .ok_or_else(|| "--out requires a file path argument".to_string())?,
-                ));
+                out_path =
+                    Some(PathBuf::from(args.next().ok_or_else(|| {
+                        "--out requires a file path argument".to_string()
+                    })?));
             }
             "-h" | "--help" => {
                 let avail = available_backends().join(", ");

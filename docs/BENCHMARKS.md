@@ -28,6 +28,32 @@ with Phase 12 and get their own columns; see [Cross-backend comparison](#cross-b
 - **Cost proxy:** bootstraps per sample — `runtime ≈ number of bootstraps` (`PROJECT.md` §5).
   This is a **TFHE** proxy; CKKS's is multiplicative depth, rotations, and rescales.
 
+
+### Shared harness (`penumbra-bench`)
+
+Phase 12.3 instruments the Layer-2 graph walker (`penumbra_core::eval::evaluate_graph_profiled`)
+and introduces a shared comparison harness driven through `penumbra-bench`:
+
+- **Criterion benchmarks:** `cargo bench -p penumbra-bench` (or `PENUMBRA_BENCH_MODELS=all cargo +nightly bench -p penumbra-bench --features ckks`)
+  runs Criterion benchmarks parameterized over backend x model.
+- **Report CLI:** `penumbra-bench-report` generates markdown or JSON tables recording:
+  - Wall-clock latency per sample (keygen, encrypt, eval, decrypt)
+  - Per-op-type time breakdown
+  - Key and ciphertext wire sizes
+  - Scheme cost proxies (TFHE: bootstraps, cmp_pbs_ops; CKKS: rotations, rescales, depth_levels, poly_evals)
+  - Accuracy / error against the shared oracle
+
+Commands:
+```bash
+# Markdown report for all models on default (TFHE) backend:
+cargo run -p penumbra-bench --release --bin penumbra-bench-report
+
+# Compare TFHE and CKKS on Phase-2 logreg:
+cargo +nightly run -p penumbra-bench --features ckks --release --bin penumbra-bench-report -- --models phase2_logreg
+
+# JSON output for machine consumption:
+cargo run -p penumbra-bench --release --bin penumbra-bench-report -- --models phase2_logreg --format json
+```
 > ⚠️ **These numbers are not yet comparison-grade.** They are hand-recorded wall clock from
 > golden-test output on one developer machine. Phase 12.3 replaces that with a shared
 > `criterion` harness measuring both backends through the same code path, on a pinned machine

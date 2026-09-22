@@ -95,9 +95,9 @@ pub fn load(fixture: &'static ModelFixture) -> Result<LoadedModel, String> {
     let graph = Graph::from_json(&graph_json.to_string())
         .map_err(|e| format!("failed to load graph from {}: {e}", path.display()))?;
 
-    let inputs_val = value.get("test_inputs").ok_or_else(|| {
-        format!("fixture {} missing 'test_inputs' field", path.display())
-    })?;
+    let inputs_val = value
+        .get("test_inputs")
+        .ok_or_else(|| format!("fixture {} missing 'test_inputs' field", path.display()))?;
     let inputs: Vec<Vec<i64>> = serde_json::from_value(inputs_val.clone())
         .map_err(|e| format!("failed to parse test_inputs in {}: {e}", path.display()))?;
 

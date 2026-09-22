@@ -62,9 +62,7 @@ fn test_ckks_cost_model_cnn_nodes() {
             *padding,
         )
         .expect("conv2d matrix");
-        let prepared = backend
-            .prepare_linear_map(&m)
-            .expect("prepare_linear_map");
+        let prepared = backend.prepare_linear_map(&m).expect("prepare_linear_map");
         assert_eq!(rots, prepared.rotation_count() as u64);
     } else {
         panic!("conv node is not OpSpec::Conv2d");
@@ -105,9 +103,9 @@ fn test_ckks_realized_depth_within_budget_all_fixtures() {
         let mut realized_levels = 0u64;
 
         for node in &graph.nodes {
-            let op = backend
-                .build_op(&node.op)
-                .unwrap_or_else(|e| panic!("build_op failed for node '{}' in {fixture}: {e}", node.name));
+            let op = backend.build_op(&node.op).unwrap_or_else(|e| {
+                panic!("build_op failed for node '{}' in {fixture}: {e}", node.name)
+            });
             let cost: BTreeMap<&'static str, u64> = op.cost(&[]).into_iter().collect();
             let levels = cost.get("depth_levels").copied().unwrap_or(0);
             realized_levels += levels;

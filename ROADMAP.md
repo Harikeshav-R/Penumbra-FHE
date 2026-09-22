@@ -592,13 +592,13 @@ Keep this **mechanical**. It is a boundary-drawing exercise, not a rewrite.
 
 #### 12.3 — The shared harness
 
-- [ ] Per-node timing and op-counting instrumented once in `penumbra-core`'s graph walker, so
+- [x] Per-node timing and op-counting instrumented once in `penumbra-core`'s graph walker, so
       both backends are measured by the same code. There is **no** timing instrumentation in
       the repo today — this is greenfield, which is good for the comparison.
-- [ ] `criterion` benchmarks in `penumbra-bench`, parameterized over backend × model.
-- [ ] Report ciphertext size, key material size, and each scheme's own cost proxy (bootstrap
+- [x] `criterion` benchmarks in `penumbra-bench`, parameterized over backend × model.
+- [x] Report ciphertext size, key material size, and each scheme's own cost proxy (bootstrap
       count for TFHE; depth, rotations, rescales for CKKS).
-- [ ] Confirm both backends run the same model/op set through the same entry point.
+- [x] Confirm both backends run the same model/op set through the same entry point.
 
 #### 12.4 — The comparison
 
