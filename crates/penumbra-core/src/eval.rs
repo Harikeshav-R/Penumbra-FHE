@@ -6,11 +6,12 @@
 //! and a new use case never edits any op (`AGENTS.md` §1.2).
 
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use crate::backend::{Backend, CtVec, EvalCtx};
 use crate::ir::Graph;
 use crate::ops::Op;
-
+use crate::profile::{GraphProfile, NodeProfile};
 // Re-export bit-width budget functions for backwards compatibility.
 pub use crate::bitwidth::{
     check_bit_width_budget, check_graph_bit_width_budget, propagate_bit_widths,
@@ -42,6 +43,31 @@ pub fn evaluate_graph<B: Backend>(
     graph: &Graph,
     inputs: HashMap<String, CtVec<B>>,
 ) -> Result<HashMap<String, CtVec<B>>, String> {
+    evaluate_graph_inner(backend, ctx, graph, inputs, None)
+}
+
+/// Walk the graph exactly as [`evaluate_graph`] does, recording per-node build time,
+/// eval time, tensor shapes, and the backend's cost counters into `profile`.
+///
+/// Instrumented **once**, here, so every backend is measured by the same code
+/// (`ROADMAP.md` Phase 12.3, `docs/COMPARISON.md`).
+pub fn evaluate_graph_profiled<B: Backend>(
+    backend: &B,
+    ctx: &EvalCtx<B::ServerKey>,
+    graph: &Graph,
+    inputs: HashMap<String, CtVec<B>>,
+    profile: &mut GraphProfile,
+) -> Result<HashMap<String, CtVec<B>>, String> {
+    evaluate_graph_inner(backend, ctx, graph, inputs, Some(profile))
+}
+
+fn evaluate_graph_inner<B: Backend>(
+    backend: &B,
+    ctx: &EvalCtx<B::ServerKey>,
+    graph: &Graph,
+    inputs: HashMap<String, CtVec<B>>,
+    mut profile: Option<&mut GraphProfile>,
+) -> Result<HashMap<String, CtVec<B>>, String> {
     let declared: HashSet<&str> = graph.inputs.iter().map(String::as_str).collect();
     let provided: HashSet<&str> = inputs.keys().map(String::as_str).collect();
     if declared != provided {
@@ -52,9 +78,18 @@ pub fn evaluate_graph<B: Backend>(
         ));
     }
 
+    if let Some(prof) = profile.as_deref_mut() {
+        prof.backend = backend.name();
+        prof.nodes.clear();
+    }
+
+    let t_total = profile.as_ref().map(|_| Instant::now());
+
     let mut env = inputs;
     for node in &graph.nodes {
+        let t_build = profile.as_ref().map(|_| Instant::now());
         let op = backend.build_op(&node.op)?;
+        let build = t_build.map(|t| t.elapsed()).unwrap_or_default();
 
         if node.inputs.is_empty() {
             return Err(format!(
@@ -78,7 +113,28 @@ pub fn evaluate_graph<B: Backend>(
             })
             .collect::<Result<_, _>>()?;
 
+        let input_lens: Vec<usize> = if profile.is_some() {
+            input_cts.iter().map(|v| v.len()).collect()
+        } else {
+            Vec::new()
+        };
+
+        let t_eval = profile.as_ref().map(|_| Instant::now());
         let result = op.eval_n(ctx, &input_cts);
+        let eval = t_eval.map(|t| t.elapsed()).unwrap_or_default();
+
+        if let Some(prof) = profile.as_deref_mut() {
+            let counters = op.cost(&input_lens);
+            prof.nodes.push(NodeProfile {
+                name: node.name.clone(),
+                op_type: node.op.op_type(),
+                build,
+                eval,
+                input_lens,
+                output_len: result.len(),
+                counters,
+            });
+        }
 
         if node.outputs.len() != 1 {
             return Err(format!(
@@ -97,6 +153,10 @@ pub fn evaluate_graph<B: Backend>(
             ));
         }
         env.insert(output_name.clone(), result);
+    }
+
+    if let (Some(prof), Some(t_tot)) = (profile.as_deref_mut(), t_total) {
+        prof.total = t_tot.elapsed();
     }
 
     let mut outputs = HashMap::with_capacity(graph.outputs.len());

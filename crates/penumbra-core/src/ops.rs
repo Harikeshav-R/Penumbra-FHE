@@ -45,6 +45,15 @@ pub trait Op<B: Backend + ?Sized>: Send + Sync {
     fn internal_bits_n(&self, input_bits: &[usize]) -> usize {
         self.output_bits_n(input_bits)
     }
+
+    /// Declare this op's scheme-specific cost, given its input tensor lengths.
+    ///
+    /// Analytic, not instrumented: a backend returns `(counter_name, count)` pairs it can
+    /// derive from its own prepared state (`docs/BACKENDS.md`, "Cost models"). Layer 2 never
+    /// interprets the names. The default is "this backend declares no cost proxy".
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        Vec::new()
+    }
 }
 
 /// Summary interface for bit-width tracking and conformance checking.

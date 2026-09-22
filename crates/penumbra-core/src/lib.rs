@@ -16,12 +16,14 @@ pub mod bitwidth;
 pub mod eval;
 pub mod ir;
 pub mod ops;
+pub mod profile;
 
 pub use backend::{Backend, CtVec, EvalCtx};
 pub use bitwidth::{
     check_bit_width_budget, check_graph_bit_width_budget, propagate_bit_widths,
     radix_capacity_bits, MESSAGE_BITS,
 };
-pub use eval::{evaluate, evaluate_graph};
+pub use eval::{evaluate, evaluate_graph, evaluate_graph_profiled};
 pub use ir::{Graph, Node, OpSpec, PoolMode, SCHEMA_VERSION};
 pub use ops::{Op, OpSummary};
+pub use profile::{GraphProfile, NodeProfile, OpTypeStats};
