@@ -9,7 +9,7 @@
 //! 2. Op instantiation ([`Backend::build_op`]).
 //! 3. Key management and client-side encryption/decryption boundaries.
 
-use crate::ir::OpSpec;
+use crate::ir::{Graph, OpSpec};
 use crate::ops::Op;
 
 /// An encrypted tensor flowing between ops for a given backend.
@@ -47,6 +47,13 @@ pub trait Backend: 'static + Send + Sync {
     ///
     /// Fails loudly at load time if an op is unsupported on this backend (`AGENTS.md` §1.4).
     fn build_op(&self, spec: &OpSpec) -> Result<Box<dyn Op<Self>>, String>;
+
+    /// Validate a graph against this backend's resource budget before any crypto runs,
+    /// naming the offending node on failure (`AGENTS.md` §1.3, §1.4).
+    ///
+    /// This is the shared preflight seam: TFHE checks radix bit-width capacity, CKKS checks
+    /// multiplicative depth and scale. Layer 2 knows only that a budget exists.
+    fn check_graph_budget(&self, graph: &Graph) -> Result<(), String>;
 
     // --- Server-side evaluation primitives ----------------------------------------------------
 
@@ -145,4 +152,10 @@ pub trait Backend: 'static + Send + Sync {
 
     /// Deserialize ciphertexts from a tagged byte buffer, verifying the scheme tag.
     fn deserialize_cts(&self, bytes: &[u8]) -> Result<Vec<Self::Ciphertext>, String>;
+
+    /// Serialize the client secret key to its tagged wire bytes (for size accounting).
+    fn serialize_client_key(&self, ck: &Self::ClientKey, num_blocks: usize) -> Result<Vec<u8>, String>;
+
+    /// Serialize the public server/evaluation key to its tagged wire bytes.
+    fn serialize_server_key(&self, sk: &Self::ServerKey, num_blocks: usize) -> Result<Vec<u8>, String>;
 }

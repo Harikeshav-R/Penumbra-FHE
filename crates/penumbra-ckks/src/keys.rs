@@ -313,7 +313,8 @@ pub struct CkksServerKeyPayload {
     pub atks: Vec<(i64, Vec<u8>)>,
 }
 
-pub fn save_client_key(ck: &CkksClientKey, path: impl AsRef<Path>) -> Result<(), String> {
+/// Serialize the client secret key to its tagged wire bytes (for size accounting and persistence).
+pub fn client_key_bytes(ck: &CkksClientKey) -> Result<Vec<u8>, String> {
     let mut sk_bytes = Vec::new();
     ck.sk_raw
         .data()
@@ -328,7 +329,11 @@ pub fn save_client_key(ck: &CkksClientKey, path: impl AsRef<Path>) -> Result<(),
         scheme: SCHEME_CKKS.to_string(),
         payload,
     };
-    let encoded = bincode::serialize(&tagged).map_err(|e| format!("bincode encode failed: {e}"))?;
+    bincode::serialize(&tagged).map_err(|e| format!("bincode encode failed: {e}"))
+}
+
+pub fn save_client_key(ck: &CkksClientKey, path: impl AsRef<Path>) -> Result<(), String> {
+    let encoded = client_key_bytes(ck)?;
     let mut file = File::create(path).map_err(|e| format!("cannot create file: {e}"))?;
     file.write_all(&encoded)
         .map_err(|e| format!("cannot write file: {e}"))?;
@@ -383,7 +388,8 @@ pub fn load_client_key(path: impl AsRef<Path>) -> Result<CkksClientKey, String> 
     })
 }
 
-pub fn save_server_key(sk: &CkksServerKey, path: impl AsRef<Path>) -> Result<(), String> {
+/// Serialize the public server/evaluation key to its tagged wire bytes (for size accounting and persistence).
+pub fn server_key_bytes(sk: &CkksServerKey) -> Result<Vec<u8>, String> {
     let mut tsk_bytes = Vec::new();
     sk.tsk_raw
         .write_to(&mut tsk_bytes)
@@ -407,7 +413,11 @@ pub fn save_server_key(sk: &CkksServerKey, path: impl AsRef<Path>) -> Result<(),
         scheme: SCHEME_CKKS.to_string(),
         payload,
     };
-    let encoded = bincode::serialize(&tagged).map_err(|e| format!("bincode encode failed: {e}"))?;
+    bincode::serialize(&tagged).map_err(|e| format!("bincode encode failed: {e}"))
+}
+
+pub fn save_server_key(sk: &CkksServerKey, path: impl AsRef<Path>) -> Result<(), String> {
+    let encoded = server_key_bytes(sk)?;
     let mut file = File::create(path).map_err(|e| format!("cannot create file: {e}"))?;
     file.write_all(&encoded)
         .map_err(|e| format!("cannot write file: {e}"))?;

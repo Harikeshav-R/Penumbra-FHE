@@ -18,9 +18,9 @@ pub use encrypt::{
     serialize_cts_batch, CtVec, TaggedCts,
 };
 pub use keys::{
-    ensure_num_blocks_match, keygen, load_client_key, load_server_key, magnitude_bits,
-    radix_capacity_bits, save_client_key, save_server_key, DEFAULT_PARAMS, MESSAGE_BITS,
-    SCHEME_TFHE,
+    client_key_bytes, ensure_num_blocks_match, keygen, load_client_key, load_server_key,
+    magnitude_bits, radix_capacity_bits, save_client_key, save_server_key, server_key_bytes,
+    DEFAULT_PARAMS, MESSAGE_BITS, SCHEME_TFHE,
 };
 pub use ops::{Activation, Add, Argmax, Conv2d, EvalCtx, Linear, Op, Pool, PoolMode, Requant};
 

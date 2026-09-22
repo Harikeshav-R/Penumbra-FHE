@@ -41,23 +41,21 @@ pub struct TaggedKey<K> {
     pub key: K,
 }
 
-fn write_bincode<T: Serialize>(value: &T, path: &Path, what: &str) -> Result<(), String> {
-    let bytes = bincode::serialize(value).map_err(|e| format!("cannot serialize {what}: {e}"))?;
-    std::fs::write(path, bytes)
-        .map_err(|e| format!("cannot write {what} to {}: {e}", path.display()))
+/// Serialize the client secret key to its tagged wire bytes (for size accounting and persistence).
+pub fn client_key_bytes(ck: &RadixClientKey, num_blocks: usize) -> Result<Vec<u8>, String> {
+    let tagged = TaggedKey {
+        scheme: SCHEME_TFHE.to_string(),
+        num_blocks,
+        key: ck,
+    };
+    bincode::serialize(&tagged).map_err(|e| format!("cannot serialize client key: {e}"))
 }
 
 /// Persist the client secret key to `path`, tagged with scheme and `num_blocks`.
 pub fn save_client_key(ck: &RadixClientKey, num_blocks: usize, path: &Path) -> Result<(), String> {
-    write_bincode(
-        &TaggedKey {
-            scheme: SCHEME_TFHE.to_string(),
-            num_blocks,
-            key: ck.clone(),
-        },
-        path,
-        "client key",
-    )
+    let bytes = client_key_bytes(ck, num_blocks)?;
+    std::fs::write(path, bytes)
+        .map_err(|e| format!("cannot write client key to {}: {e}", path.display()))
 }
 
 #[derive(Deserialize)]
@@ -94,16 +92,21 @@ pub fn load_client_key(path: &Path) -> Result<(RadixClientKey, usize), String> {
 }
 
 /// Persist the public server/evaluation key to `path`, tagged with scheme and `num_blocks`.
+/// Serialize the public server/evaluation key to its tagged wire bytes (for size accounting and persistence).
+pub fn server_key_bytes(sk: &ServerKey, num_blocks: usize) -> Result<Vec<u8>, String> {
+    let tagged = TaggedKey {
+        scheme: SCHEME_TFHE.to_string(),
+        num_blocks,
+        key: sk,
+    };
+    bincode::serialize(&tagged).map_err(|e| format!("cannot serialize server key: {e}"))
+}
+
+/// Persist the public server/evaluation key to `path`, tagged with scheme and `num_blocks`.
 pub fn save_server_key(sk: &ServerKey, num_blocks: usize, path: &Path) -> Result<(), String> {
-    write_bincode(
-        &TaggedKey {
-            scheme: SCHEME_TFHE.to_string(),
-            num_blocks,
-            key: sk.clone(),
-        },
-        path,
-        "server key",
-    )
+    let bytes = server_key_bytes(sk, num_blocks)?;
+    std::fs::write(path, bytes)
+        .map_err(|e| format!("cannot write server key to {}: {e}", path.display()))
 }
 
 /// Load a server key from `path`, validating the scheme and returning `num_blocks`.

@@ -59,6 +59,10 @@ impl Backend for CkksBackend {
         SCHEME_CKKS
     }
 
+    fn check_graph_budget(&self, graph: &Graph) -> Result<(), String> {
+        check_graph_depth_budget(self, graph)
+    }
+
     fn build_op(&self, spec: &OpSpec) -> Result<Box<dyn Op<Self>>, String> {
         spec.validate()?;
         match spec {
@@ -402,6 +406,14 @@ impl Backend for CkksBackend {
 
     fn deserialize_cts(&self, bytes: &[u8]) -> Result<Vec<Self::Ciphertext>, String> {
         encrypt::deserialize_cts(bytes)
+    }
+
+    fn serialize_client_key(&self, ck: &Self::ClientKey, _num_blocks: usize) -> Result<Vec<u8>, String> {
+        crate::keys::client_key_bytes(ck)
+    }
+
+    fn serialize_server_key(&self, sk: &Self::ServerKey, _num_blocks: usize) -> Result<Vec<u8>, String> {
+        crate::keys::server_key_bytes(sk)
     }
 }
 
