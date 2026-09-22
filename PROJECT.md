@@ -97,12 +97,11 @@ From those first principles, for small classifiers with ReLU/argmax (MNIST, face
 batching needed. That is why Penumbra was built on TFHE, and it remains the reference
 backend.
 
-> **This is a hypothesis, not a settled result.** It is well-motivated but has never been
-> measured on this codebase, on these models, under one harness. The CKKS backend (§18)
+> **This was a hypothesis, now measured (Phase 12.4).** In controlled benchmarks under
+> the shared harness, CKKS evaluated 24x to 337x faster via SIMD tensor packing, while TFHE
+> preserved bit-exactness and smaller server keys. See [`docs/COMPARISON.md`](./docs/COMPARISON.md)
+> (Results & Discussion) and [`docs/BENCHMARKS.md`](./docs/BENCHMARKS.md). The CKKS backend (§18)
 > exists to test it: same IR, same models, same measurement code, only the scheme varies.
-> The comparison may confirm the reasoning above — a useful result — or locate the crossover
-> where SIMD batching overtakes exactness on Penumbra's own workloads. See
-> [`docs/COMPARISON.md`](./docs/COMPARISON.md).
 
 BGV/BFV is **not** in scope. It shares CKKS's batching and its difficulty with
 nonlinearities, so it would mostly re-measure the same axis at additional cost.

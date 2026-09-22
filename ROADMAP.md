@@ -602,11 +602,11 @@ Keep this **mechanical**. It is a boundary-drawing exercise, not a rewrite.
 
 #### 12.4 — The comparison
 
-- [ ] Run both backends over the committed fixtures (Phase-2 logreg through Phase-7 faces) in
+- [x] Run both backends over the committed fixtures (Phase-2 logreg through Phase-7 faces) in
       `--release`, on the pinned machine and HAL backend.
-- [ ] Fill in `docs/BENCHMARKS.md` (the numbers) and `docs/COMPARISON.md` (the argument,
+- [x] Fill in `docs/BENCHMARKS.md` (the numbers) and `docs/COMPARISON.md` (the argument,
       including which threats to validity are live for each number).
-- [ ] State the slot-packing decision prominently wherever results appear.
+- [x] State the slot-packing decision prominently wherever results appear.
 
 ### Exit Criteria
 

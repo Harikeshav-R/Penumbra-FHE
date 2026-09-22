@@ -89,7 +89,7 @@ backend is the reference implementation and its exactness gate is unchanged.
 - [`docs/BACKENDS.md`](docs/BACKENDS.md) — the backend boundary: the `Backend` contract,
   per-scheme cost and budget models, and how to add a backend.
 - [`docs/COMPARISON.md`](docs/COMPARISON.md) — the TFHE vs CKKS study: hypothesis, method,
-  and threats to validity.
+  threats to validity, and the measured results.
 - [`docs/QUANTIZATION.md`](docs/QUANTIZATION.md) — the quantization service: PTQ/QAT, `n_bits`,
   per-channel scales, the bit-width budget, and the accuracy/speed tradeoff.
 - [`docs/SUPPORTED-OPS.md`](docs/SUPPORTED-OPS.md) — the operators the runtime implements.

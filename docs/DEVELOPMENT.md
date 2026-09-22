@@ -12,14 +12,12 @@ for the working rules (they apply to humans too).
 | Python | 3.10–3.12 | Pinned in `python/pyproject.toml` (`>=3.10,<3.13`). 3.13+ not yet supported by the ML stack. |
 | [uv](https://docs.astral.sh/uv/) | latest | **The project standard** for Python env/deps — not poetry/pip/conda. |
 
-> ⚠️ The CKKS backend may require a **different toolchain**: `poulpy` pins a nightly upstream
-> and depends on `libm`'s `unstable-float`. Whether the workspace needs nightly is a blocking
-> question for the Phase-12.0 spike, and the answer gets recorded in
-> [`docs/NOTES-ckks.md`](./NOTES-ckks.md). Whatever it turns out to be, the **TFHE backend
+> ⚠️ The CKKS backend requires a **nightly toolchain**: `poulpy-hal` uses `associated_type_defaults`
+> and `poulpy-ckks` uses `f128` (see [`docs/NOTES-ckks.md`](./NOTES-ckks.md)). The **TFHE backend
 > stays on stable** so an upstream toolchain change cannot break the reference backend's gate.
 >
-> `poulpy`'s CPU backend is also architecture-specific — `poulpy-cpu-arm` (NEON) on Apple
-> Silicon, `poulpy-cpu-avx` (AVX2/FMA) on x86-64. Benchmarks must pin one.
+> `poulpy`'s CPU backend is also architecture-specific — pinned to `poulpy-cpu-arm` / `FFT64Neon`
+> on Apple Silicon, and `poulpy-cpu-avx` (AVX2/FMA) on x86-64.
 
 ## Layout
 
@@ -64,7 +62,14 @@ cargo +nightly test -p penumbra-ckks --features ckks --release
 cargo +nightly test -p penumbra-bench --features ckks --release
 cargo +nightly run -p penumbra-bench --features ckks --release --bin penumbra-bench-report -- --models phase2_logreg
 PENUMBRA_BENCH_MODELS=phase2_logreg cargo +nightly bench -p penumbra-bench --features ckks
-```
+
+# Full cross-backend comparison sweep across all 7 fixtures:
+mkdir -p target/bench-results
+for m in phase2_logreg phase4_cnn phase5_digits phase5_qat phase6_onnx phase6_sklearn phase7_faces; do
+  ./target/release/penumbra-bench-report \
+    --models "$m" --backends tfhe,ckks --samples 2 \
+    --format json --out "target/bench-results/$m.json"
+done
 
 > ⚠️ **Build in `--release` for anything that runs FHE.** Debug builds are *extremely* slow
 > (orders of magnitude) — true of `poulpy` as much as of `tfhe-rs`. The first compile is slow

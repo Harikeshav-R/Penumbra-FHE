@@ -27,7 +27,10 @@ with Phase 12 and get their own columns; see [Cross-backend comparison](#cross-b
   widest accumulator.
 - **Cost proxy:** bootstraps per sample — `runtime ≈ number of bootstraps` (`PROJECT.md` §5).
   This is a **TFHE** proxy; CKKS's is multiplicative depth, rotations, and rescales.
-
+- **Harness metrics:** `Eval total` = `GraphProfile::total`, which includes each node's `Backend::build_op`;
+  `of which op-build` = the plaintext-weight prep inside it (BSGS diagonal encoding under
+  CKKS, weight vectors under TFHE); keygen/encrypt/decrypt are measured outside the walker.
+  Both backends were measured from one nightly-built binary on one machine.
 
 ### Shared harness (`penumbra-bench`)
 
@@ -54,11 +57,10 @@ cargo +nightly run -p penumbra-bench --features ckks --release --bin penumbra-be
 # JSON output for machine consumption:
 cargo run -p penumbra-bench --release --bin penumbra-bench-report -- --models phase2_logreg --format json
 ```
-> ⚠️ **These numbers are not yet comparison-grade.** They are hand-recorded wall clock from
-> golden-test output on one developer machine. Phase 12.3 replaces that with a shared
-> `criterion` harness measuring both backends through the same code path, on a pinned machine
-> and a pinned `poulpy` HAL backend. Until then, do not compare a number here against a CKKS
-> number produced any other way ([`docs/COMPARISON.md`](./COMPARISON.md)).
+> ℹ️ The [Cross-backend comparison](#cross-backend-comparison) section below now carries
+> shared-harness numbers measured from a single binary. The per-model `Latency / sample (encrypted)`
+> rows in the sections immediately below remain hand-recorded TFHE golden-test wall clock
+> and are indicative only — cite the cross-backend tables for anything comparative.
 
 ## Models
 
@@ -104,15 +106,15 @@ The first example on a **real dataset** and a **real trained PyTorch model**: sc
 | Metric | Value |
 |---|---|
 | Float accuracy | ~0.96 |
-| Quantized accuracy | ~0.93 |
-| Quantization gap | ~0.03 |
+| Quantized accuracy | 0.9417 |
+| Quantization gap | ~0.02 |
 | Weight / activation bits | 6-bit weights, 2-bit activations |
 | Calibration | MSE (clip minimizing round-trip error), per-channel weights |
 | Radix | 11 blocks (22-bit signed) |
 | Bootstraps / sample | ~108 (one `Requant` PBS per post-conv activation, 12 ch × 3×3) |
 | Latency / sample (encrypted) | minutes (the golden test is `#[ignore]`d; see below) |
 
-The remaining ~0.03 gap is the cost of capping activations at a single 2-bit block
+The remaining ~0.02 gap is the cost of capping activations at a single 2-bit block
 (`MESSAGE_BITS`) — the hard TFHE-backend limit. Three service levers close most of the naive gap:
 6-bit **per-channel** weights, **MSE** activation calibration (the clip minimizing round-trip
 quantization error, not the raw peak), and — the big one — quantizing the head against the
@@ -172,24 +174,97 @@ fast Python guard (`tests/test_faces_fixture.py`) checks fixture self-consistenc
 
 ## Cross-backend comparison
 
-*Pending Phase 12.4 (`ROADMAP.md`).* When the CKKS backend lands, each model's table above
-gains a backend dimension — latency, accuracy against the shared quantized-cleartext
-reference, ciphertext and key sizes, and each scheme's own cost proxy — all produced by the
-shared `penumbra-bench` harness on a single pinned machine and HAL backend.
+**Measured on Apple M3 Pro, macOS 25.6.0, `rustc 1.100.0-nightly (bba531001 2026-09-20)`, HAL backend `FFT64Neon` (`poulpy-ckks 0.8.3`), commit `dc20d05ee332e284045ea971bb8272c5d5ddf522`, 2026-09-22, `--samples 2`. Raw artifact: [`docs/results/phase12-4-comparison.json`](./results/phase12-4-comparison.json).**
 
-This document will own the **numbers**; [`docs/COMPARISON.md`](./COMPARISON.md) owns the
+This document owns the **numbers**; [`docs/COMPARISON.md`](./COMPARISON.md) owns the
 **argument** — the hypothesis under test, what is held constant, and the threats to validity
 that bound what the numbers mean. Do not restate results in both places; cite across.
 
 Three things must be stated wherever a cross-backend number appears:
 
-1. **The slot-packing decision.** If the CKKS backend runs one value per ciphertext, its
-   latency reflects our implementation, not the scheme ([`docs/BACKENDS.md`](./BACKENDS.md)).
+1. **The slot-packing decision.** The CKKS backend evaluates under **Option B (one full tensor per ciphertext, BSGS diagonal transforms over `lt_slots = 256`)** ([`docs/BACKENDS.md`](./BACKENDS.md), `crates/penumbra-ckks/src/params.rs`). Plaintext-weight linear ops (`Linear`, `Conv2d`, `Pool(avg)`) are diagonal-multiplexed SIMD transforms rather than scalar-ciphertext arrays.
 2. **That the graph is quantized for TFHE.** The 2-bit activation cap is a PBS constraint;
    imposing it on CKKS is what makes the comparison fair *and* what handicaps CKKS on accuracy
    (`docs/QUANTIZATION.md`).
 3. **The maturity asymmetry.** `tfhe-rs` is a mature production library; `poulpy-ckks` is at
    0.8.x, and its Penumbra backend is new.
+
+### Table A — Latency (Wall-Clock per Sample)
+
+| Model | Backend | Keygen (s) | Encrypt (s) | Eval total (s) | of which op-build (s) | Decrypt (s) | TFHE / CKKS eval |
+|---|---|---:|---:|---:|---:|---:|---:|
+| phase2_logreg | tfhe | 0.513 | 0.022 | 11.846 | 0.000 | 0.000 | 24.4x |
+| phase2_logreg | ckks | 1.914 | 0.004 | 0.485 | 0.001 | 0.001 | — |
+| phase4_cnn | tfhe | 0.489 | 0.011 | 69.987 | 0.000 | 0.000 | 118.0x |
+| phase4_cnn | ckks | 1.971 | 0.007 | 0.593 | 0.001 | 0.000 | — |
+| phase5_digits | tfhe | 0.488 | 0.030 | 679.860 | 0.000 | 0.000 | 300.5x |
+| phase5_digits | ckks | 2.195 | 0.005 | 2.262 | 0.016 | 0.000 | — |
+| phase5_qat | tfhe | 0.487 | 0.030 | 687.919 | 0.000 | 0.000 | 336.8x |
+| phase5_qat | ckks | 2.181 | 0.007 | 2.043 | 0.013 | 0.000 | — |
+| phase6_onnx | tfhe | 0.492 | 0.030 | 701.855 | 0.000 | 0.000 | 329.7x |
+| phase6_onnx | ckks | 2.205 | 0.006 | 2.129 | 0.014 | 0.000 | — |
+| phase6_sklearn | tfhe | 0.490 | 0.028 | 159.067 | 0.000 | 0.000 | 260.6x |
+| phase6_sklearn | ckks | 2.164 | 0.005 | 0.610 | 0.000 | 0.001 | — |
+| phase7_faces | tfhe | 0.499 | 0.121 | 730.216 | 0.000 | 0.000 | 330.3x |
+| phase7_faces | ckks | 2.187 | 0.006 | 2.210 | 0.009 | 0.000 | — |
+
+*Variance check (`phase2_logreg`, Criterion 10 samples):* `tfhe` median 11.122 s (95% CI [11.018 s, 11.254 s]); `ckks` median 412.89 ms (95% CI [406.09 ms, 423.43 ms]).
+
+### Table B — Per-Op-Type Eval Breakdown (Mean Seconds per Sample)
+
+Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/results/phase12-4-comparison.json`](./results/phase12-4-comparison.json) for the full 7-model op breakdown):
+
+| Model | Backend | Op Type | Calls | Build (s) | Eval (s) |
+|---|---|---|---:|---:|---:|
+| phase2_logreg | tfhe | Argmax | 1 | 0.0000 | 0.0160 |
+| phase2_logreg | tfhe | Linear | 1 | 0.0000 | 11.8300 |
+| phase2_logreg | ckks | Argmax | 1 | 0.0012 | 0.1136 |
+| phase2_logreg | ckks | Linear | 1 | 0.0000 | 0.3698 |
+| phase5_digits | tfhe | Conv2d | 1 | 0.0000 | 338.2062 |
+| phase5_digits | tfhe | Linear | 1 | 0.0000 | 287.0420 |
+| phase5_digits | tfhe | Requant | 1 | 0.0000 | 54.6112 |
+| phase5_digits | ckks | Conv2d | 1 | 0.0010 | 0.9260 |
+| phase5_digits | ckks | Linear | 1 | 0.0000 | 0.2343 |
+| phase5_digits | ckks | Requant | 1 | 0.0148 | 1.0861 |
+| phase7_faces | tfhe | Conv2d | 1 | 0.0000 | 402.4965 |
+| phase7_faces | tfhe | Linear | 1 | 0.0000 | 264.1226 |
+| phase7_faces | tfhe | Requant | 1 | 0.0000 | 63.5967 |
+| phase7_faces | ckks | Conv2d | 1 | 0.0001 | 1.3418 |
+| phase7_faces | ckks | Linear | 1 | 0.0001 | 0.1563 |
+| phase7_faces | ckks | Requant | 1 | 0.0092 | 0.7031 |
+
+### Table C — Sizes & Scheme Cost Proxies
+
+| Model | Backend | Input CT | Output CT | Client Key | Server Key | Cost Proxy Counters |
+|---|---|---:|---:|---:|---:|---|
+| phase2_logreg | tfhe | 8.04 MB | 128.7 KB | 23.4 KB | 114.84 MB | cmp_pbs_ops: 1, ct_add: 64, scalar_add: 1, scalar_mul: 64 |
+| phase2_logreg | ckks | 4.75 MB | 4.75 MB | 128.1 KB | 1782.50 MB | depth_levels: 5, poly_evals: 1, rescales: 5, rotations: 18 |
+| phase4_cnn | tfhe | 3.96 MB | 1.10 MB | 23.4 KB | 114.84 MB | bootstraps: 32, cmp_pbs_ops: 96, ct_add: 296, scalar_add: 42, scalar_mul: 272 |
+| phase4_cnn | ckks | 4.75 MB | 4.75 MB | 128.1 KB | 1782.50 MB | depth_levels: 7, poly_evals: 1, rescales: 7, rotations: 45 |
+| phase5_digits | tfhe | 11.05 MB | 1.73 MB | 23.4 KB | 114.84 MB | bootstraps: 108, cmp_pbs_ops: 324, ct_add: 2016, scalar_add: 226, scalar_mul: 2124 |
+| phase5_digits | ckks | 4.75 MB | 4.75 MB | 128.1 KB | 1782.50 MB | depth_levels: 7, poly_evals: 9, rescales: 7, rotations: 46 |
+| phase5_qat | tfhe | 11.05 MB | 1.73 MB | 23.4 KB | 114.84 MB | bootstraps: 108, cmp_pbs_ops: 324, ct_add: 2016, scalar_add: 226, scalar_mul: 2124 |
+| phase5_qat | ckks | 4.75 MB | 4.75 MB | 128.1 KB | 1782.50 MB | depth_levels: 7, poly_evals: 8, rescales: 7, rotations: 46 |
+| phase6_onnx | tfhe | 11.05 MB | 1.73 MB | 23.4 KB | 114.84 MB | bootstraps: 108, cmp_pbs_ops: 324, ct_add: 2016, scalar_add: 226, scalar_mul: 2124 |
+| phase6_onnx | ckks | 4.75 MB | 4.75 MB | 128.1 KB | 1782.50 MB | depth_levels: 7, poly_evals: 9, rescales: 7, rotations: 46 |
+| phase6_sklearn | tfhe | 10.05 MB | 1.57 MB | 23.4 KB | 114.84 MB | ct_add: 640, scalar_add: 10, scalar_mul: 640 |
+| phase6_sklearn | ckks | 4.75 MB | 4.75 MB | 128.1 KB | 1782.50 MB | depth_levels: 1, rescales: 1, rotations: 19 |
+| phase7_faces | tfhe | 44.22 MB | 1.38 MB | 23.4 KB | 114.84 MB | bootstraps: 128, cmp_pbs_ops: 384, ct_add: 2176, scalar_add: 264, scalar_mul: 2304 |
+| phase7_faces | ckks | 4.75 MB | 4.75 MB | 128.1 KB | 1782.50 MB | depth_levels: 7, poly_evals: 6, rescales: 7, rotations: 53 |
+
+### Table D — Accuracy and Error
+
+| Model | Float | Quantized (shared ref) | TFHE | CKKS max \|err\| | CKKS mean \|err\| | Declared bound | CKKS labels |
+|---|---:|---:|---|---:|---:|---:|---|
+| phase2_logreg | 1.0000 | 1.0000 | = quantized, exactly (err = 0.0) | n/a | n/a | 0.5 | 2/2 |
+| phase4_cnn | 0.9805 | 0.9570 | = quantized, exactly (err = 0.0) | 15.000 | 6.150 | 30.0 | 2/2 |
+| phase5_digits | 0.9639 | 0.9417 | = quantized, exactly (err = 0.0) | 209.000 | 81.150 | 250.0 | 2/2 |
+| phase5_qat | 0.9361 | 0.9389 | = quantized, exactly (err = 0.0) | 238.000 | 133.150 | 300.0 | 2/2 |
+| phase6_onnx | 0.9639 | 0.9417 | = quantized, exactly (err = 0.0) | 209.000 | 81.150 | 250.0 | 2/2 |
+| phase6_sklearn | 0.8944 | 0.8806 | = quantized, exactly (err = 0.0) | 0.000 | 0.000 | 0.001 | 2/2 |
+| phase7_faces | 0.9500 | 0.9000 | = quantized, exactly (err = 0.0) | 192.000 | 48.438 | 150.0 *(violated)* | 1/2 |
+
+> ⚠️ **Bound violation finding (`phase7_faces`):** On `phase7_faces`, Sample 0 measured max error 105.0 ($\le 150.0$), but Sample 1 measured 192.0, exceeding `bounds::PHASE7_FACES = 150.0`. In Phase 12.2 calibration, only `test_inputs[0]` was tested. Multi-sample evaluation reveals that logit 2 on sample 1 experiences polynomial approximation error exceeding the single-sample calibration bound, flipping the prediction from class 2 to class 5.
 
 ## Reproducing
 
@@ -214,4 +289,16 @@ cargo test --release --test golden_faces  -- --ignored --nocapture        # minu
 
 # Inspect a model's per-tensor bit-widths without running FHE:
 cargo run --release --bin inspect ../examples/mnist/phase5_digits_fixture.json
+
+# Full cross-backend comparison sweep across all 7 fixtures (machine otherwise idle):
+cargo +nightly build -p penumbra-bench --features ckks --release --bin penumbra-bench-report
+mkdir -p target/bench-results
+for m in phase2_logreg phase4_cnn phase5_digits phase5_qat phase6_onnx phase6_sklearn phase7_faces; do
+  ./target/release/penumbra-bench-report \
+    --models "$m" --backends tfhe,ckks --samples 2 \
+    --format json --out "target/bench-results/$m.json"
+done
+
+# Run Criterion variance check:
+PENUMBRA_BENCH_MODELS=phase2_logreg cargo +nightly bench -p penumbra-bench --features ckks
 ```
