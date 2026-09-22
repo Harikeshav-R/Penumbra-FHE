@@ -7,6 +7,7 @@
 
 use std::io::Cursor;
 
+use penumbra_core::wire::{decode_tagged, encode_tagged};
 use poulpy_ckks::layouts::{CKKSCiphertextOwned, CKKSModuleAlloc};
 use poulpy_ckks::{CKKSInfos, CKKSMeta, SlotsKind};
 use poulpy_core::layouts::{Base2K, Degree, GLWEInfos, GLWELayout, LWEInfos, Rank, TorusPrecision};
@@ -49,18 +50,6 @@ impl std::fmt::Debug for CkksCt {
 }
 /// An encrypted tensor: packed into ONE ciphertext.
 pub type CtVec = Vec<CkksCt>;
-
-/// Envelope tagging ciphertext material with its backend scheme identifier.
-#[derive(Serialize, Deserialize)]
-pub struct TaggedCts<T> {
-    pub scheme: String,
-    pub payload: T,
-}
-
-#[derive(Deserialize)]
-struct SchemeHeader {
-    scheme: String,
-}
 
 /// A serialized CKKS ciphertext: the layout needed to re-allocate the receiver, the CKKS
 /// metadata (which `WriterTo` does not carry), and the `GLWE` body bytes.
@@ -178,76 +167,35 @@ pub fn serialize_cts(cts: &[CkksCt]) -> Result<Vec<u8>, String> {
     for c in cts {
         payload.push(ct_to_bytes(c)?);
     }
-    let tagged = TaggedCts {
-        scheme: SCHEME_CKKS.to_string(),
-        payload,
-    };
-    bincode::serialize(&tagged).map_err(|e| format!("cannot serialize ciphertext: {e}"))
+    encode_tagged(payload, SCHEME_CKKS, "ciphertext")
 }
 
 /// Deserialize an encrypted tensor from bytes, verifying the scheme tag matches `"ckks"`.
 pub fn deserialize_cts(bytes: &[u8]) -> Result<CtVec, String> {
-    let header: SchemeHeader = bincode::deserialize(bytes).map_err(|e| {
-        format!("cannot deserialize ciphertext (is it a Penumbra ciphertext?): {e}")
-    })?;
-    if header.scheme != SCHEME_CKKS {
-        return Err(format!(
-            "backend/scheme mismatch for ciphertext: expected '{SCHEME_CKKS}', but found '{}' \
-             (ciphertext material is not portable across backends; see docs/BACKENDS.md)",
-            header.scheme
-        ));
-    }
-    let tagged: TaggedCts<Vec<CkksCtBytes>> = bincode::deserialize(bytes).map_err(|e| {
-        format!("cannot deserialize ciphertext (is it a Penumbra ciphertext?): {e}")
-    })?;
-    let mut cts = Vec::with_capacity(tagged.payload.len());
-    for b in &tagged.payload {
-        cts.push(ct_from_bytes(b)?);
-    }
-    Ok(cts)
+    let payload: Vec<CkksCtBytes> = decode_tagged(bytes, SCHEME_CKKS, "ciphertext")?;
+    payload.iter().map(ct_from_bytes).collect()
 }
 
 /// Serialize a batch of encrypted tensors (`Vec<CtVec>`) tagged with the `"ckks"` backend identifier.
 pub fn serialize_cts_batch(batch: &[CtVec]) -> Result<Vec<u8>, String> {
-    let mut payload_batch = Vec::with_capacity(batch.len());
+    let mut payload = Vec::with_capacity(batch.len());
     for vec in batch {
         let mut cts_bytes = Vec::with_capacity(vec.len());
         for c in vec {
             cts_bytes.push(ct_to_bytes(c)?);
         }
-        payload_batch.push(cts_bytes);
+        payload.push(cts_bytes);
     }
-    let tagged = TaggedCts {
-        scheme: SCHEME_CKKS.to_string(),
-        payload: payload_batch,
-    };
-    bincode::serialize(&tagged).map_err(|e| format!("cannot serialize ciphertext batch: {e}"))
+    encode_tagged(payload, SCHEME_CKKS, "ciphertext batch")
 }
 
 /// Deserialize a batch of encrypted tensors (`Vec<CtVec>`) from bytes, verifying the scheme tag matches `"ckks"`.
 pub fn deserialize_cts_batch(bytes: &[u8]) -> Result<Vec<CtVec>, String> {
-    let header: SchemeHeader = bincode::deserialize(bytes).map_err(|e| {
-        format!("cannot deserialize ciphertext batch (is it a Penumbra ciphertext?): {e}")
-    })?;
-    if header.scheme != SCHEME_CKKS {
-        return Err(format!(
-            "backend/scheme mismatch for ciphertext batch: expected '{SCHEME_CKKS}', but found '{}' \
-             (ciphertext material is not portable across backends; see docs/BACKENDS.md)",
-            header.scheme
-        ));
-    }
-    let tagged: TaggedCts<Vec<Vec<CkksCtBytes>>> = bincode::deserialize(bytes).map_err(|e| {
-        format!("cannot deserialize ciphertext batch (is it a Penumbra ciphertext?): {e}")
-    })?;
-    let mut batch = Vec::with_capacity(tagged.payload.len());
-    for vec_bytes in &tagged.payload {
-        let mut cts = Vec::with_capacity(vec_bytes.len());
-        for b in vec_bytes {
-            cts.push(ct_from_bytes(b)?);
-        }
-        batch.push(cts);
-    }
-    Ok(batch)
+    let payload: Vec<Vec<CkksCtBytes>> = decode_tagged(bytes, SCHEME_CKKS, "ciphertext batch")?;
+    payload
+        .iter()
+        .map(|v| v.iter().map(ct_from_bytes).collect())
+        .collect()
 }
 
 #[cfg(test)]

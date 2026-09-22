@@ -13,7 +13,7 @@ pub use penumbra_tfhe::backend::TfheBackend;
 pub use penumbra_tfhe::check_bit_width_budget;
 pub use penumbra_tfhe::encrypt::{
     decrypt_label, decrypt_vec, deserialize_cts, deserialize_cts_batch, encrypt, serialize_cts,
-    serialize_cts_batch, CtVec, TaggedCts,
+    serialize_cts_batch, CtVec,
 };
 pub use penumbra_tfhe::keys::{
     ensure_num_blocks_match, keygen, load_client_key, load_server_key, magnitude_bits,

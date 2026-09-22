@@ -691,6 +691,7 @@ dependencies = [
 name = "penumbra-core"
 version = "0.0.0"
 dependencies = [
+ "bincode",
  "serde",
  "serde_json",
 ]

@@ -87,7 +87,7 @@ what a general FHE API might look like. Every row below is a real call site.
 | encrypt | `encrypt.rs:21` | `ck.encrypt_signed` | `encrypt(ck, input)` |
 | decrypt | `encrypt.rs:35`, `:44` | `ck.decrypt_signed` | `decrypt_vec(ck, out)` / `decrypt_label` |
 | key wire serialize | `keys.rs:45`, `:96` | `TaggedKey` over `bincode` | `TaggedKey` over `bincode` |
-| ciphertext (de)serialize | `encrypt.rs` | `TaggedCts` over `bincode` | `TaggedCts` over `bincode` |
+| ciphertext (de)serialize | `wire.rs` / `encrypt.rs` | `TaggedCts` over `bincode` (shared Layer 2) | `TaggedCts` over `bincode` (shared Layer 2) |
 | budget preflight | `backend.rs:27` | `check_graph_bit_width_budget` | `check_graph_depth_budget` |
 | op cost proxy | `ops/*.rs` | analytic `Op::cost` | analytic `Op::cost` |
 ### The two hard rows

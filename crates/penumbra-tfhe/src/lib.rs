@@ -15,7 +15,7 @@ pub mod ops;
 pub use backend::TfheBackend;
 pub use encrypt::{
     decrypt_label, decrypt_vec, deserialize_cts, deserialize_cts_batch, encrypt, serialize_cts,
-    serialize_cts_batch, CtVec, TaggedCts,
+    serialize_cts_batch, CtVec,
 };
 pub use keys::{
     client_key_bytes, ensure_num_blocks_match, keygen, load_client_key, load_server_key,

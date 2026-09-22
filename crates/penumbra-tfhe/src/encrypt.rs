@@ -4,20 +4,13 @@
 //! ciphertexts (with the client key) and turn the encrypted output back into a prediction.
 //! The server never sees plaintext (`PROJECT.md` §11).
 
-use serde::{Deserialize, Serialize};
 use tfhe::integer::{RadixClientKey, SignedRadixCiphertext};
 
 use crate::keys::SCHEME_TFHE;
+use penumbra_core::wire::{decode_tagged, encode_tagged};
 
 /// An encrypted tensor of signed radix integers.
 pub type CtVec = Vec<SignedRadixCiphertext>;
-
-/// Envelope tagging ciphertext material with its backend scheme identifier.
-#[derive(Serialize, Deserialize)]
-pub struct TaggedCts<T> {
-    pub scheme: String,
-    pub payload: T,
-}
 
 /// Encrypt a quantized-integer input vector into a [`CtVec`] of signed radix ciphertexts.
 pub fn encrypt(ck: &RadixClientKey, input: &[i64]) -> CtVec {
@@ -42,59 +35,20 @@ pub fn decrypt_vec(ck: &RadixClientKey, out: &[SignedRadixCiphertext]) -> Vec<i6
 
 /// Serialize an encrypted tensor to bytes tagged with the `"tfhe"` backend identifier.
 pub fn serialize_cts(cts: &[SignedRadixCiphertext]) -> Result<Vec<u8>, String> {
-    let tagged = TaggedCts {
-        scheme: SCHEME_TFHE.to_string(),
-        payload: cts,
-    };
-    bincode::serialize(&tagged).map_err(|e| format!("cannot serialize ciphertext: {e}"))
-}
-
-#[derive(Deserialize)]
-struct SchemeHeader {
-    scheme: String,
+    encode_tagged(cts, SCHEME_TFHE, "ciphertext")
 }
 
 /// Deserialize an encrypted tensor from bytes, verifying the scheme tag matches `"tfhe"`.
 pub fn deserialize_cts(bytes: &[u8]) -> Result<CtVec, String> {
-    let header: SchemeHeader = bincode::deserialize(bytes).map_err(|e| {
-        format!("cannot deserialize ciphertext (is it a Penumbra ciphertext?): {e}")
-    })?;
-    if header.scheme != SCHEME_TFHE {
-        return Err(format!(
-            "backend/scheme mismatch for ciphertext: expected '{SCHEME_TFHE}', but found '{}' \
-             (ciphertext material is not portable across backends; see docs/BACKENDS.md)",
-            header.scheme
-        ));
-    }
-    let tagged: TaggedCts<CtVec> = bincode::deserialize(bytes).map_err(|e| {
-        format!("cannot deserialize ciphertext (is it a Penumbra ciphertext?): {e}")
-    })?;
-    Ok(tagged.payload)
+    decode_tagged(bytes, SCHEME_TFHE, "ciphertext")
 }
 
 /// Serialize a batch of encrypted tensors (`Vec<CtVec>`) tagged with the `"tfhe"` backend identifier.
 pub fn serialize_cts_batch(batch: &[CtVec]) -> Result<Vec<u8>, String> {
-    let tagged = TaggedCts {
-        scheme: SCHEME_TFHE.to_string(),
-        payload: batch,
-    };
-    bincode::serialize(&tagged).map_err(|e| format!("cannot serialize ciphertext batch: {e}"))
+    encode_tagged(batch, SCHEME_TFHE, "ciphertext batch")
 }
 
 /// Deserialize a batch of encrypted tensors (`Vec<CtVec>`) from bytes, verifying the scheme tag matches `"tfhe"`.
 pub fn deserialize_cts_batch(bytes: &[u8]) -> Result<Vec<CtVec>, String> {
-    let header: SchemeHeader = bincode::deserialize(bytes).map_err(|e| {
-        format!("cannot deserialize ciphertext batch (is it a Penumbra ciphertext?): {e}")
-    })?;
-    if header.scheme != SCHEME_TFHE {
-        return Err(format!(
-            "backend/scheme mismatch for ciphertext batch: expected '{SCHEME_TFHE}', but found '{}' \
-             (ciphertext material is not portable across backends; see docs/BACKENDS.md)",
-            header.scheme
-        ));
-    }
-    let tagged: TaggedCts<Vec<CtVec>> = bincode::deserialize(bytes).map_err(|e| {
-        format!("cannot deserialize ciphertext batch (is it a Penumbra ciphertext?): {e}")
-    })?;
-    Ok(tagged.payload)
+    decode_tagged(bytes, SCHEME_TFHE, "ciphertext batch")
 }

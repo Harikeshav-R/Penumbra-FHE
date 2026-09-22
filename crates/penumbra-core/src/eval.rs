@@ -88,7 +88,9 @@ fn evaluate_graph_inner<B: Backend>(
     let mut env = inputs;
     for node in &graph.nodes {
         let t_build = profile.as_ref().map(|_| Instant::now());
-        let op = backend.build_op(&node.op)?;
+        let op = backend
+            .build_op(&node.op)
+            .map_err(|e| format!("node '{}': {e}", node.name))?;
         let build = t_build.map(|t| t.elapsed()).unwrap_or_default();
 
         if node.inputs.is_empty() {

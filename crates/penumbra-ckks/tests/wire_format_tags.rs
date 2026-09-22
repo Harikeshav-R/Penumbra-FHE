@@ -8,13 +8,14 @@
 
 use penumbra_ckks::encrypt::{
     decrypt_vec, deserialize_cts, deserialize_cts_batch, encrypt, serialize_cts,
-    serialize_cts_batch, TaggedCts,
+    serialize_cts_batch,
 };
 use penumbra_ckks::keys::{
     keygen, load_client_key, load_server_key, rotate_raw, save_client_key, save_server_key,
     TaggedKey,
 };
 use penumbra_ckks::params::CkksParams;
+use penumbra_core::wire::TaggedCts;
 
 #[test]
 fn client_key_scheme_mismatch_fails_loudly() {

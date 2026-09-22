@@ -88,3 +88,7 @@ required-features = ["ckks"]
 [[test]]
 name = "ckks_golden_ops"
 required-features = ["ckks"]
+
+[[test]]
+name = "cost_model"
+required-features = ["ckks"]

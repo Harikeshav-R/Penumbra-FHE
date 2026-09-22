@@ -16,6 +16,7 @@ use tfhe::shortint::parameters::PARAM_MESSAGE_2_CARRY_2_KS_PBS;
 use tfhe::shortint::ClassicPBSParameters;
 
 pub use penumbra_core::bitwidth::{magnitude_bits, radix_capacity_bits, MESSAGE_BITS};
+use penumbra_core::wire::SchemeHeader;
 
 /// Identifier for this backend's scheme.
 pub const SCHEME_TFHE: &str = "tfhe";
@@ -56,11 +57,6 @@ pub fn save_client_key(ck: &RadixClientKey, num_blocks: usize, path: &Path) -> R
     let bytes = client_key_bytes(ck, num_blocks)?;
     std::fs::write(path, bytes)
         .map_err(|e| format!("cannot write client key to {}: {e}", path.display()))
-}
-
-#[derive(Deserialize)]
-struct SchemeHeader {
-    scheme: String,
 }
 
 /// Load a client secret key from `path`, validating the scheme and returning `num_blocks`.

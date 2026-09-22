@@ -4,7 +4,8 @@
 //! to the TFHE backend fails loudly with an actionable message naming both backends
 //! (`AGENTS.md` §1.4), never panics.
 
-use penumbra_tfhe::encrypt::{deserialize_cts, deserialize_cts_batch, TaggedCts};
+use penumbra_core::wire::TaggedCts;
+use penumbra_tfhe::encrypt::{deserialize_cts, deserialize_cts_batch};
 use penumbra_tfhe::keys::{load_client_key, load_server_key, TaggedKey};
 
 #[test]

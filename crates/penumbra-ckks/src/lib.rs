@@ -22,7 +22,7 @@ pub use backend::{check_graph_depth_budget, evaluate_graph, CkksBackend};
 #[cfg(feature = "ckks")]
 pub use encrypt::{
     decrypt_label, decrypt_raw_vec, decrypt_vec, deserialize_cts, deserialize_cts_batch, encrypt,
-    serialize_cts, serialize_cts_batch, CkksCt, CtVec, TaggedCts,
+    serialize_cts, serialize_cts_batch, CkksCt, CtVec,
 };
 #[cfg(feature = "ckks")]
 pub use hal::hal_backend_name;

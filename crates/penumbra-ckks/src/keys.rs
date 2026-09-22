@@ -6,6 +6,7 @@ use std::sync::Mutex;
 
 use crate::hal::ActiveBackend;
 use crate::params::CkksParams;
+use penumbra_core::wire::SchemeHeader;
 use poulpy_ckks::api::{
     CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncryptOps, CKKSRotateOps,
 };
@@ -293,11 +294,6 @@ pub fn rotate_raw(
 pub struct TaggedKey<K> {
     pub scheme: String,
     pub payload: K,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SchemeHeader {
-    pub scheme: String,
 }
 
 #[derive(Serialize, Deserialize)]
