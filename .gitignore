@@ -47,5 +47,6 @@ data/
 
 # ---- Agent / session scaffolding (local only, never tracked) ----
 .claude/
+.omp/
 # local code-review notes — not project source
 CODE_REVIEW_*.md

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/penumbra-core",
     "crates/penumbra-tfhe",
+    "crates/penumbra-ckks",
     "crates/penumbra-bench",
     "runtime",
 ]
