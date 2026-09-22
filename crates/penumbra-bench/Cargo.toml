@@ -11,3 +11,22 @@ publish = false
 [dependencies]
 penumbra-core = { path = "../penumbra-core" }
 penumbra-tfhe = { path = "../penumbra-tfhe" }
+penumbra-ckks = { path = "../penumbra-ckks", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
+
+[features]
+default = []
+ckks = ["dep:penumbra-ckks", "penumbra-ckks/ckks"]
+
+[[bin]]
+name = "penumbra-bench-report"
+path = "src/bin/report.rs"
+
+[[bench]]
+name = "inference"
+harness = false
+test = false

@@ -1,24 +1,32 @@
-//! Shared benchmark and comparison harness for Penumbra-FHE backends.
+//! Penumbra-FHE Shared Comparison Harness.
 //!
-//! This crate will house the Criterion-based comparison benchmarks parameterized
-//! over backend x model, enabling fair, identical-workload latency, memory,
-//! and noise-growth profiling across TFHE and CKKS backends (ROADMAP Phase 12.3).
+//! Provides the generic evaluation session, model fixtures, reporting, and criterion
+//! benchmarks parameterized over backend x model (ROADMAP Phase 12.3).
 
-pub use penumbra_core as core;
-pub use penumbra_tfhe as tfhe;
+pub mod models;
+pub mod report;
+pub mod session;
 
-/// Stub benchmark runner identifier for Phase 12.1 workspace scaffolding.
-#[must_use]
-pub fn harness_version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
+pub use models::{find, load, selection_from_env, LoadedModel, ModelFixture, MODELS};
+pub use report::{run_model, to_json, to_markdown, ModelRun, NodeReport, SampleReport};
+pub use session::Session;
+
+/// Return a configured instance of the TFHE backend.
+pub fn tfhe_backend() -> penumbra_tfhe::TfheBackend {
+    penumbra_tfhe::TfheBackend
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Return a configured instance of the CKKS backend with default parameters.
+#[cfg(feature = "ckks")]
+pub fn ckks_backend() -> penumbra_ckks::CkksBackend {
+    penumbra_ckks::CkksBackend::default()
+}
 
-    #[test]
-    fn test_harness_scaffolding() {
-        assert_eq!(harness_version(), "0.0.0");
-    }
+/// Backend names compiled into this build, in report order.
+pub fn available_backends() -> Vec<&'static str> {
+    vec![
+        "tfhe",
+        #[cfg(feature = "ckks")]
+        "ckks",
+    ]
 }
