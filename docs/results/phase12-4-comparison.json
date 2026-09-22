@@ -13,7 +13,14 @@
     "rustc": "rustc 1.100.0-nightly (bba531001 2026-09-20)",
     "commit": "dc20d05ee332e284045ea971bb8272c5d5ddf522",
     "date": "2026-09-22",
-    "harness": "penumbra-bench-report --backends tfhe,ckks --samples 2"
+    "harness": "penumbra-bench-report --backends tfhe,ckks --samples 2",
+    "ckks_rerun": {
+      "commit": "3f6bd68900fafaf3c8f29e7cff25212e5c8ae551",
+      "date": "2026-09-22",
+      "rustc": "rustc 1.100.0-nightly (bba531001 2026-09-20)",
+      "harness": "penumbra-bench-report --backends ckks --samples 2",
+      "note": "CKKS arm re-measured after the Requant floor-midpoint fix (crates/penumbra-ckks/src/ops/polymap.rs). TFHE runs carried over unchanged from the dc20d05 sweep: no TFHE code path was touched."
+    }
   },
   "runs": [
     {
@@ -132,7 +139,7 @@
       "model": "phase2_logreg",
       "fixture": "../../examples/mnist/phase2_fixture.json",
       "num_blocks": 8,
-      "keygen_secs": 1.9136205830000002,
+      "keygen_secs": 1.906689334,
       "client_key_bytes": 131196,
       "server_key_bytes": 1869089408,
       "input_ct_bytes": 4980843,
@@ -140,15 +147,15 @@
       "samples": [
         {
           "index": 0,
-          "encrypt_secs": 0.004943458,
-          "eval_secs": 0.536854667,
-          "decrypt_secs": 0.000759417,
+          "encrypt_secs": 0.004395209,
+          "eval_secs": 0.468981375,
+          "decrypt_secs": 0.00091575,
           "nodes": [
             {
               "name": "fc",
               "op_type": "Linear",
-              "build_secs": 2.5083e-05,
-              "eval_secs": 0.421563542,
+              "build_secs": 2.4291e-05,
+              "eval_secs": 0.354654167,
               "input_lens": [
                 1
               ],
@@ -162,8 +169,8 @@
             {
               "name": "head",
               "op_type": "Argmax",
-              "build_secs": 0.001217542,
-              "eval_secs": 0.114040625,
+              "build_secs": 0.001232375,
+              "eval_secs": 0.113061792,
               "input_lens": [
                 1
               ],
@@ -184,15 +191,15 @@
         },
         {
           "index": 1,
-          "encrypt_secs": 0.003916167,
-          "eval_secs": 0.432407208,
-          "decrypt_secs": 0.000636,
+          "encrypt_secs": 0.004343916,
+          "eval_secs": 0.418948,
+          "decrypt_secs": 0.00066425,
           "nodes": [
             {
               "name": "fc",
               "op_type": "Linear",
-              "build_secs": 2.5959e-05,
-              "eval_secs": 0.317954375,
+              "build_secs": 2.8417e-05,
+              "eval_secs": 0.3071455,
               "input_lens": [
                 1
               ],
@@ -206,8 +213,8 @@
             {
               "name": "head",
               "op_type": "Argmax",
-              "build_secs": 0.001222791,
-              "eval_secs": 0.113196291,
+              "build_secs": 0.001212625,
+              "eval_secs": 0.110554125,
               "input_lens": [
                 1
               ],
@@ -228,12 +235,12 @@
         }
       ],
       "op_type_secs": {
-        "Argmax": 0.113618458,
-        "Linear": 0.3697589585
+        "Argmax": 0.1118079585,
+        "Linear": 0.3308998335
       },
       "op_type_build_secs": {
-        "Argmax": 0.0012201665000000001,
-        "Linear": 2.5521000000000002e-05
+        "Argmax": 0.0012225,
+        "Linear": 2.6354e-05
       },
       "cost_proxy": {
         "depth_levels": 5,
@@ -439,7 +446,7 @@
       "model": "phase4_cnn",
       "fixture": "../../examples/mnist/phase4_cnn_fixture.json",
       "num_blocks": 7,
-      "keygen_secs": 1.9710545000000002,
+      "keygen_secs": 1.9001969170000002,
       "client_key_bytes": 131196,
       "server_key_bytes": 1869089408,
       "input_ct_bytes": 4980843,
@@ -447,15 +454,15 @@
       "samples": [
         {
           "index": 0,
-          "encrypt_secs": 0.010770792,
-          "eval_secs": 0.674663542,
-          "decrypt_secs": 0.000478708,
+          "encrypt_secs": 0.004307584,
+          "eval_secs": 0.531404417,
+          "decrypt_secs": 0.000518834,
           "nodes": [
             {
               "name": "conv",
               "op_type": "Conv2d",
-              "build_secs": 3.2959e-05,
-              "eval_secs": 0.3431965,
+              "build_secs": 3.1292e-05,
+              "eval_secs": 0.214300667,
               "input_lens": [
                 1
               ],
@@ -469,8 +476,8 @@
             {
               "name": "conv__requant",
               "op_type": "Requant",
-              "build_secs": 0.001358541,
-              "eval_secs": 0.119407292,
+              "build_secs": 0.001341125,
+              "eval_secs": 0.115943667,
               "input_lens": [
                 1
               ],
@@ -484,8 +491,8 @@
             {
               "name": "pool",
               "op_type": "Pool",
-              "build_secs": 3.0416e-05,
-              "eval_secs": 0.116618125,
+              "build_secs": 2.6417e-05,
+              "eval_secs": 0.108883167,
               "input_lens": [
                 1
               ],
@@ -499,8 +506,8 @@
             {
               "name": "head",
               "op_type": "Linear",
-              "build_secs": 2.1083e-05,
-              "eval_secs": 0.093983542,
+              "build_secs": 2.2875e-05,
+              "eval_secs": 0.090834084,
               "input_lens": [
                 1
               ],
@@ -513,32 +520,32 @@
             }
           ],
           "decrypted": [
-            10,
-            -10,
-            -10,
+            -2,
+            -2,
+            -5,
             1,
-            17,
-            -16,
-            -12,
+            13,
+            -2,
+            -13,
+            0,
             5,
-            10,
-            -2
+            -1
           ],
-          "max_abs_err": 15.0,
-          "mean_abs_err": 6.8,
+          "max_abs_err": 3.0,
+          "mean_abs_err": 1.3,
           "label_matches": true
         },
         {
           "index": 1,
-          "encrypt_secs": 0.00383975,
-          "eval_secs": 0.511898583,
-          "decrypt_secs": 0.000486458,
+          "encrypt_secs": 0.004028333,
+          "eval_secs": 0.514387291,
+          "decrypt_secs": 0.000501917,
           "nodes": [
             {
               "name": "conv",
               "op_type": "Conv2d",
-              "build_secs": 3.3083e-05,
-              "eval_secs": 0.196937542,
+              "build_secs": 2.8416e-05,
+              "eval_secs": 0.200725292,
               "input_lens": [
                 1
               ],
@@ -552,8 +559,8 @@
             {
               "name": "conv__requant",
               "op_type": "Requant",
-              "build_secs": 0.001335375,
-              "eval_secs": 0.117661917,
+              "build_secs": 0.001322167,
+              "eval_secs": 0.11445825,
               "input_lens": [
                 1
               ],
@@ -567,8 +574,8 @@
             {
               "name": "pool",
               "op_type": "Pool",
-              "build_secs": 2.2708e-05,
-              "eval_secs": 0.107285292,
+              "build_secs": 2.3584e-05,
+              "eval_secs": 0.107604584,
               "input_lens": [
                 1
               ],
@@ -582,8 +589,8 @@
             {
               "name": "head",
               "op_type": "Linear",
-              "build_secs": 2.0334e-05,
-              "eval_secs": 0.088588125,
+              "build_secs": 1.8167e-05,
+              "eval_secs": 0.090193542,
               "input_lens": [
                 1
               ],
@@ -596,33 +603,33 @@
             }
           ],
           "decrypted": [
-            22,
-            -19,
-            -12,
-            3,
+            12,
+            -9,
+            -4,
+            -1,
+            -4,
             -2,
-            -7,
-            -2,
-            2,
-            -14,
-            25
+            -3,
+            1,
+            -9,
+            16
           ],
-          "max_abs_err": 10.0,
-          "mean_abs_err": 5.5,
+          "max_abs_err": 2.0,
+          "mean_abs_err": 0.4,
           "label_matches": true
         }
       ],
       "op_type_secs": {
-        "Conv2d": 0.270067021,
-        "Linear": 0.0912858335,
-        "Pool": 0.1119517085,
-        "Requant": 0.1185346045
+        "Conv2d": 0.2075129795,
+        "Linear": 0.090513813,
+        "Pool": 0.1082438755,
+        "Requant": 0.1152009585
       },
       "op_type_build_secs": {
-        "Conv2d": 3.3021e-05,
-        "Linear": 2.07085e-05,
-        "Pool": 2.6562e-05,
-        "Requant": 0.001346958
+        "Conv2d": 2.9854e-05,
+        "Linear": 2.0521000000000002e-05,
+        "Pool": 2.50005e-05,
+        "Requant": 0.0013316460000000001
       },
       "cost_proxy": {
         "depth_levels": 7,
@@ -804,7 +811,7 @@
       "model": "phase5_digits",
       "fixture": "../../examples/mnist/phase5_digits_fixture.json",
       "num_blocks": 11,
-      "keygen_secs": 2.194893625,
+      "keygen_secs": 1.9519565829999999,
       "client_key_bytes": 131196,
       "server_key_bytes": 1869089408,
       "input_ct_bytes": 4980843,
@@ -812,15 +819,15 @@
       "samples": [
         {
           "index": 0,
-          "encrypt_secs": 0.005586833,
-          "eval_secs": 2.47792775,
-          "decrypt_secs": 0.00042125,
+          "encrypt_secs": 0.004371167,
+          "eval_secs": 1.966369333,
+          "decrypt_secs": 0.00040925,
           "nodes": [
             {
               "name": "conv0",
               "op_type": "Conv2d",
-              "build_secs": 0.001867333,
-              "eval_secs": 1.102369333,
+              "build_secs": 6.0708e-05,
+              "eval_secs": 0.711779334,
               "input_lens": [
                 1
               ],
@@ -834,8 +841,8 @@
             {
               "name": "conv0__requant",
               "op_type": "Requant",
-              "build_secs": 0.0145905,
-              "eval_secs": 1.074691166,
+              "build_secs": 0.013972083,
+              "eval_secs": 1.061768125,
               "input_lens": [
                 1
               ],
@@ -849,8 +856,8 @@
             {
               "name": "linear2",
               "op_type": "Linear",
-              "build_secs": 5.7083e-05,
-              "eval_secs": 0.284326833,
+              "build_secs": 3.5625e-05,
+              "eval_secs": 0.17872875,
               "input_lens": [
                 1
               ],
@@ -863,32 +870,32 @@
             }
           ],
           "decrypted": [
-            -228,
-            -264,
-            13,
-            -96,
-            -31,
-            -122,
-            -148,
-            54,
-            -127,
-            -58
+            -32,
+            -120,
+            45,
+            -54,
+            -14,
+            -87,
+            -57,
+            142,
+            -43,
+            16
           ],
-          "max_abs_err": 188.0,
-          "mean_abs_err": 76.5,
+          "max_abs_err": 25.0,
+          "mean_abs_err": 10.0,
           "label_matches": true
         },
         {
           "index": 1,
-          "encrypt_secs": 0.00387475,
-          "eval_secs": 2.046497584,
-          "decrypt_secs": 0.000455208,
+          "encrypt_secs": 0.003857083,
+          "eval_secs": 1.938842916,
+          "decrypt_secs": 0.000406208,
           "nodes": [
             {
               "name": "conv0",
               "op_type": "Conv2d",
-              "build_secs": 6.0375e-05,
-              "eval_secs": 0.749658333,
+              "build_secs": 6.8125e-05,
+              "eval_secs": 0.679370958,
               "input_lens": [
                 1
               ],
@@ -902,8 +909,8 @@
             {
               "name": "conv0__requant",
               "op_type": "Requant",
-              "build_secs": 0.015078958,
-              "eval_secs": 1.097453875,
+              "build_secs": 0.0140595,
+              "eval_secs": 1.072967791,
               "input_lens": [
                 1
               ],
@@ -917,8 +924,8 @@
             {
               "name": "linear2",
               "op_type": "Linear",
-              "build_secs": 3.3625e-05,
-              "eval_secs": 0.184186459,
+              "build_secs": 4.4417e-05,
+              "eval_secs": 0.172310791,
               "input_lens": [
                 1
               ],
@@ -931,31 +938,31 @@
             }
           ],
           "decrypted": [
-            -227,
-            -203,
-            -136,
-            -161,
-            -42,
-            -84,
-            -37,
-            -189,
-            -73,
-            -219
+            -35,
+            -54,
+            -93,
+            -119,
+            -31,
+            -64,
+            66,
+            -126,
+            24,
+            -154
           ],
-          "max_abs_err": 209.0,
-          "mean_abs_err": 85.8,
+          "max_abs_err": 35.0,
+          "mean_abs_err": 11.9,
           "label_matches": true
         }
       ],
       "op_type_secs": {
-        "Conv2d": 0.926013833,
-        "Linear": 0.234256646,
-        "Requant": 1.0860725205000001
+        "Conv2d": 0.695575146,
+        "Linear": 0.1755197705,
+        "Requant": 1.067367958
       },
       "op_type_build_secs": {
-        "Conv2d": 0.0009638540000000001,
-        "Linear": 4.5354e-05,
-        "Requant": 0.014834729
+        "Conv2d": 6.441650000000001e-05,
+        "Linear": 4.0021e-05,
+        "Requant": 0.0140157915
       },
       "cost_proxy": {
         "depth_levels": 7,
@@ -1137,7 +1144,7 @@
       "model": "phase5_qat",
       "fixture": "../../examples/mnist/phase5_qat_fixture.json",
       "num_blocks": 11,
-      "keygen_secs": 2.180687791,
+      "keygen_secs": 1.903758334,
       "client_key_bytes": 131196,
       "server_key_bytes": 1869089408,
       "input_ct_bytes": 4980843,
@@ -1145,15 +1152,15 @@
       "samples": [
         {
           "index": 0,
-          "encrypt_secs": 0.010128209,
-          "eval_secs": 2.268201208,
-          "decrypt_secs": 0.000412459,
+          "encrypt_secs": 0.004346334,
+          "eval_secs": 1.8518570410000001,
+          "decrypt_secs": 0.000500958,
           "nodes": [
             {
               "name": "conv0",
               "op_type": "Conv2d",
-              "build_secs": 0.000117791,
-              "eval_secs": 1.088680292,
+              "build_secs": 6.15e-05,
+              "eval_secs": 0.715298875,
               "input_lens": [
                 1
               ],
@@ -1167,8 +1174,8 @@
             {
               "name": "conv0__requant",
               "op_type": "Requant",
-              "build_secs": 0.01246125,
-              "eval_secs": 0.95480425,
+              "build_secs": 0.012103625,
+              "eval_secs": 0.94605975,
               "input_lens": [
                 1
               ],
@@ -1182,8 +1189,8 @@
             {
               "name": "linear2",
               "op_type": "Linear",
-              "build_secs": 5.7167e-05,
-              "eval_secs": 0.212051958,
+              "build_secs": 3.3542e-05,
+              "eval_secs": 0.178276042,
               "input_lens": [
                 1
               ],
@@ -1196,32 +1203,32 @@
             }
           ],
           "decrypted": [
-            -382,
-            -257,
-            -41,
-            -191,
-            -107,
-            -352,
-            -298,
-            27,
-            -224,
-            -97
+            -133,
+            -131,
+            58,
+            -88,
+            -43,
+            -268,
+            -136,
+            135,
+            -57,
+            27
           ],
-          "max_abs_err": 238.0,
-          "mean_abs_err": 132.0,
+          "max_abs_err": 28.0,
+          "mean_abs_err": 11.0,
           "label_matches": true
         },
         {
           "index": 1,
-          "encrypt_secs": 0.003954583,
-          "eval_secs": 1.817244916,
-          "decrypt_secs": 0.000424542,
+          "encrypt_secs": 0.00415775,
+          "eval_secs": 1.822782792,
+          "decrypt_secs": 0.000415291,
           "nodes": [
             {
               "name": "conv0",
               "op_type": "Conv2d",
-              "build_secs": 5.9542e-05,
-              "eval_secs": 0.680398709,
+              "build_secs": 6.2375e-05,
+              "eval_secs": 0.688638792,
               "input_lens": [
                 1
               ],
@@ -1235,8 +1242,8 @@
             {
               "name": "conv0__requant",
               "op_type": "Requant",
-              "build_secs": 0.012651917,
-              "eval_secs": 0.952722208,
+              "build_secs": 0.012241917,
+              "eval_secs": 0.95009925,
               "input_lens": [
                 1
               ],
@@ -1250,8 +1257,8 @@
             {
               "name": "linear2",
               "op_type": "Linear",
-              "build_secs": 3.6e-05,
-              "eval_secs": 0.1713505,
+              "build_secs": 4.0875e-05,
+              "eval_secs": 0.1716775,
               "input_lens": [
                 1
               ],
@@ -1264,31 +1271,31 @@
             }
           ],
           "decrypted": [
-            -324,
-            -307,
-            -251,
-            -381,
-            -127,
-            -205,
-            -26,
-            -260,
-            -179,
-            -410
+            -76,
+            -169,
+            -162,
+            -283,
+            -62,
+            -110,
+            153,
+            -183,
+            5,
+            -282
           ],
-          "max_abs_err": 234.0,
-          "mean_abs_err": 134.3,
+          "max_abs_err": 28.0,
+          "mean_abs_err": 15.2,
           "label_matches": true
         }
       ],
       "op_type_secs": {
-        "Conv2d": 0.8845395005000001,
-        "Linear": 0.191701229,
-        "Requant": 0.953763229
+        "Conv2d": 0.7019688335000001,
+        "Linear": 0.174976771,
+        "Requant": 0.9480795
       },
       "op_type_build_secs": {
-        "Conv2d": 8.86665e-05,
-        "Linear": 4.65835e-05,
-        "Requant": 0.0125565835
+        "Conv2d": 6.193750000000001e-05,
+        "Linear": 3.7208499999999995e-05,
+        "Requant": 0.012172770999999999
       },
       "cost_proxy": {
         "depth_levels": 7,
@@ -1470,7 +1477,7 @@
       "model": "phase6_onnx",
       "fixture": "../../examples/mnist/phase6_onnx_fixture.json",
       "num_blocks": 11,
-      "keygen_secs": 2.204941792,
+      "keygen_secs": 1.897781459,
       "client_key_bytes": 131196,
       "server_key_bytes": 1869089408,
       "input_ct_bytes": 4980843,
@@ -1478,15 +1485,15 @@
       "samples": [
         {
           "index": 0,
-          "encrypt_secs": 0.008472209,
-          "eval_secs": 2.30290075,
-          "decrypt_secs": 0.000404375,
+          "encrypt_secs": 0.004306292,
+          "eval_secs": 1.966663417,
+          "decrypt_secs": 0.000567417,
           "nodes": [
             {
               "name": "conv0",
               "op_type": "Conv2d",
-              "build_secs": 0.000128709,
-              "eval_secs": 1.008130833,
+              "build_secs": 6.6541e-05,
+              "eval_secs": 0.712803083,
               "input_lens": [
                 1
               ],
@@ -1500,8 +1507,8 @@
             {
               "name": "conv0__requant",
               "op_type": "Requant",
-              "build_secs": 0.013800584,
-              "eval_secs": 1.07281075,
+              "build_secs": 0.014022709,
+              "eval_secs": 1.061912542,
               "input_lens": [
                 1
               ],
@@ -1515,8 +1522,8 @@
             {
               "name": "linear2",
               "op_type": "Linear",
-              "build_secs": 5.1292e-05,
-              "eval_secs": 0.207950667,
+              "build_secs": 3.5916e-05,
+              "eval_secs": 0.177798333,
               "input_lens": [
                 1
               ],
@@ -1529,32 +1536,32 @@
             }
           ],
           "decrypted": [
-            -228,
-            -264,
-            13,
-            -96,
-            -31,
-            -122,
-            -148,
-            54,
-            -127,
-            -58
+            -32,
+            -120,
+            45,
+            -54,
+            -14,
+            -87,
+            -57,
+            142,
+            -43,
+            16
           ],
-          "max_abs_err": 188.0,
-          "mean_abs_err": 76.5,
+          "max_abs_err": 25.0,
+          "mean_abs_err": 10.0,
           "label_matches": true
         },
         {
           "index": 1,
-          "encrypt_secs": 0.003832416,
-          "eval_secs": 1.9546347499999999,
-          "decrypt_secs": 0.00041125,
+          "encrypt_secs": 0.004118333,
+          "eval_secs": 1.933107084,
+          "decrypt_secs": 0.000417125,
           "nodes": [
             {
               "name": "conv0",
               "op_type": "Conv2d",
-              "build_secs": 5.7625e-05,
-              "eval_secs": 0.664829375,
+              "build_secs": 5.9917e-05,
+              "eval_secs": 0.686812042,
               "input_lens": [
                 1
               ],
@@ -1568,8 +1575,8 @@
             {
               "name": "conv0__requant",
               "op_type": "Requant",
-              "build_secs": 0.014056458,
-              "eval_secs": 1.095892875,
+              "build_secs": 0.014017291,
+              "eval_secs": 1.06053275,
               "input_lens": [
                 1
               ],
@@ -1583,8 +1590,8 @@
             {
               "name": "linear2",
               "op_type": "Linear",
-              "build_secs": 3.6958e-05,
-              "eval_secs": 0.179739375,
+              "build_secs": 4.5333e-05,
+              "eval_secs": 0.171615542,
               "input_lens": [
                 1
               ],
@@ -1597,31 +1604,31 @@
             }
           ],
           "decrypted": [
-            -227,
-            -203,
-            -136,
-            -161,
-            -42,
-            -84,
-            -37,
-            -189,
-            -73,
-            -219
+            -35,
+            -54,
+            -93,
+            -119,
+            -31,
+            -64,
+            66,
+            -126,
+            24,
+            -154
           ],
-          "max_abs_err": 209.0,
-          "mean_abs_err": 85.8,
+          "max_abs_err": 35.0,
+          "mean_abs_err": 11.9,
           "label_matches": true
         }
       ],
       "op_type_secs": {
-        "Conv2d": 0.8364801040000001,
-        "Linear": 0.193845021,
-        "Requant": 1.0843518125
+        "Conv2d": 0.6998075625,
+        "Linear": 0.1747069375,
+        "Requant": 1.061222646
       },
       "op_type_build_secs": {
-        "Conv2d": 9.3167e-05,
-        "Linear": 4.4125e-05,
-        "Requant": 0.013928521
+        "Conv2d": 6.3229e-05,
+        "Linear": 4.0624500000000004e-05,
+        "Requant": 0.01402
       },
       "cost_proxy": {
         "depth_levels": 7,
@@ -1735,7 +1742,7 @@
       "model": "phase6_sklearn",
       "fixture": "../../examples/mnist/phase6_sklearn_fixture.json",
       "num_blocks": 10,
-      "keygen_secs": 2.164330292,
+      "keygen_secs": 1.89885875,
       "client_key_bytes": 131196,
       "server_key_bytes": 1869089408,
       "input_ct_bytes": 4980843,
@@ -1743,15 +1750,15 @@
       "samples": [
         {
           "index": 0,
-          "encrypt_secs": 0.0061435,
-          "eval_secs": 0.802006917,
-          "decrypt_secs": 0.00148875,
+          "encrypt_secs": 0.004339458,
+          "eval_secs": 0.45994075,
+          "decrypt_secs": 0.0016765,
           "nodes": [
             {
               "name": "linear0",
               "op_type": "Linear",
-              "build_secs": 0.000365625,
-              "eval_secs": 0.801626458,
+              "build_secs": 3.8667e-05,
+              "eval_secs": 0.459892417,
               "input_lens": [
                 1
               ],
@@ -1781,15 +1788,15 @@
         },
         {
           "index": 1,
-          "encrypt_secs": 0.004317792,
-          "eval_secs": 0.418652042,
-          "decrypt_secs": 0.001288625,
+          "encrypt_secs": 0.004156208,
+          "eval_secs": 0.415790292,
+          "decrypt_secs": 0.001295167,
           "nodes": [
             {
               "name": "linear0",
               "op_type": "Linear",
-              "build_secs": 4.6375e-05,
-              "eval_secs": 0.418599625,
+              "build_secs": 2.7916e-05,
+              "eval_secs": 0.415756708,
               "input_lens": [
                 1
               ],
@@ -1819,10 +1826,10 @@
         }
       ],
       "op_type_secs": {
-        "Linear": 0.6101130415
+        "Linear": 0.4378245625
       },
       "op_type_build_secs": {
-        "Linear": 0.00020600000000000002
+        "Linear": 3.32915e-05
       },
       "cost_proxy": {
         "depth_levels": 1,
@@ -1999,7 +2006,7 @@
       "model": "phase7_faces",
       "fixture": "../../examples/faces/phase7_faces_fixture.json",
       "num_blocks": 11,
-      "keygen_secs": 2.186541208,
+      "keygen_secs": 1.89495125,
       "client_key_bytes": 131196,
       "server_key_bytes": 1869089408,
       "input_ct_bytes": 4980843,
@@ -2007,15 +2014,15 @@
       "samples": [
         {
           "index": 0,
-          "encrypt_secs": 0.008621667,
-          "eval_secs": 2.431664667,
-          "decrypt_secs": 0.000332125,
+          "encrypt_secs": 0.0042935,
+          "eval_secs": 2.060009041,
+          "decrypt_secs": 0.000382042,
           "nodes": [
             {
               "name": "conv0",
               "op_type": "Conv2d",
-              "build_secs": 0.000158042,
-              "eval_secs": 1.5561457079999998,
+              "build_secs": 0.000101708,
+              "eval_secs": 1.180420958,
               "input_lens": [
                 1
               ],
@@ -2029,8 +2036,8 @@
             {
               "name": "conv0__requant",
               "op_type": "Requant",
-              "build_secs": 0.009180375,
-              "eval_secs": 0.708783416,
+              "build_secs": 0.008255542,
+              "eval_secs": 0.706634,
               "input_lens": [
                 1
               ],
@@ -2044,8 +2051,8 @@
             {
               "name": "linear2",
               "op_type": "Linear",
-              "build_secs": 6.0458e-05,
-              "eval_secs": 0.157305916,
+              "build_secs": 3.525e-05,
+              "eval_secs": 0.16453125,
               "input_lens": [
                 1
               ],
@@ -2058,30 +2065,30 @@
             }
           ],
           "decrypted": [
-            16,
-            51,
-            -175,
-            -40,
-            -41,
-            -39,
-            -73,
-            -46
+            -8,
+            100,
+            -94,
+            -22,
+            -13,
+            -67,
+            -13,
+            -77
           ],
-          "max_abs_err": 105.0,
-          "mean_abs_err": 37.0,
+          "max_abs_err": 74.0,
+          "mean_abs_err": 39.875,
           "label_matches": true
         },
         {
           "index": 1,
-          "encrypt_secs": 0.003853791,
-          "eval_secs": 1.989292042,
-          "decrypt_secs": 0.00033225,
+          "encrypt_secs": 0.004151541,
+          "eval_secs": 2.006672417,
+          "decrypt_secs": 0.000325583,
           "nodes": [
             {
               "name": "conv0",
               "op_type": "Conv2d",
-              "build_secs": 8.3875e-05,
-              "eval_secs": 1.127409833,
+              "build_secs": 8.1209e-05,
+              "eval_secs": 1.147799291,
               "input_lens": [
                 1
               ],
@@ -2095,8 +2102,8 @@
             {
               "name": "conv0__requant",
               "op_type": "Requant",
-              "build_secs": 0.009161083,
-              "eval_secs": 0.69734325,
+              "build_secs": 0.008231708,
+              "eval_secs": 0.696690125,
               "input_lens": [
                 1
               ],
@@ -2110,8 +2117,8 @@
             {
               "name": "linear2",
               "op_type": "Linear",
-              "build_secs": 3.9958e-05,
-              "eval_secs": 0.155227125,
+              "build_secs": 3.7458e-05,
+              "eval_secs": 0.153804292,
               "input_lens": [
                 1
               ],
@@ -2124,29 +2131,29 @@
             }
           ],
           "decrypted": [
-            -41,
-            -264,
-            -7,
-            11,
-            -27,
-            21,
-            -33,
-            -64
+            -88,
+            -299,
+            145,
+            5,
+            3,
+            -9,
+            67,
+            -75
           ],
-          "max_abs_err": 192.0,
-          "mean_abs_err": 59.875,
-          "label_matches": false
+          "max_abs_err": 40.0,
+          "mean_abs_err": 22.75,
+          "label_matches": true
         }
       ],
       "op_type_secs": {
-        "Conv2d": 1.3417777704999998,
-        "Linear": 0.1562665205,
-        "Requant": 0.703063333
+        "Conv2d": 1.1641101245,
+        "Linear": 0.159167771,
+        "Requant": 0.7016620625000001
       },
       "op_type_build_secs": {
-        "Conv2d": 0.00012095850000000001,
-        "Linear": 5.0208000000000004e-05,
-        "Requant": 0.009170728999999999
+        "Conv2d": 9.14585e-05,
+        "Linear": 3.6354e-05,
+        "Requant": 0.008243625000000001
       },
       "cost_proxy": {
         "depth_levels": 7,

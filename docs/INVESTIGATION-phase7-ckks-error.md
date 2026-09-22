@@ -114,10 +114,11 @@ Simulated error on Sample 1:
 
 ---
 
-## 5. Blueprint for Future Execution (Option C)
+## 5. Blueprint for Future Execution (Option C) *(Superseded by §6)*
+
+*(Note: §5 was the initial blueprint proposal; it is superseded by the resolution in §6 below, which adopted the generalized floor-midpoint correction rather than dropping `round_bias`.)*
 
 When executing Option C in the future, follow this implementation checklist:
-
 ### Step 1: Update `fit_requant` in `crates/penumbra-ckks/src/ops/polymap.rs`
 In `crates/penumbra-ckks/src/ops/polymap.rs:54-58`, change:
 ```rust
@@ -160,3 +161,24 @@ Re-run the comparison sweep on `phase7_faces`:
 ./target/release/penumbra-bench-report --models phase7_faces --backends tfhe,ckks --samples 2 --format json --out target/bench-results/phase7_faces.json
 ```
 Re-merge via `/tmp/merge_comparison.py`, update `docs/results/phase12-4-comparison.json`, and update the tables in `docs/BENCHMARKS.md` and `docs/COMPARISON.md`.
+
+---
+
+## 6. Resolution
+
+Fixed at commit `3f6bd68900fafaf3c8f29e7cff25212e5c8ae551` by the floor-midpoint correction rather than the literal §5 Step 1 blueprint:
+
+1. **Floor-midpoint correction instead of dropping `round_bias`:** The §5 Step 1 blueprint's idea of dropping `round_bias` is equivalent to the floor midpoint only when `round_bias = 2^(shift - 1)`. For models with `round_bias = 0` (truncation-only requantization, such as `phase4_cnn`), dropping `round_bias` leaves the +0.5 LSB pre-floor bias uncorrected. The implemented fix subtracts the exact floor midpoint `0.5 * (1.0 - 1.0 / divisor)` from the scaled value:
+   $$\text{floor\_midpoint} = \frac{1}{2}\left(1 - 2^{-\text{shift}}\right)$$
+   This vanishes at `shift = 0` (preserving identity / ReLU fits used by `Backend::scalar_max` / `scalar_min`), correctly centers truncation-only requants (reducing `phase4_cnn` error from 16.73 down to 3.43 in hardware measurement), and eliminates the +0.5 LSB bias everywhere.
+2. **Domain $x_{\max}$ refinement not taken:** The §3.3 domain refinement was deliberately omitted: tightening the Chebyshev domain offered minimal error reduction (80.22 → 74.05 in simulation) while shrinking the input domain over which the polynomial fit is valid, risking extrapolation errors on out-of-distribution inputs.
+3. **Broader defect scope identified:** The defect was not isolated to `phase7_faces`: `phase5_digits` and `phase6_onnx` also suffered label mispredictions on sample 1 under the old target function (though inside their loose 250.0 bound). Post-fix, label agreement reached 100% (14/14 samples matched across all 7 fixtures).
+4. **Multi-sample coverage added to golden tests:** All seven CKKS golden test files (`ckks_golden_*.rs`) were updated to loop over all fixture samples rather than testing only `test_inputs[0]`, closing the coverage gap that allowed the bound violation to ship initially.
+5. **Re-declared bounds:** All model error bounds in `crates/penumbra-ckks/src/bounds.rs` were re-declared from `cargo run --example calibrate` measurements with ~1.5x headroom:
+   - `PHASE4_CNN`: 30.0 → 10.0 (measured max 3.43)
+   - `PHASE5_DIGITS`: 250.0 → 60.0 (measured max 34.70)
+   - `PHASE5_QAT`: 300.0 → 50.0 (measured max 27.96)
+   - `PHASE6_ONNX`: 250.0 → 60.0 (measured max 34.70)
+   - `PHASE7_FACES`: 150.0 → 120.0 (measured max 74.39)
+   - `PHASE2_LOGREG` (0.5) and `PHASE6_SKLEARN` (0.001) unchanged.
+6. **Artifacts updated:** The CKKS arm of the benchmark sweep was re-measured on Apple Silicon (`FFT64Neon`) and merged into `docs/results/phase12-4-comparison.json` (recorded in `meta.ckks_rerun`), with `docs/BENCHMARKS.md` and `docs/COMPARISON.md` updated accordingly.

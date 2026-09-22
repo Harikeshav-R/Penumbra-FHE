@@ -51,9 +51,18 @@ pub fn fit_requant(
     let hi = x_max;
     let divisor = (1u64 << shift) as f64;
     let max_val = ((1i64 << out_bits) - 1) as f64;
+    // The integer op floors: clamp((relu*mult + round_bias) >> shift, 0, max_val)
+    // (`penumbra_tfhe::ops::requant`, `python/penumbra/reference.py::_requant`). Fitting the
+    // pre-floor value overshoots every integer answer by the floor residual, whose mean over the
+    // 2^-shift grid is (1 - 2^-shift)/2 — a systematic +0.5-LSB bias that a following Linear
+    // amplifies by its L1 weight norm (~200 integer units on phase7_faces). Fit the midpoint of
+    // each floor step instead, so the residual is zero-mean. The (1 - 1/divisor) factor makes the
+    // correction vanish at shift = 0, where the shift is exact and no residual exists — that is
+    // the identity/ReLU fit `Backend::scalar_max`/`scalar_min` rely on.
+    let floor_midpoint = 0.5 * (1.0 - 1.0 / divisor);
     let f = move |t: f64| -> f64 {
         let relu = t.max(0.0);
-        let scaled = (relu * (mult as f64) + (round_bias as f64)) / divisor;
+        let scaled = (relu * (mult as f64) + (round_bias as f64)) / divisor - floor_midpoint;
         scaled.clamp(0.0, max_val)
     };
 

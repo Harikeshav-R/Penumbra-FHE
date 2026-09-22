@@ -6,7 +6,7 @@ is valid, and what the results do and do not license anyone to conclude.
 
 > **Status: measured (Phase 12.4).** Measured 2026-09-22 on Apple M3 Pro, macOS 25.6.0,
 > `rustc 1.100.0-nightly (bba531001 2026-09-20)`, HAL backend `FFT64Neon` (`poulpy-ckks 0.8.3`),
-> commit `dc20d05ee332e284045ea971bb8272c5d5ddf522`. Detailed numbers: [`docs/BENCHMARKS.md`](./BENCHMARKS.md);
+> commit `dc20d05ee332e284045ea971bb8272c5d5ddf522`. CKKS arm re-measured on 2026-09-22 at commit `3f6bd68900fafaf3c8f29e7cff25212e5c8ae551` after the `Requant` fix; TFHE arm carried over from `dc20d05`. Detailed numbers: [`docs/BENCHMARKS.md`](./BENCHMARKS.md);
 > raw data: [`docs/results/phase12-4-comparison.json`](./results/phase12-4-comparison.json).
 
 ## The hypothesis
@@ -141,12 +141,12 @@ Stated in advance, and to be restated alongside any published result.
 | Model | Float | Quantized (shared reference) | TFHE | CKKS max \|err\| | Declared bound | CKKS labels |
 |---|---:|---:|---|---:|---:|---|
 | Phase-2 logreg | 1.0000 | 1.0000 | *= quantized, exactly* | 0.000 | 0.5 | 2/2 |
-| Phase-4 CNN | 0.9805 | 0.9570 | *= quantized, exactly* | 15.000 | 30.0 | 2/2 |
-| Phase-5 digits (PTQ) | 0.9639 | 0.9417 | *= quantized, exactly* | 209.000 | 250.0 | 2/2 |
-| Phase-5 digits (QAT) | 0.9361 | 0.9389 | *= quantized, exactly* | 238.000 | 300.0 | 2/2 |
-| Phase-6 ONNX | 0.9639 | 0.9417 | *= quantized, exactly* | 209.000 | 250.0 | 2/2 |
+| Phase-4 CNN | 0.9805 | 0.9570 | *= quantized, exactly* | 3.000 | 10.0 | 2/2 |
+| Phase-5 digits (PTQ) | 0.9639 | 0.9417 | *= quantized, exactly* | 35.000 | 60.0 | 2/2 |
+| Phase-5 digits (QAT) | 0.9361 | 0.9389 | *= quantized, exactly* | 28.000 | 50.0 | 2/2 |
+| Phase-6 ONNX | 0.9639 | 0.9417 | *= quantized, exactly* | 35.000 | 60.0 | 2/2 |
 | Phase-6 sklearn | 0.8944 | 0.8806 | *= quantized, exactly* | 0.000 | 0.001 | 2/2 |
-| Phase-7 faces | 0.9500 | 0.9000 | *= quantized, exactly* | 192.000 | 150.0 *(violated)* | 1/2 |
+| Phase-7 faces | 0.9500 | 0.9000 | *= quantized, exactly* | 74.000 | 120.0 | 2/2 |
 
 *(Derived from [`docs/BENCHMARKS.md` Table D](./BENCHMARKS.md#table-d--accuracy-and-error)).*
 
@@ -170,7 +170,7 @@ The study answers the three motivating sub-questions (§1) with concrete data on
 
 1. **The three sub-questions answered:**
    - **Latency:** CKKS is **24.4x to 336.8x faster** than TFHE across all seven committed fixtures. On `phase2_logreg`, CKKS evaluates in 0.48 s vs. TFHE's 11.85 s (24.4x speedup; Criterion median 412.89 ms vs. 11.122 s). On multi-layer convolutional models (`phase4_cnn`, `phase5_digits`, `phase5_qat`, `phase6_onnx`, `phase7_faces`), CKKS evaluates in 0.59 s to 2.26 s per sample, whereas TFHE takes 70 s to 730 s (~12.2 minutes) per sample (118.0x to 336.8x speedup).
-   - **Accuracy:** TFHE achieves bit-exact identity with the quantized integer reference (`max |err| = 0.0` everywhere, labels match 2/2 on all models). CKKS adds approximation error: on linear/argmax models (`phase2_logreg`, `phase6_sklearn`), error is zero or $\le 10^{-3}$; on multi-layer polynomial activations, error reaches 15.0 on `phase4_cnn`, 209.0–238.0 on 8-bit digit CNNs, and 192.0 on `phase7_faces`. Across all 7 models, CKKS labels matched ground truth 13/14 times (92.9% sample label agreement).
+   - **Accuracy:** TFHE achieves bit-exact identity with the quantized integer reference (`max |err| = 0.0` everywhere, labels match 2/2 on all models). CKKS adds approximation error: on linear/argmax models (`phase2_logreg`, `phase6_sklearn`), error is zero or $\le 10^{-3}$; on multi-layer polynomial activations, post-fix error reaches 3.0 on `phase4_cnn`, 28.0–35.0 on 8-bit digit CNNs, and 74.0 on `phase7_faces`. Across all 7 models, CKKS labels matched ground truth 14/14 times (100.0% sample label agreement).
    - **Overhead:** The latency advantage of CKKS is paid for in server key storage: CKKS requires **1.78 GB** of server keys (Galois automorphism and relin keys) compared to TFHE's **114.84 MB** (a 15.5x key storage overhead), and client keys are 128.1 KB vs. 23.4 KB. Ciphertext size exhibits a crossover: for small inputs, TFHE is comparable (3.96 MB vs 4.75 MB), but for larger inputs (256-element faces), TFHE's non-batched representation balloons to 44.22 MB while CKKS remains fixed at 4.75 MB per SIMD ciphertext.
 
 2. **Where the cost actually goes (Table B and Cost Proxies):**
@@ -188,7 +188,7 @@ The study answers the three motivating sub-questions (§1) with concrete data on
      - **Threat 9 (Toolchain codegen):** Both arms were compiled on nightly Rust; any nightly vs stable codegen disparity affects the TFHE arm.
    - **For the accuracy numbers:**
      - **Threat 2 (TFHE-shaped graph):** The models are quantized with 2-bit activation bottlenecks specifically designed for TFHE lookup tables; feeding this low-bit quantized graph to CKKS handicaps CKKS precision.
-     - **Threat 3 (Polynomial degree truncation):** `max_poly_degree = 15` polynomial degree truncation introduces the approximation error that caused the bound violation on `phase7_faces` sample 1.
+     - **Threat 3 (Polynomial degree truncation):** The earlier bound violation on `phase7_faces` sample 1 was an implementation bug in the `Requant` target function, now fixed; `max_poly_degree = 15` remains a genuine threat to validity because the residual error after the fix is still polynomial-approximation error, at post-fix magnitudes (up to 74.0 on `phase7_faces`, 35.0 on digits).
      - **Threat 7 (Small sample batch):** With $N=2$, sample accuracy reflects individual logit noise rather than population accuracy.
 
 4. **Verdict on `PROJECT.md` §2:**
@@ -199,7 +199,7 @@ The study answers the three motivating sub-questions (§1) with concrete data on
    Even on tiny models with non-batched single-inference workloads, CKKS under SIMD tensor packing (Option B) is **two orders of magnitude faster** (118x–337x on CNNs, 24x on logreg) than multi-block radix TFHE. The belief that "TFHE is faster because no batching is needed" assumed scalar CKKS; with BSGS diagonal packing, SIMD batching within a single tensor vastly outperforms radix-decomposed integer arithmetic.
 
    However, the hypothesis **survives on exactness and operational simplicity**:
-   1. TFHE requires zero polynomial approximation, has zero drift across layers, and guarantees bit-exact agreement with the integer specification. CKKS introduces substantial approximation error on multi-layer models and violated its declared bound on `phase7_faces` sample 1.
+   1. TFHE requires zero polynomial approximation, has zero drift across layers, and guarantees bit-exact agreement with the integer specification. CKKS introduces bounded approximation error on multi-layer models (max error 3.0 to 74.0 in integer units across CNNs), requiring declared bounds and headroom analysis.
    2. TFHE server keys are **114 MB**, feasible for deployment on constrained nodes; CKKS requires **1.78 GB** of Galois rotation keys for the BSGS baby-step/giant-step steps.
 
    Thus, for applications where latency must be $\le 5$ seconds per inference, CKKS is the only viable backend on this hardware; for applications demanding exactness or constrained key memory, TFHE remains the reference oracle.

@@ -136,54 +136,78 @@ fn main() {
         let budget_check = check_graph_depth_budget(&backend, &graph);
         let budget_status = if budget_check.is_ok() { "PASS" } else { "FAIL" };
 
-        let input_0 = as_i64_vec(&val["test_inputs"][0]);
-        let mut inputs_map = HashMap::new();
-        inputs_map.insert(graph.inputs[0].clone(), encrypt(&ck, &input_0));
+        let inputs = val["test_inputs"].as_array().expect("test_inputs array");
+        let mut max_err_all = 0.0f64;
+        let mut labels_ok = 0usize;
+        let labels_total = inputs.len();
+        let mut eval_failed = None;
 
-        let eval_res = evaluate_graph(&ctx, &graph, inputs_map);
+        for (s, input_val) in inputs.iter().enumerate() {
+            let input = as_i64_vec(input_val);
+            let mut inputs_map = HashMap::new();
+            inputs_map.insert(graph.inputs[0].clone(), encrypt(&ck, &input));
 
-        if let Ok(outputs) = eval_res {
-            let out_cts = &outputs[&graph.outputs[0]];
-            let raw_floats = decrypt_raw_vec(&ck, out_cts);
-            let rounded_ints = decrypt_vec(&ck, out_cts);
+            let eval_res = evaluate_graph(&ctx, &graph, inputs_map);
+            match eval_res {
+                Ok(outputs) => {
+                    let out_cts = &outputs[&graph.outputs[0]];
+                    let raw_floats = decrypt_raw_vec(&ck, out_cts);
+                    let rounded_ints = decrypt_vec(&ck, out_cts);
 
-            let want_label = val["expected_labels"][0].as_i64().unwrap();
-            let (want_ints, pred_label) = if mode == "labels" {
-                (vec![want_label], rounded_ints[0])
-            } else {
-                let want = as_i64_vec(&val["expected_logits"][0]);
-                let pred = raw_floats
-                    .iter()
-                    .enumerate()
-                    .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-                    .map(|(i, _)| i as i64)
-                    .unwrap();
-                (want, pred)
-            };
+                    let want_label = val["expected_labels"][s].as_i64().unwrap();
+                    let (want_ints, pred_label) = if mode == "labels" {
+                        (vec![want_label], rounded_ints[0])
+                    } else {
+                        let want = as_i64_vec(&val["expected_logits"][s]);
+                        let pred = raw_floats
+                            .iter()
+                            .enumerate()
+                            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                            .map(|(i, _)| i as i64)
+                            .unwrap();
+                        (want, pred)
+                    };
 
-            let mut max_err = 0.0f64;
-            for (i, &want) in want_ints.iter().enumerate() {
-                let got_f = raw_floats[i];
-                let err = (got_f - want as f64).abs();
-                if err > max_err {
-                    max_err = err;
+                    let mut sample_max_err = 0.0f64;
+                    for (i, &want) in want_ints.iter().enumerate() {
+                        let got_f = raw_floats[i];
+                        let err = (got_f - want as f64).abs();
+                        if err > sample_max_err {
+                            sample_max_err = err;
+                        }
+                    }
+
+                    if sample_max_err > max_err_all {
+                        max_err_all = sample_max_err;
+                    }
+
+                    let sample_label_ok = pred_label == want_label;
+                    if sample_label_ok {
+                        labels_ok += 1;
+                    }
+
+                    println!(
+                        "  {name} sample {s}: max |err| = {sample_max_err:.6e}, label {}",
+                        if sample_label_ok { "match" } else { "MISMATCH" }
+                    );
+                }
+                Err(e) => {
+                    eval_failed = Some(e);
+                    break;
                 }
             }
+        }
 
-            let within_bound = if max_err <= bound { "PASS" } else { "FAIL" };
-            let match_label = if pred_label == want_label {
-                "YES"
-            } else {
-                "NO"
-            };
+        if let Some(err_msg) = eval_failed {
+            println!("{:<18} | {:<12} | ERROR: {}", name, budget_status, err_msg);
+        } else {
+            let within_bound = if max_err_all <= bound { "PASS" } else { "FAIL" };
+            let match_labels_str = format!("{labels_ok}/{labels_total}");
 
             println!(
                 "{:<18} | {:<12} | {:<12.6e} | {:<14.1e} | {:<10} | {:<10}",
-                name, budget_status, max_err, bound, within_bound, match_label
+                name, budget_status, max_err_all, bound, within_bound, match_labels_str
             );
-        } else {
-            let err_msg = eval_res.err().unwrap();
-            println!("{:<18} | {:<12} | ERROR: {}", name, budget_status, err_msg);
         }
     }
 }

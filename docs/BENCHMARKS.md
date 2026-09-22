@@ -193,20 +193,20 @@ Three things must be stated wherever a cross-backend number appears:
 
 | Model | Backend | Keygen (s) | Encrypt (s) | Eval total (s) | of which op-build (s) | Decrypt (s) | TFHE / CKKS eval |
 |---|---|---:|---:|---:|---:|---:|---:|
-| phase2_logreg | tfhe | 0.513 | 0.022 | 11.846 | 0.000 | 0.000 | 24.4x |
-| phase2_logreg | ckks | 1.914 | 0.004 | 0.485 | 0.001 | 0.001 | — |
-| phase4_cnn | tfhe | 0.489 | 0.011 | 69.987 | 0.000 | 0.000 | 118.0x |
-| phase4_cnn | ckks | 1.971 | 0.007 | 0.593 | 0.001 | 0.000 | — |
-| phase5_digits | tfhe | 0.488 | 0.030 | 679.860 | 0.000 | 0.000 | 300.5x |
-| phase5_digits | ckks | 2.195 | 0.005 | 2.262 | 0.016 | 0.000 | — |
-| phase5_qat | tfhe | 0.487 | 0.030 | 687.919 | 0.000 | 0.000 | 336.8x |
-| phase5_qat | ckks | 2.181 | 0.007 | 2.043 | 0.013 | 0.000 | — |
-| phase6_onnx | tfhe | 0.492 | 0.030 | 701.855 | 0.000 | 0.000 | 329.7x |
-| phase6_onnx | ckks | 2.205 | 0.006 | 2.129 | 0.014 | 0.000 | — |
-| phase6_sklearn | tfhe | 0.490 | 0.028 | 159.067 | 0.000 | 0.000 | 260.6x |
-| phase6_sklearn | ckks | 2.164 | 0.005 | 0.610 | 0.000 | 0.001 | — |
-| phase7_faces | tfhe | 0.499 | 0.121 | 730.216 | 0.000 | 0.000 | 330.3x |
-| phase7_faces | ckks | 2.187 | 0.006 | 2.210 | 0.009 | 0.000 | — |
+| phase2_logreg | tfhe | 0.513 | 0.022 | 11.846 | 0.000 | 0.000 | 26.7x |
+| phase2_logreg | ckks | 1.907 | 0.004 | 0.444 | 0.001 | 0.001 | — |
+| phase4_cnn | tfhe | 0.489 | 0.011 | 69.987 | 0.000 | 0.000 | 133.8x |
+| phase4_cnn | ckks | 1.900 | 0.004 | 0.523 | 0.001 | 0.001 | — |
+| phase5_digits | tfhe | 0.488 | 0.030 | 679.860 | 0.000 | 0.000 | 348.2x |
+| phase5_digits | ckks | 1.952 | 0.004 | 1.953 | 0.014 | 0.000 | — |
+| phase5_qat | tfhe | 0.487 | 0.030 | 687.919 | 0.000 | 0.000 | 374.4x |
+| phase5_qat | ckks | 1.904 | 0.004 | 1.837 | 0.012 | 0.000 | — |
+| phase6_onnx | tfhe | 0.492 | 0.030 | 701.855 | 0.000 | 0.000 | 359.9x |
+| phase6_onnx | ckks | 1.898 | 0.004 | 1.950 | 0.014 | 0.000 | — |
+| phase6_sklearn | tfhe | 0.490 | 0.028 | 159.067 | 0.000 | 0.000 | 363.3x |
+| phase6_sklearn | ckks | 1.899 | 0.004 | 0.438 | 0.000 | 0.001 | — |
+| phase7_faces | tfhe | 0.499 | 0.121 | 730.216 | 0.000 | 0.000 | 359.1x |
+| phase7_faces | ckks | 1.895 | 0.004 | 2.033 | 0.008 | 0.000 | — |
 
 *Variance check (`phase2_logreg`, Criterion 10 samples):* `tfhe` median 11.122 s (95% CI [11.018 s, 11.254 s]); `ckks` median 412.89 ms (95% CI [406.09 ms, 423.43 ms]).
 
@@ -218,20 +218,20 @@ Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/r
 |---|---|---|---:|---:|---:|
 | phase2_logreg | tfhe | Argmax | 1 | 0.0000 | 0.0160 |
 | phase2_logreg | tfhe | Linear | 1 | 0.0000 | 11.8300 |
-| phase2_logreg | ckks | Argmax | 1 | 0.0012 | 0.1136 |
-| phase2_logreg | ckks | Linear | 1 | 0.0000 | 0.3698 |
+| phase2_logreg | ckks | Argmax | 1 | 0.0012 | 0.1118 |
+| phase2_logreg | ckks | Linear | 1 | 0.0000 | 0.3309 |
 | phase5_digits | tfhe | Conv2d | 1 | 0.0000 | 338.2062 |
 | phase5_digits | tfhe | Linear | 1 | 0.0000 | 287.0420 |
 | phase5_digits | tfhe | Requant | 1 | 0.0000 | 54.6112 |
-| phase5_digits | ckks | Conv2d | 1 | 0.0010 | 0.9260 |
-| phase5_digits | ckks | Linear | 1 | 0.0000 | 0.2343 |
-| phase5_digits | ckks | Requant | 1 | 0.0148 | 1.0861 |
+| phase5_digits | ckks | Conv2d | 1 | 0.0001 | 0.6956 |
+| phase5_digits | ckks | Linear | 1 | 0.0000 | 0.1755 |
+| phase5_digits | ckks | Requant | 1 | 0.0140 | 1.0674 |
 | phase7_faces | tfhe | Conv2d | 1 | 0.0000 | 402.4965 |
 | phase7_faces | tfhe | Linear | 1 | 0.0000 | 264.1226 |
 | phase7_faces | tfhe | Requant | 1 | 0.0000 | 63.5967 |
-| phase7_faces | ckks | Conv2d | 1 | 0.0001 | 1.3418 |
-| phase7_faces | ckks | Linear | 1 | 0.0001 | 0.1563 |
-| phase7_faces | ckks | Requant | 1 | 0.0092 | 0.7031 |
+| phase7_faces | ckks | Conv2d | 1 | 0.0001 | 1.1641 |
+| phase7_faces | ckks | Linear | 1 | 0.0000 | 0.1592 |
+| phase7_faces | ckks | Requant | 1 | 0.0082 | 0.7017 |
 
 ### Table C — Sizes & Scheme Cost Proxies
 
@@ -257,14 +257,14 @@ Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/r
 | Model | Float | Quantized (shared ref) | TFHE | CKKS max \|err\| | CKKS mean \|err\| | Declared bound | CKKS labels |
 |---|---:|---:|---|---:|---:|---:|---|
 | phase2_logreg | 1.0000 | 1.0000 | = quantized, exactly (err = 0.0) | n/a | n/a | 0.5 | 2/2 |
-| phase4_cnn | 0.9805 | 0.9570 | = quantized, exactly (err = 0.0) | 15.000 | 6.150 | 30.0 | 2/2 |
-| phase5_digits | 0.9639 | 0.9417 | = quantized, exactly (err = 0.0) | 209.000 | 81.150 | 250.0 | 2/2 |
-| phase5_qat | 0.9361 | 0.9389 | = quantized, exactly (err = 0.0) | 238.000 | 133.150 | 300.0 | 2/2 |
-| phase6_onnx | 0.9639 | 0.9417 | = quantized, exactly (err = 0.0) | 209.000 | 81.150 | 250.0 | 2/2 |
+| phase4_cnn | 0.9805 | 0.9570 | = quantized, exactly (err = 0.0) | 3.000 | 0.850 | 10.0 | 2/2 |
+| phase5_digits | 0.9639 | 0.9417 | = quantized, exactly (err = 0.0) | 35.000 | 10.950 | 60.0 | 2/2 |
+| phase5_qat | 0.9361 | 0.9389 | = quantized, exactly (err = 0.0) | 28.000 | 13.100 | 50.0 | 2/2 |
+| phase6_onnx | 0.9639 | 0.9417 | = quantized, exactly (err = 0.0) | 35.000 | 10.950 | 60.0 | 2/2 |
 | phase6_sklearn | 0.8944 | 0.8806 | = quantized, exactly (err = 0.0) | 0.000 | 0.000 | 0.001 | 2/2 |
-| phase7_faces | 0.9500 | 0.9000 | = quantized, exactly (err = 0.0) | 192.000 | 48.438 | 150.0 *(violated)* | 1/2 |
+| phase7_faces | 0.9500 | 0.9000 | = quantized, exactly (err = 0.0) | 74.000 | 31.312 | 120.0 | 2/2 |
 
-> ⚠️ **Bound violation finding (`phase7_faces`):** On `phase7_faces`, Sample 0 measured max error 105.0 ($\le 150.0$), but Sample 1 measured 192.0, exceeding `bounds::PHASE7_FACES = 150.0`. In Phase 12.2 calibration, only `test_inputs[0]` was tested. Multi-sample evaluation reveals that logit 2 on sample 1 experiences polynomial approximation error exceeding the single-sample calibration bound, flipping the prediction from class 2 to class 5.
+> ℹ️ **Bound violation resolution (`phase7_faces`):** The previous bound violation on `phase7_faces` Sample 1 (max error 192.0 > 150.0) was diagnosed as a `fit_requant` target-function bias: fitting the continuous pre-floor value introduced a systematic ~+0.5 LSB offset relative to the integer reference across the activation map, which `linear2`'s L1 weight norm amplified into ~200 integer units. Fitting the midpoint of each floor step eliminates the bias; all seven models now pass their bounds, with bounds re-declared at ~1.5x the multi-sample measured error, and golden tests now cover every fixture sample. The CKKS numbers in Tables A–D reflect the re-measured arm; TFHE numbers are carried over unchanged from the initial sweep (recorded in `meta.ckks_rerun` in [`docs/results/phase12-4-comparison.json`](./results/phase12-4-comparison.json)).
 
 ## Reproducing
 
