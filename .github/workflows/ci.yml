@@ -66,6 +66,21 @@ jobs:
       - name: Test (release)
         run: cargo test --release
 
+  ckks-backend:
+    name: CKKS backend (clippy, test - nightly)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Nightly Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Clippy (warnings as errors)
+        run: cargo clippy -p penumbra-ckks --features ckks --all-targets -- -D warnings
+      - name: Test (release)
+        run: cargo test -p penumbra-ckks --features ckks --release
   python:
     name: Python front end (ruff, black, pytest)
     runs-on: ubuntu-latest
