@@ -81,20 +81,20 @@ backends by construction.
 
 Stated in advance, and to be restated alongside any published result.
 
-1. **SIMD packing.** CKKS's advantage is slot batching. If `penumbra-ckks` ships one value per
-   ciphertext, the comparison measures a deliberately hobbled CKKS and its latency numbers
-   are close to meaningless. The packing decision is an open fork in
-   [`docs/BACKENDS.md`](./BACKENDS.md#open-design-forks); whichever way it lands must be
-   disclosed prominently here. **This is the most serious threat on the list.**
+1. **SIMD packing (resolved in Phase 12.2).** `penumbra-ckks` packs one full tensor per
+   ciphertext (Option B) and evaluates plaintext-weight linear ops (`Linear`, `Conv2d`,
+   `Pool(avg)`) as BSGS diagonal transforms over `lt_slots = 256` slots. This leverages
+   CKKS SIMD batching as designed without leaking packing concerns into Layer 2.
 2. **The graph is quantized for TFHE.** Penumbra caps activations at a single 2-bit block
    because a programmable bootstrap is only feasible over a narrow value
    (`docs/QUANTIZATION.md`). CKKS has no such constraint and would ordinarily run at much
    higher precision. Feeding it the TFHE-shaped graph is what makes the comparison
    apples-to-apples, and it simultaneously handicaps CKKS on accuracy. Both halves of that
    sentence must appear in any write-up.
-3. **Polynomial degree is a free parameter.** CKKS accuracy and latency trade against each
-   other continuously via approximation degree. A single degree is one point on a curve;
-   reporting the curve, or at minimum the chosen degree and its justification, is required.
+3. **Polynomial degree is a free parameter.** In Phase 12.2, `max_poly_degree = 15` was
+   calibrated as the default profile knob (`depth = 4` under BSGS `MinDepth`). It provides
+   sufficient precision to match classification labels across all committed models while
+   keeping depth within the 128-bit classical security envelope ($N=16384$, $k=360$).
 4. **Library maturity is asymmetric.** `tfhe-rs` is a mature, heavily optimized production
    library at 1.6+. `poulpy-ckks` is at 0.8.x and self-describes its API as subject to change.
    Any latency difference partly reflects engineering investment, not scheme fundamentals.

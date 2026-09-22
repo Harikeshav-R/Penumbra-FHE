@@ -578,16 +578,16 @@ Keep this **mechanical**. It is a boundary-drawing exercise, not a rewrite.
 
 #### 12.2 — The CKKS backend
 
-- [ ] New `penumbra-ckks` crate implementing `Backend` against the pinned `poulpy-ckks`.
-- [ ] Implement the op set: `Linear`, `Conv2d`, `Pool`, `Add` (native), `Activation` and
+- [x] New `penumbra-ckks` crate implementing `Backend` against the pinned `poulpy-ckks`.
+- [x] Implement the op set: `Linear`, `Conv2d`, `Pool`, `Add` (native), `Activation` and
       `Requant` (polynomial), `Argmax` (polynomial step, or rejected — decide and document).
-- [ ] Any op the backend cannot realize is **rejected loudly at load time**, naming the op,
+- [x] Any op the backend cannot realize is **rejected loudly at load time**, naming the op,
       the node, and the backend. Never silently approximated.
-- [ ] Depth/scale budget check at the same seam as the TFHE bit-width budget check, failing
+- [x] Depth/scale budget check at the same seam as the TFHE bit-width budget check, failing
       loudly with the offending layer named (`AGENTS.md` §1.3).
-- [ ] **Declare and commit a per-model error bound**; correctness tests assert against
+- [x] **Declare and commit a per-model error bound**; correctness tests assert against
       `reference.py`'s output at that comparator and always report the measured error.
-- [ ] Log every `poulpy` API surprise in `docs/NOTES-ckks.md` rather than working around it
+- [x] Log every `poulpy` API surprise in `docs/NOTES-ckks.md` rather than working around it
       quietly.
 
 #### 12.3 — The shared harness

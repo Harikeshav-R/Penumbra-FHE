@@ -5,9 +5,9 @@ profile, and empirical cost. The sibling of [`NOTES-tfhe.md`](./NOTES-tfhe.md); 
 Phase-12.0 spike deliverable (`ROADMAP.md` Phase 12) the same way that document closed
 Phase 1.
 
-> **Status: Phase-12.0 spike complete.** The parameter profile, primitives, and cost tables
+> **Status: Phase-12.2 backend complete.** The parameter profile, primitives, and cost tables
 > below were measured on Apple Silicon (AArch64, `poulpy-cpu-arm` / `FFT64Neon`) using
-> `poulpy-ckks` 0.8.3 (`crates/spike-ckks`).
+> `poulpy-ckks` 0.8.3 (`crates/penumbra-ckks`).
 
 ## The library: `poulpy`
 
@@ -56,8 +56,10 @@ but the public API is still subject to change."* Note that 0.6.0 was yanked.
 
 | Date | Version | What broke | How it was handled |
 |---|---|---|---|
-| 2026-09-21 | 0.8.3 | `test_suite` and test helpers gated behind `test-utils` feature | Enabled `features = ["test-utils"]` on `poulpy-ckks` in spike |
-
+| 2026-09-21 | 0.8.3 | `test_suite` and test helpers gated behind `test-utils` feature | `penumbra-ckks` does not enable `test-utils`; all test-only helpers replaced with public API methods (`ckks_encode_reim_into`, `glwe_secret_fill_ternary_prob`, `glwe_tensor_key_encrypt_sk`, `glwe_automorphism_key_encrypt_sk`) |
+| 2026-09-21 | 0.8.3 | `poulpy-ckks::presets` contains only bootstrapping plans, no general parameter preset | `penumbra-ckks::params::DEFAULT_PARAMS` defines its own 128-bit secure parameter profile sized against HomomorphicEncryption.org standard tables |
+| 2026-09-21 | 0.8.3 | No poulpy type derives `serde` (`serde` is not a dependency of any poulpy crate) | Hand-rolled wire format over `poulpy_hal::layouts::{WriterTo, ReaderFrom}` wrapped in a serde envelope carrying layout metadata + `CKKSMeta` |
+| 2026-09-21 | 0.8.3 | Prepared (DFT-domain) keys implement neither `WriterTo` nor `ReaderFrom` | Persisted standard keys and re-prepared on load via `glwe_automorphism_key_prepare` / `prepare_tensor_key` |
 ## ⚠️ Toolchain and platform prerequisites
 
 **Resolved in Phase 12.0:**
@@ -78,20 +80,24 @@ but the public API is still subject to change."* Note that 0.6.0 was yanked.
 
 ## Parameter profile
 
-*Measured in Phase 12.0 with `poulpy-ckks` presets (`FFT64_PARAMS_F64`).*
+*Calibrated in Phase 12.2 (`crates/penumbra-ckks/src/params.rs`, `DEFAULT_PARAMS`).*
 
 | Quantity | Value | Notes |
 |---|---|---|
-| Ring degree (`N`) | 256 (spike) / 1024 / 2048 (full models) | slot count is `N/2` (128 complex slots in spike) |
-| Scale (`log_delta`) | 30 bits (`FFT64`) / 40–45 bits (`NTT4x30`) | precision per level; the accuracy/depth lever |
-| Level budget (`log_budget`) | 122 bits (`k = 152`) | multiplicative depth headroom before bootstrapping is needed |
-| Slot kind (`SlotsKind`) | `SlotsKind::Complex` | packing real values into the real part of conjugate-symmetric slots |
-| Security level | 128-bit quantum security (`default_sigma`) | matches the TFHE profile's 128-bit security margin |
-
-`poulpy-ckks` ships ready-made parameter sets in its `presets` module. Start there, exactly
-as the TFHE side starts from the `tfhe-rs` default secure profile (`AGENTS.md` §7). Never
-hand-roll crypto parameters.
-
+| Ring degree (`N`) | 16384 | 8192 complex slots; 128-bit classical security up to `k <= 438` |
+| Torus width (`k`) | 360 bits | accommodates multi-layer depth without bootstrapping |
+| Scale (`log_delta`) | 30 bits | precision per level; standard fixed-point scaling factor |
+| Level budget (`log_budget`) | 330 bits | `k - log_delta`; multiplicative headroom for entire graphs |
+| Transform dimension (`lt_slots`) | 256 | power of two covering the largest committed tensor (faces 256) |
+| BSGS giant step | 16 | `sqrt(256)`; fixes automorphism key count independently of model |
+| Log sparsity | 5 | `log2(8192) - log2(256)`; native sparse slot embedding |
+| Automorphism key count | 30 keys | `15` baby steps + `15` giant steps |
+| Gadget decomposition | `base2k = 19`, `dsize = 2`, `rank = 1` | standard key decomposition parameters |
+| Secret distribution | uniform ternary (`prob = 2/3`) | standard distribution assumption matching security tables |
+| Max polynomial degree | 15 | single override knob (`depth = 4` via BSGS min-depth) |
+| Security level | 128-bit classical security | verified against HomomorphicEncryption.org standard table (`log q <= 438`) |
+| Single packed ciphertext size | 4.75 MB | 4,980,843 bytes |
+| Key generation time | ~2.06 s | Apple Silicon `FFT64Neon` |
 ## The primitives everything composes from
 
 Structured to mirror `NOTES-tfhe.md`'s "two primitives" framing, because the contrast is the
@@ -124,9 +130,20 @@ The mapping from Penumbra's op vocabulary onto these primitives is tabulated in
 | one ReLU polynomial at degree 3 (128 slots) | 159 µs (~0.16 ms) |
 | one ReLU polynomial at degree 7 (128 slots) | 297 µs (~0.30 ms) |
 | one ReLU polynomial at degree 15 (128 slots) | 671 µs (~0.67 ms) |
-| full Phase-2 logreg inference, per sample | TBD (Phase 12.2 / 12.4) |
-| full Phase-4 CNN inference, per sample | TBD (Phase 12.2 / 12.4) |
 
+### Phase-12.2 calibrated model results
+
+*Measured on Apple Silicon (`FFT64Neon`) using `cargo +nightly run -p penumbra-ckks --features ckks --release --example calibrate`:*
+
+| Model / Fixture | Graph Topology | Depth Check | Measured Max \|Err\| | Declared Bound | Match Label |
+|---|---|---|---|---|---|
+| Phase 6 sklearn | `Linear(64→10)` | PASS | $1.77 \times 10^{-4}$ | `1.0e-3` | YES |
+| Phase 2 logreg | `Linear(64→1) → Argmax` | PASS | $3.70 \times 10^{-1}$ | `5.0e-1` | YES |
+| Phase 4 cnn | `Conv2d → Requant → Pool(avg) → Linear` | PASS | $1.53 \times 10^{1}$ | `3.0e1` | YES |
+| Phase 5 digits | `Conv2d → Requant(per-ch) → Linear` | PASS | $1.88 \times 10^{2}$ | `2.5e2` | YES |
+| Phase 5 qat | `Conv2d → Requant(per-ch) → Linear` | PASS | $2.38 \times 10^{2}$ | `3.0e2` | YES |
+| Phase 6 onnx | `Conv2d → Requant(per-ch) → Linear` | PASS | $1.88 \times 10^{2}$ | `2.5e2` | YES |
+| Phase 7 faces | `Conv2d → Requant(per-ch) → Linear` | PASS | $1.05 \times 10^{2}$ | `1.5e2` | YES |
 > ⚠️ Always benchmark in `--release`. Debug FHE is orders of magnitude slower and the numbers
 > are meaningless (`docs/DEVELOPMENT.md`).
 
@@ -154,7 +171,7 @@ total error is purely mathematical approximation error from the chosen Chebyshev
 
 - The Rust CI job for `runtime/` continues to run on stable Rust (`dtolnay/rust-toolchain@stable`)
   with `cargo clippy --all-targets --all-features` and `cargo test --release --all-features`.
-- A dedicated CI job `ckks-spike` in `.github/workflows/ci.yml` runs on `ubuntu-latest` using
-  `dtolnay/rust-toolchain@nightly` in `crates/spike-ckks`.
+- Dedicated CI jobs `ckks-backend` and `ckks-spike` in `.github/workflows/ci.yml` run on `ubuntu-latest`
+  using `dtolnay/rust-toolchain@nightly` to lint and test `penumbra-ckks` and `crates/spike-ckks`.
 - This ensures the CKKS backend is tested in CI without introducing toolchain instability to
   the reference TFHE backend.

@@ -9,8 +9,7 @@ Read [`PROJECT.md`](../PROJECT.md) §4–§6 first for the narrow-waist architec
 | Backend | Crate | Scheme | Library | Arithmetic | Status |
 |---|---|---|---|---|---|
 | `tfhe` | `penumbra-tfhe` | TFHE / CGGI | [`tfhe-rs`](https://github.com/zama-ai/tfhe-rs) | exact, small signed integers | reference implementation (Phase 12.1) |
-| `ckks` | `penumbra-ckks` | CKKS | [`poulpy-ckks`](https://github.com/phantomzone-org/poulpy) | approximate reals, SIMD-batched | planned (`ROADMAP.md` Phase 12.2) |
-
+| `ckks` | `penumbra-ckks` | CKKS | [`poulpy-ckks`](https://github.com/phantomzone-org/poulpy) | approximate reals, SIMD-batched | implemented (Phase 12.2) |
 The second backend exists to make a **controlled comparison** possible, not to make Penumbra
 a general multi-scheme framework (`PROJECT.md` §1, §18). Everything below is in service of
 that: two schemes, one graph, one harness, one set of numbers.
@@ -221,27 +220,29 @@ CKKS has no such constraint — its analogue is a rescale, which is nearly free.
 - **Option B — split it**: apply the ReLU polynomial, treat the fixed-point rescale as a
   no-op absorbed into the scale bookkeeping.
 
-**Recommendation: A**, because it keeps both backends walking an identical node list, which
-is what backend parity requires. B is a Phase-12.4 optimization if the numbers justify it.
+**Decision (settled in Phase 12.2): Option A.** Keeps both backends walking an identical node
+list, which is what backend parity requires (`AGENTS.md` §1.2). The continuous piecewise-linear
+function `f(t) = clamp((max(t, 0)·mult + round_bias) / 2^shift, 0, max_val)` is fitted over
+the active clamp interval `[-t_sat, t_sat]`.
 
 ### 3. How the approximation knob is exposed
 
 Polynomial degree trades accuracy against depth against latency — it is CKKS's central
 tuning parameter, with no TFHE counterpart. `PROJECT.md` §12 commits to *one* crypto override
-knob. Options: fold degree into the per-backend parameter profile (keeping "one knob" true
-per backend), or expose it separately as an accuracy target the library converts to a degree.
-**Recommendation: the former** — it preserves the documented API discipline, and an accuracy
-target is a better user-facing shape than a raw degree.
+knob.
 
+**Decision (settled in Phase 12.2):** Folded into the per-backend parameter profile as
+`CkksParams::max_poly_degree` (preserving the one-knob discipline, `PROJECT.md` §12). The
+per-backend profile exposes this single lever while quantization remains an automated library
+service.
 ## Backend selection
 
 Selection is not parameter exposure. Users pick a **named backend**; they never touch
 `tfhe-rs` or `poulpy` parameters directly (`PROJECT.md` §12, `AGENTS.md` §6).
 
-> ⚠️ Keys and ciphertext are **not** portable between backends, and the `.cts` wire format
-> carries no scheme tag today. Feeding a TFHE key to the CKKS backend must fail with an
-> actionable message, not a deserialization panic (`AGENTS.md` §1.4). Tagging the wire format
-> is a Phase-12.1 task.
+> Keys and ciphertext are **not** portable between backends. The wire format is tagged with a
+> backend scheme header (`"tfhe"` or `"ckks"`); feeding mismatched material fails loudly at
+> load time with an actionable message naming both backends (`AGENTS.md` §1.4).
 
 ## See also
 
