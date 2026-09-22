@@ -28,4 +28,8 @@ impl Op<TfheBackend> for Argmax {
     fn output_bits(&self, _input_bits: usize) -> usize {
         1
     }
+
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        vec![("cmp_pbs_ops", 1)]
+    }
 }

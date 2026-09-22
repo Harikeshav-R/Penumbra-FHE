@@ -105,4 +105,19 @@ impl Op<TfheBackend> for Pool {
             PoolMode::Max => input_bits,
         }
     }
+
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let (out_h, out_w) = self.out_dims();
+        let out_elems = (self.channels * out_h * out_w) as u64;
+        let k = (self.pool_h * self.pool_w) as u64;
+        let ops = if k > 1 { out_elems * (k - 1) } else { 0 };
+        let mut counters = Vec::new();
+        if ops > 0 {
+            match self.mode {
+                PoolMode::Avg => counters.push(("ct_add", ops)),
+                PoolMode::Max => counters.push(("cmp_pbs_ops", ops)),
+            }
+        }
+        counters
+    }
 }

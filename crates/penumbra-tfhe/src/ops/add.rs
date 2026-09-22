@@ -49,4 +49,13 @@ impl Op<TfheBackend> for Add {
         );
         input_bits[0].max(input_bits[1]) + 1
     }
+
+    fn cost(&self, input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let n = input_lens.first().copied().unwrap_or(0) as u64;
+        let mut counters = Vec::new();
+        if n > 0 {
+            counters.push(("ct_add", n));
+        }
+        counters
+    }
 }

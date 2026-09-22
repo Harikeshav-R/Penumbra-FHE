@@ -76,4 +76,19 @@ impl Op<TfheBackend> for Linear {
 
         sum_bits.max(bias_bits) + 2
     }
+
+    fn cost(&self, input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let rows = self.weights.len() as u64;
+        let cols = input_lens.first().copied().unwrap_or(0) as u64;
+        let mut counters = Vec::new();
+        let scalar_mul = rows * cols;
+        if scalar_mul > 0 {
+            counters.push(("scalar_mul", scalar_mul));
+            counters.push(("ct_add", scalar_mul));
+        }
+        if rows > 0 {
+            counters.push(("scalar_add", rows));
+        }
+        counters
+    }
 }

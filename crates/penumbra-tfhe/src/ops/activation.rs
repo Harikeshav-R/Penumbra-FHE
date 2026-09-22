@@ -101,4 +101,13 @@ impl Op<TfheBackend> for Activation {
         );
         self.output_bits
     }
+
+    fn cost(&self, input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let n = input_lens.first().copied().unwrap_or(0) as u64;
+        let mut counters = Vec::new();
+        if n > 0 {
+            counters.push(("bootstraps", n));
+        }
+        counters
+    }
 }

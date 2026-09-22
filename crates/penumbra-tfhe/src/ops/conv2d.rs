@@ -39,6 +39,39 @@ impl Conv2d {
     fn fan_in(&self) -> usize {
         self.in_channels * self.kernel_h * self.kernel_w
     }
+
+    /// Count non-zero in-bounds multiply-accumulate operations.
+    ///
+    /// The guards here must stay strictly in sync with [`Conv2d::eval`].
+    pub fn mac_count(&self) -> u64 {
+        let (out_h, out_w) = self.out_dims();
+        let mut count = 0u64;
+        for kernel in &self.weights {
+            for oy in 0..out_h {
+                for ox in 0..out_w {
+                    for ic in 0..self.in_channels {
+                        for ky in 0..self.kernel_h {
+                            let iy = (oy * self.stride + ky) as isize - self.padding as isize;
+                            for kx in 0..self.kernel_w {
+                                let ix = (ox * self.stride + kx) as isize - self.padding as isize;
+                                let w = kernel[(ic * self.kernel_h + ky) * self.kernel_w + kx];
+                                if w == 0
+                                    || iy < 0
+                                    || ix < 0
+                                    || iy as usize >= self.in_h
+                                    || ix as usize >= self.in_w
+                                {
+                                    continue;
+                                }
+                                count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        count
+    }
 }
 
 impl Op<TfheBackend> for Conv2d {
@@ -127,5 +160,20 @@ impl Op<TfheBackend> for Conv2d {
         let bias_bits = crate::keys::magnitude_bits(max_bias as i64);
 
         sum_bits.max(bias_bits) + 2
+    }
+
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let mac = self.mac_count();
+        let (out_h, out_w) = self.out_dims();
+        let out_elems = (self.weights.len() * out_h * out_w) as u64;
+        let mut counters = Vec::new();
+        if mac > 0 {
+            counters.push(("scalar_mul", mac));
+            counters.push(("ct_add", mac));
+        }
+        if out_elems > 0 {
+            counters.push(("scalar_add", out_elems));
+        }
+        counters
     }
 }

@@ -178,4 +178,54 @@ impl Op<TfheBackend> for Requant {
                 .expect("per-channel Requant has at least one channel")
         }
     }
+
+    fn cost(&self, input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let n = input_lens.first().copied().unwrap_or(0) as u64;
+        let mut counters = Vec::new();
+        if n == 0 {
+            return counters;
+        }
+
+        counters.push(("bootstraps", n));
+        counters.push(("cmp_pbs_ops", 3 * n));
+
+        let per_channel = !self.mults.is_empty();
+        let scalar_mul = if per_channel {
+            let ch_size = self.channel_size as u64;
+            let sum: u64 = self
+                .mults
+                .iter()
+                .filter(|&&m| m != 1)
+                .map(|_| ch_size)
+                .sum();
+            sum.min(n)
+        } else if self.mult != 1 {
+            n
+        } else {
+            0
+        };
+        if scalar_mul > 0 {
+            counters.push(("scalar_mul", scalar_mul));
+        }
+
+        let scalar_add = if per_channel {
+            let ch_size = self.channel_size as u64;
+            let sum: u64 = self
+                .round_biases
+                .iter()
+                .filter(|&&rb| rb != 0)
+                .map(|_| ch_size)
+                .sum();
+            sum.min(n)
+        } else if self.round_bias != 0 {
+            n
+        } else {
+            0
+        };
+        if scalar_add > 0 {
+            counters.push(("scalar_add", scalar_add));
+        }
+
+        counters
+    }
 }
