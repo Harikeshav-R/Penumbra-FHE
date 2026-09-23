@@ -5,6 +5,8 @@
 //! output is `Σ (ciphertext × plaintext_weight) + plaintext_bias` — scalar-multiplies and
 //! additions only, **no programmable bootstrap**.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use tfhe::integer::SignedRadixCiphertext;
 
 use penumbra_core::ops::Op;
@@ -72,6 +74,47 @@ impl Conv2d {
         }
         count
     }
+
+    fn primitive_counts(&self) -> (u64, u64) {
+        let (out_h, out_w) = self.out_dims();
+        let mut total_scalar_mul = 0u64;
+        let mut total_ct_add = 0u64;
+
+        for kernel in &self.weights {
+            for oy in 0..out_h {
+                for ox in 0..out_w {
+                    let mut distinct_weights = BTreeSet::new();
+                    let mut nonzero_taps = 0u64;
+
+                    for ic in 0..self.in_channels {
+                        for ky in 0..self.kernel_h {
+                            let iy = (oy * self.stride + ky) as isize - self.padding as isize;
+                            for kx in 0..self.kernel_w {
+                                let ix = (ox * self.stride + kx) as isize - self.padding as isize;
+                                let w = kernel[(ic * self.kernel_h + ky) * self.kernel_w + kx];
+                                if w == 0
+                                    || iy < 0
+                                    || ix < 0
+                                    || iy as usize >= self.in_h
+                                    || ix as usize >= self.in_w
+                                {
+                                    continue;
+                                }
+                                distinct_weights.insert(w);
+                                nonzero_taps += 1;
+                            }
+                        }
+                    }
+
+                    total_scalar_mul += distinct_weights.len() as u64;
+                    if nonzero_taps > 0 {
+                        total_ct_add += nonzero_taps - 1;
+                    }
+                }
+            }
+        }
+        (total_scalar_mul, total_ct_add)
+    }
 }
 
 impl Op<TfheBackend> for Conv2d {
@@ -110,8 +153,7 @@ impl Op<TfheBackend> for Conv2d {
             );
             for oy in 0..out_h {
                 for ox in 0..out_w {
-                    let mut acc: SignedRadixCiphertext =
-                        sk.create_trivial_zero_radix(ctx.num_blocks);
+                    let mut groups: BTreeMap<i64, Vec<&SignedRadixCiphertext>> = BTreeMap::new();
 
                     for ic in 0..self.in_channels {
                         let in_base = ic * in_hw;
@@ -129,11 +171,35 @@ impl Op<TfheBackend> for Conv2d {
                                     continue;
                                 }
                                 let idx = in_base + iy as usize * self.in_w + ix as usize;
-                                let term = sk.scalar_mul_parallelized(&inputs[idx], w);
-                                acc = sk.add_parallelized(&acc, &term);
+                                groups.entry(w).or_default().push(&inputs[idx]);
                             }
                         }
                     }
+
+                    let mut group_terms: Vec<SignedRadixCiphertext> = Vec::with_capacity(groups.len());
+                    for (w, cts) in groups {
+                        let s = if cts.len() == 1 {
+                            cts[0].clone()
+                        } else {
+                            sk.sum_ciphertexts_parallelized(cts.iter().copied())
+                                .expect("non-empty cts group")
+                        };
+                        let term = if w == 1 {
+                            s
+                        } else {
+                            sk.scalar_mul_parallelized(&s, w)
+                        };
+                        group_terms.push(term);
+                    }
+
+                    let acc = if group_terms.is_empty() {
+                        sk.create_trivial_zero_radix(ctx.num_blocks)
+                    } else if group_terms.len() == 1 {
+                        group_terms.pop().unwrap()
+                    } else {
+                        sk.sum_ciphertexts_parallelized(group_terms.iter())
+                            .expect("non-empty group_terms")
+                    };
 
                     out.push(sk.scalar_add_parallelized(&acc, b));
                 }
@@ -163,13 +229,15 @@ impl Op<TfheBackend> for Conv2d {
     }
 
     fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
-        let mac = self.mac_count();
+        let (scalar_mul, ct_add) = self.primitive_counts();
         let (out_h, out_w) = self.out_dims();
         let out_elems = (self.weights.len() * out_h * out_w) as u64;
         let mut counters = Vec::new();
-        if mac > 0 {
-            counters.push(("scalar_mul", mac));
-            counters.push(("ct_add", mac));
+        if scalar_mul > 0 {
+            counters.push(("scalar_mul", scalar_mul));
+        }
+        if ct_add > 0 {
+            counters.push(("ct_add", ct_add));
         }
         if out_elems > 0 {
             counters.push(("scalar_add", out_elems));

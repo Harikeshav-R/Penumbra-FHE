@@ -78,11 +78,12 @@ impl Op<TfheBackend> for Pool {
 
                     let pooled = match self.mode {
                         PoolMode::Avg => {
-                            let mut acc = window[0].clone();
-                            for &ct in &window[1..] {
-                                acc = sk.add_parallelized(&acc, ct);
+                            if window.len() == 1 {
+                                window[0].clone()
+                            } else {
+                                sk.sum_ciphertexts_parallelized(window.iter().copied())
+                                    .unwrap_or_else(|| window[0].clone())
                             }
-                            acc
                         }
                         PoolMode::Max => {
                             let mut acc = window[0].clone();

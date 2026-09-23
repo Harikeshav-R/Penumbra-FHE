@@ -41,6 +41,17 @@ fn test_tfhe_cost_model_fixtures() {
     let cost7: BTreeMap<&'static str, u64> = op7.cost(&[128]).into_iter().collect();
     assert_eq!(cost7.get("bootstraps"), Some(&128));
     assert_eq!(cost7.get("cmp_pbs_ops"), Some(&(3 * 128)));
+
+    // 3. Phase-6 sklearn fixture: linear0 should report 140 scalar_mul (distinct non-zero weights per row)
+    let g6 = load_fixture_graph("../../examples/mnist/phase6_sklearn_fixture.json");
+    let node6 = g6
+        .nodes
+        .iter()
+        .find(|n| n.name == "linear0")
+        .expect("linear0 node");
+    let op6 = backend.build_op(&node6.op).expect("build op6");
+    let cost6: BTreeMap<&'static str, u64> = op6.cost(&[64]).into_iter().collect();
+    assert_eq!(cost6.get("scalar_mul"), Some(&140));
 }
 
 #[test]
@@ -87,7 +98,7 @@ fn test_tfhe_conv2d_mac_count() {
     let op = backend.build_op(&spec).expect("build conv2d");
     let cost: BTreeMap<&'static str, u64> = op.cost(&[9]).into_iter().collect();
     assert_eq!(cost.get("scalar_mul"), Some(&27));
-    assert_eq!(cost.get("ct_add"), Some(&27));
+    assert_eq!(cost.get("ct_add"), Some(&12)); // 27 taps across 15 active pixels => 27 - 15 = 12 additions
     assert_eq!(cost.get("scalar_add"), Some(&16)); // 1 out_channel * 4 * 4
 }
 
