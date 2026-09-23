@@ -158,3 +158,20 @@ def test_predict_matches_oracle_with_fake_runtime(monkeypatch):
         ref = evaluate_graph_int(model.graph, {"x": xq})[model.graph.outputs[0]]
         assert logits[i] == ref
         assert labels[i] == int(np.argmax(ref))
+
+
+def test_pyo3_predict_rejects_over_budget_graph_before_keygen():
+    """The graph budget gate lives in the session helpers, and still fires before keygen:
+    an over-budget graph fails loudly, naming the node (``AGENTS.md`` §1.3, §1.4)."""
+    from penumbra import _penumbra
+
+    graph = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=2,  # 4-bit radix; the accumulator below needs ~9 bits
+        input_bits=4,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[Node("fc", ["x"], ["y"], LinearSpec(weights=[[15, 15]], bias=[0], weight_bits=4))],
+    )
+    with pytest.raises(ValueError, match=r"bit-width budget exceeded at node 'fc'"):
+        _penumbra.predict("tfhe", graph.to_json(), [[1, 1]])

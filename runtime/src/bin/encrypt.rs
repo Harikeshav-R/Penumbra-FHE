@@ -3,7 +3,7 @@
 //! Part of the Phase-9 client/server split (`PROJECT.md` §11). Reads the **secret** client key
 //! and a JSON batch of quantized integer input rows on stdin (`[[i64, …], …]`, the same shape
 //! `predict` accepts), encrypts each row into a ciphertext tensor, and writes the batch of
-//! ciphertexts to `out.cts` (bincode). Only ciphertext leaves this step — it is then handed to
+//! ciphertexts to `out.cts` (scheme-tagged bincode envelope). Only ciphertext leaves this step — it is then handed to
 //! the server, which never sees the plaintext or the secret key.
 //!
 //! A thin CLI over the public API (`encrypt`), touching neither `ops/` nor `eval.rs`.
@@ -12,7 +12,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use penumbra_fhe_runtime::{encrypt, load_client_key, CtVec};
+use penumbra_fhe_runtime::{encrypt, load_client_key, serialize_cts_batch, CtVec};
 
 fn main() -> ExitCode {
     match run() {
@@ -43,8 +43,7 @@ fn run() -> Result<(), String> {
 
     // One ciphertext tensor per input row; the batch is the wire payload for the server.
     let cts: Vec<CtVec> = inputs.iter().map(|row| encrypt(&ck, row)).collect();
-    let bytes =
-        bincode::serialize(&cts).map_err(|e| format!("cannot serialize ciphertext batch: {e}"))?;
+    let bytes = serialize_cts_batch(&cts)?;
     std::fs::write(&out_path, bytes)
         .map_err(|e| format!("cannot write ciphertext to {}: {e}", out_path.display()))?;
 

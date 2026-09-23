@@ -700,7 +700,6 @@ dependencies = [
 name = "penumbra-fhe-runtime"
 version = "0.0.0"
 dependencies = [
- "bincode",
  "penumbra-core",
  "penumbra-tfhe",
  "serde",

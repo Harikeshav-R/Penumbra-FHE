@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use penumbra_fhe_runtime::{decrypt_vec, load_client_key, CtVec};
+use penumbra_fhe_runtime::{decrypt_vec, deserialize_cts_batch, load_client_key, CtVec};
 
 fn main() -> ExitCode {
     match run() {
@@ -33,12 +33,8 @@ fn run() -> Result<(), String> {
 
     let bytes = std::fs::read(&cts_path)
         .map_err(|e| format!("cannot read ciphertext from {}: {e}", cts_path.display()))?;
-    let outputs: Vec<CtVec> = bincode::deserialize(&bytes).map_err(|e| {
-        format!(
-            "cannot deserialize ciphertext batch from {} (is it a Penumbra .cts file?): {e}",
-            cts_path.display()
-        )
-    })?;
+    let outputs: Vec<CtVec> =
+        deserialize_cts_batch(&bytes).map_err(|e| format!("{e} (from {})", cts_path.display()))?;
 
     let decrypted: Vec<Vec<i64>> = outputs.iter().map(|ct| decrypt_vec(&ck, ct)).collect();
     let result = serde_json::json!({ "outputs": decrypted });

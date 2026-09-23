@@ -1,6 +1,5 @@
 //! PyO3 bindings exposing the Penumbra-FHE runtime to Python in-process.
 
-use penumbra_core::backend::Backend;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -359,7 +358,6 @@ fn evaluate(
                         penumbra_tfhe::keys::server_key_from_bytes(server_key)?;
                     penumbra_tfhe::keys::ensure_num_blocks_match(key_num_blocks, graph.num_blocks)?;
                     let backend = penumbra_tfhe::TfheBackend::new(profile);
-                    backend.check_graph_budget(&graph)?;
                     let batch = penumbra_tfhe::encrypt::deserialize_cts_batch(cts)?;
                     let out_batch = session::run_evaluate_batch(&backend, &graph, &sk, batch)?;
                     penumbra_tfhe::encrypt::serialize_cts_batch(&out_batch)
@@ -373,7 +371,6 @@ fn evaluate(
                 .detach(|| -> Result<Vec<u8>, String> {
                     let sk = penumbra_ckks::keys::server_key_from_bytes(server_key)?;
                     let backend = penumbra_ckks::CkksBackend::new(sk.params());
-                    backend.check_graph_budget(&graph)?;
                     let batch = penumbra_ckks::encrypt::deserialize_cts_batch(cts)?;
                     let out_batch = session::run_evaluate_batch(&backend, &graph, &sk, batch)?;
                     penumbra_ckks::encrypt::serialize_cts_batch(&out_batch)
@@ -451,9 +448,6 @@ fn predict(
                 None => penumbra_tfhe::keys::TfheProfile::Default,
             };
             let backend = penumbra_tfhe::TfheBackend::new(tfhe_prof);
-            backend
-                .check_graph_budget(&graph)
-                .map_err(PyValueError::new_err)?;
             py.detach(|| session::run_predict(&backend, &graph, &rows))
                 .map_err(PyValueError::new_err)
         }
@@ -467,9 +461,6 @@ fn predict(
                 .with_max_poly_degree(max_poly)
                 .map_err(PyValueError::new_err)?;
             let backend = penumbra_ckks::CkksBackend::new(params);
-            backend
-                .check_graph_budget(&graph)
-                .map_err(PyValueError::new_err)?;
             py.detach(|| session::run_predict(&backend, &graph, &rows))
                 .map_err(PyValueError::new_err)
         }

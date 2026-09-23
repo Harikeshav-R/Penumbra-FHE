@@ -11,4 +11,18 @@ publish = false
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Binary (de)serialization for the scheme-tagged key/ciphertext envelopes (`wire.rs`) — the
+# client/server split's wire format (PROJECT.md §11). The `tfhe` key/ciphertext types derive
+# serde, and their own integer-API docs use bincode; the tfhe-native `safe_serialization` is
+# unavailable here (the integer-API types don't implement its `Named` trait). Keys and
+# ciphertext stay in a compact binary format (not the human-readable IR JSON) — server keys
+# are large.
+#
+# Deliberately held at 1.x, and dependabot is told to skip major bumps (.github/dependabot.yml):
+#   - 2.x is a full API rewrite and would change the on-disk `.cts`/`.key` byte format.
+#   - 3.0.0 is a `compile_error!("https://xkcd.com/2347/")` tombstone — the upstream repo was
+#     archived 2025-08-15 — but it is not yanked, so crates.io still reports it as the newest
+#     stable and dependabot keeps proposing it.
+#   - `tfhe` itself depends on bincode 1.x, so bumping ours would add a second copy to the
+#     tree rather than retiring the old one.
 bincode = "1.3"
