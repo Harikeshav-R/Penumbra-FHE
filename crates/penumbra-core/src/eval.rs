@@ -82,6 +82,9 @@ fn evaluate_graph_inner<B: Backend>(
         ));
     }
 
+    let graph = crate::optimize::optimize_graph(graph)?;
+    let graph = graph.as_ref();
+
     if let Some(prof) = &mut profile {
         prof.backend = backend.name();
         prof.nodes.clear();

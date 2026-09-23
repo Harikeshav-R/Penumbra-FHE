@@ -9,10 +9,11 @@
 //! graph under a top-level `"graph"` key (e.g. `examples/mnist/phase2_fixture.json`); both
 //! are accepted so the same command inspects exported models and test fixtures.
 
+use std::borrow::Cow;
 use std::process::ExitCode;
 
 use penumbra_fhe_runtime::keys::{radix_capacity_bits, MESSAGE_BITS};
-use penumbra_fhe_runtime::{propagate_bit_widths, Graph};
+use penumbra_fhe_runtime::{optimize_graph, propagate_bit_widths, Graph};
 
 fn main() -> ExitCode {
     match run() {
@@ -43,9 +44,9 @@ fn run() -> Result<(), String> {
     };
 
     let graph = Graph::from_json(&graph_json)?;
+    let opt_graph = optimize_graph(&graph)?;
     let widths = propagate_bit_widths(&graph)?;
     let capacity = radix_capacity_bits(graph.num_blocks);
-
     println!(
         "schema_version {}  num_blocks {}  capacity {capacity} bits ({} blocks × {MESSAGE_BITS})",
         graph.schema_version, graph.num_blocks, graph.num_blocks
@@ -81,6 +82,37 @@ fn run() -> Result<(), String> {
             node.outputs,
             parts.join(", ")
         );
+    }
+
+    if let Cow::Owned(opt) = &opt_graph {
+        let opt_widths = propagate_bit_widths(opt)?;
+        let opt_capacity = radix_capacity_bits(opt.num_blocks);
+        println!("\nafter fusion:");
+        for node in &opt.nodes {
+            let parts: Vec<String> = node
+                .outputs
+                .iter()
+                .map(|name| {
+                    let bits = opt_widths.get(name).copied().unwrap_or(0);
+                    let flag = if bits > opt_capacity {
+                        over_capacity = true;
+                        "  [OVER CAPACITY]"
+                    } else {
+                        ""
+                    };
+                    format!("{name}={bits} bits{flag}")
+                })
+                .collect();
+            println!(
+                "  {:<6} {:<10} {:?} -> {:?}   {}",
+                node.name,
+                node.op.op_type(),
+                node.inputs,
+                node.outputs,
+                parts.join(", ")
+            );
+        }
+        println!("fused {} node(s)", graph.nodes.len() - opt.nodes.len());
     }
 
     if over_capacity {

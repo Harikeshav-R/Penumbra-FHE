@@ -8,6 +8,7 @@
 pub use penumbra_core::bitwidth::{check_graph_bit_width_budget, propagate_bit_widths};
 pub use penumbra_core::ir::{Graph, Node, OpSpec, PoolMode, SCHEMA_VERSION};
 pub use penumbra_core::ops::OpSummary;
+pub use penumbra_core::optimize_graph;
 
 pub use penumbra_tfhe::backend::TfheBackend;
 pub use penumbra_tfhe::check_bit_width_budget;
