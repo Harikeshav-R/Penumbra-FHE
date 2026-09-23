@@ -6,26 +6,26 @@ server key + graph (it structurally cannot decrypt), and the client decrypts the
 is the faithful trust boundary — the server "sees" only ciphertext and the model, never the
 plaintext input/output or the secret key.
 
-Under the hood (:mod:`penumbra.client`), passing a :class:`~penumbra.client.KeySet` to
-``predict_encrypted`` drives the runtime's ``encrypt`` (client) → ``serve`` (server) →
-``decrypt`` (client) binaries as separate subprocesses over files, reusing the persisted keys.
-A real deployment swaps the local ``serve`` process for an RPC to a remote server, unchanged on
-the Python side.
+Under the hood, the client and server communicate via serialized files (model graph, public key,
+and ciphertext batches). The server process (``examples/client_server/server.py``) is spawned as an
+isolated Python process that never receives or accesses ``client.key``.
 
-Kept tiny (a single ``Linear``, small radix) so the whole thing runs in seconds. Needs a Rust
-toolchain (``cargo``); no network, no ML stack, no committed artifacts.
+Kept tiny (a single ``Linear``, small radix) so the whole thing runs in seconds.
+No network, no ML stack, no committed artifacts.
 
-Run:  cd python && uv run python ../examples/client_server/demo.py
+Run:  uv run python examples/client_server/demo.py
 """
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 import numpy as np
 
-from penumbra import KeySet, Linear, Model
+from penumbra import KeySet, Linear, Model, _penumbra
 from penumbra.quantization.spec import QuantSpec
 from penumbra.reference import evaluate_graph_int
 
@@ -55,14 +55,43 @@ def main() -> None:
 
         samples = calibration[:3]
 
-        # --- The split round trip: client encrypts -> a SEPARATE server process evaluates with
-        # only the public server key -> client decrypts. `keys=` selects this over the all-in-one.
-        print("running the client/server split (encrypt -> serve -> decrypt) under FHE ...")
-        labels, logits = model.predict_encrypted(samples, return_logits=True, keys=keys)
+        # --- Client: quantize and encrypt the input batch using client.key ---
+        in_spec = QuantSpec(scale=model.input_scale, bits=model.input_bits, signed=False)
+        int_inputs = [in_spec.quantize(row).tolist() for row in samples]
+
+        with tempfile.TemporaryDirectory(prefix="penumbra_demo_work_") as work_dir:
+            work = Path(work_dir)
+            model_file = work / "model.fhe"
+            in_cts_file = work / "in.cts"
+            out_cts_file = work / "out.cts"
+
+            model_file.write_text(model.graph.to_json(), encoding="utf-8")
+            ck_bytes = keys.client_key.read_bytes()
+            in_cts_bytes = _penumbra.encrypt(keys.backend, ck_bytes, int_inputs)
+            in_cts_file.write_bytes(in_cts_bytes)
+
+            # --- Server: evaluate in an isolated Python process with ONLY public server.key ---
+            server_script = Path(__file__).parent / "server.py"
+            print(f"client: launching separate server process ({server_script.name}) ...")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(server_script),
+                    str(model_file),
+                    str(keys.server_key),
+                    str(in_cts_file),
+                    str(out_cts_file),
+                ],
+                check=True,
+            )
+
+            # --- Client: decrypt the server response with client secret key ---
+            out_cts_bytes = out_cts_file.read_bytes()
+            logits = _penumbra.decrypt(keys.backend, ck_bytes, out_cts_bytes)
+            labels = [int(np.argmax(row)) for row in logits]
 
         # --- Verify the golden invariant: the encrypted result equals the quantized-cleartext
         # oracle bit-for-bit (``AGENTS.md`` §1.1). TFHE is exact — any mismatch would be a bug. ---
-        in_spec = QuantSpec(scale=model.input_scale, bits=model.input_bits, signed=False)
         ok = True
         for i, row in enumerate(samples):
             xq = in_spec.quantize(row).tolist()
