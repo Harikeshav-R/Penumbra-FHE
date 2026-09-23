@@ -47,6 +47,12 @@ impl std::fmt::Debug for CkksClientKey {
     }
 }
 
+impl CkksClientKey {
+    pub fn params(&self) -> CkksParams {
+        self.params
+    }
+}
+
 type RawAtkVec = Vec<(
     i64,
     GLWEAutomorphismKey<<ActiveBackend as Backend>::OwnedBuf, <ActiveBackend as Backend>::ZnxWord>,
@@ -72,6 +78,12 @@ impl std::fmt::Debug for CkksServerKey {
         f.debug_struct("CkksServerKey")
             .field("params", &self.params)
             .finish()
+    }
+}
+
+impl CkksServerKey {
+    pub fn params(&self) -> CkksParams {
+        self.params
     }
 }
 
@@ -336,28 +348,17 @@ pub fn save_client_key(ck: &CkksClientKey, path: impl AsRef<Path>) -> Result<(),
     Ok(())
 }
 
-pub fn load_client_key(path: impl AsRef<Path>) -> Result<CkksClientKey, String> {
-    let mut file = File::open(&path).map_err(|e| format!("cannot open key file: {e}"))?;
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .map_err(|e| format!("cannot read key file: {e}"))?;
-
-    let header: SchemeHeader = bincode::deserialize(&bytes).map_err(|e| {
-        format!(
-            "failed to parse key header at {}: {e}",
-            path.as_ref().display()
-        )
-    })?;
+pub fn client_key_from_bytes(bytes: &[u8]) -> Result<CkksClientKey, String> {
+    let header: SchemeHeader =
+        bincode::deserialize(bytes).map_err(|e| format!("failed to parse key header: {e}"))?;
     if header.scheme != SCHEME_CKKS {
         return Err(format!(
-            "backend/scheme mismatch for client key at {}: expected '{}', found '{}' (key material is not portable across backends; see docs/BACKENDS.md)",
-            path.as_ref().display(),
-            SCHEME_CKKS,
+            "backend/scheme mismatch for client key: expected '{SCHEME_CKKS}', found '{}' (key material is not portable across backends; see docs/BACKENDS.md)",
             header.scheme
         ));
     }
 
-    let tagged: TaggedKey<CkksClientKeyPayload> = bincode::deserialize(&bytes)
+    let tagged: TaggedKey<CkksClientKeyPayload> = bincode::deserialize(bytes)
         .map_err(|e| format!("failed to deserialize client key: {e}"))?;
 
     let params = tagged.payload.params;
@@ -382,6 +383,14 @@ pub fn load_client_key(path: impl AsRef<Path>) -> Result<CkksClientKey, String> 
         scratch: Mutex::new(scratch),
         params,
     })
+}
+
+pub fn load_client_key(path: impl AsRef<Path>) -> Result<CkksClientKey, String> {
+    let mut file = File::open(&path).map_err(|e| format!("cannot open key file: {e}"))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|e| format!("cannot read key file: {e}"))?;
+    client_key_from_bytes(&bytes).map_err(|e| format!("{e} (at {})", path.as_ref().display()))
 }
 
 /// Serialize the public server/evaluation key to its tagged wire bytes (for size accounting and persistence).
@@ -420,28 +429,17 @@ pub fn save_server_key(sk: &CkksServerKey, path: impl AsRef<Path>) -> Result<(),
     Ok(())
 }
 
-pub fn load_server_key(path: impl AsRef<Path>) -> Result<CkksServerKey, String> {
-    let mut file = File::open(&path).map_err(|e| format!("cannot open key file: {e}"))?;
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .map_err(|e| format!("cannot read key file: {e}"))?;
-
-    let header: SchemeHeader = bincode::deserialize(&bytes).map_err(|e| {
-        format!(
-            "failed to parse key header at {}: {e}",
-            path.as_ref().display()
-        )
-    })?;
+pub fn server_key_from_bytes(bytes: &[u8]) -> Result<CkksServerKey, String> {
+    let header: SchemeHeader =
+        bincode::deserialize(bytes).map_err(|e| format!("failed to parse key header: {e}"))?;
     if header.scheme != SCHEME_CKKS {
         return Err(format!(
-            "backend/scheme mismatch for server key at {}: expected '{}', found '{}' (key material is not portable across backends; see docs/BACKENDS.md)",
-            path.as_ref().display(),
-            SCHEME_CKKS,
+            "backend/scheme mismatch for server key: expected '{SCHEME_CKKS}', found '{}' (key material is not portable across backends; see docs/BACKENDS.md)",
             header.scheme
         ));
     }
 
-    let tagged: TaggedKey<CkksServerKeyPayload> = bincode::deserialize(&bytes)
+    let tagged: TaggedKey<CkksServerKeyPayload> = bincode::deserialize(bytes)
         .map_err(|e| format!("failed to deserialize server key: {e}"))?;
 
     let params = tagged.payload.params;
@@ -486,10 +484,43 @@ pub fn load_server_key(path: impl AsRef<Path>) -> Result<CkksServerKey, String> 
     })
 }
 
+pub fn load_server_key(path: impl AsRef<Path>) -> Result<CkksServerKey, String> {
+    let mut file = File::open(&path).map_err(|e| format!("cannot open key file: {e}"))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|e| format!("cannot read key file: {e}"))?;
+    server_key_from_bytes(&bytes).map_err(|e| format!("{e} (at {})", path.as_ref().display()))
+}
+
+pub fn ensure_params_match(key: &CkksParams, run: &CkksParams) -> Result<(), String> {
+    if key != run {
+        if key.max_poly_degree != run.max_poly_degree
+            && key.n == run.n
+            && key.base2k == run.base2k
+            && key.k == run.k
+            && key.log_delta == run.log_delta
+            && key.dsize == run.dsize
+            && key.rank == run.rank
+            && key.lt_slots == run.lt_slots
+            && key.giant_step == run.giant_step
+            && (key.secret_ternary_prob - run.secret_ternary_prob).abs() < 1e-9
+        {
+            return Err(format!(
+                "key/profile mismatch: this key was generated under CKKS max_poly_degree={}, but this run uses {}. Keys are tied to their parameter profile — regenerate keys for this profile.",
+                key.max_poly_degree, run.max_poly_degree
+            ));
+        }
+        return Err(format!(
+            "key/profile mismatch: this key was generated under CKKS params {key:?}, but this run uses {run:?}. Keys are tied to their parameter profile — regenerate keys for this profile."
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use crate::params::DEFAULT_PARAMS;
     #[test]
     fn test_keygen_encrypt_decrypt_rotate() {
         let params = CkksParams {
@@ -531,5 +562,69 @@ mod tests {
             "rotated slot 1: got {}, want 3.0",
             rotated_dec[1]
         );
+    }
+
+    #[test]
+    fn test_client_and_server_key_bytes_roundtrip() {
+        let params = CkksParams {
+            n: 512,
+            base2k: 19,
+            k: 100,
+            log_delta: 25,
+            dsize: 2,
+            rank: 1,
+            lt_slots: 64,
+            giant_step: 8,
+            secret_ternary_prob: 2.0 / 3.0,
+            max_poly_degree: 7,
+        };
+
+        let (ck, sk) = keygen(&params).expect("keygen failed");
+        assert_eq!(ck.params(), params);
+        assert_eq!(sk.params(), params);
+
+        let ck_bytes = client_key_bytes(&ck).expect("client_key_bytes failed");
+        let sk_bytes = server_key_bytes(&sk).expect("server_key_bytes failed");
+
+        let loaded_ck = client_key_from_bytes(&ck_bytes).expect("client_key_from_bytes failed");
+        let loaded_sk = server_key_from_bytes(&sk_bytes).expect("server_key_from_bytes failed");
+
+        assert_eq!(loaded_ck.params(), params);
+        assert_eq!(loaded_sk.params(), params);
+
+        let input = vec![10.0, -20.0, 30.0];
+        let ct = encrypt_raw(&loaded_ck, &input).expect("encrypt failed");
+        let rotated = rotate_raw(&loaded_sk, &ct, 1).expect("rotate failed");
+        let dec = decrypt_raw(&loaded_ck, &rotated).expect("decrypt failed");
+        assert!((dec[0] - (-20.0)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_ensure_params_match() {
+        let p1 = CkksParams {
+            max_poly_degree: 7,
+            ..DEFAULT_PARAMS
+        };
+        let p2 = CkksParams {
+            max_poly_degree: 15,
+            ..DEFAULT_PARAMS
+        };
+        assert!(ensure_params_match(&p1, &p1).is_ok());
+        let err = ensure_params_match(&p1, &p2).unwrap_err();
+        assert!(
+            err.contains("key/profile mismatch: this key was generated under CKKS max_poly_degree=7, but this run uses 15"),
+            "unexpected error message: {err}"
+        );
+
+        let mut p3 = p1;
+        p3.n = 8192;
+        let err2 = ensure_params_match(&p1, &p3).unwrap_err();
+        assert!(
+            err2.contains("under CKKS params"),
+            "unexpected error message: {err2}"
+        );
+
+        assert!(p1.with_max_poly_degree(0).is_err());
+        assert_eq!(p1.with_max_poly_degree(9).unwrap().max_poly_degree, 9);
     }
 }

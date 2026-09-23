@@ -28,8 +28,9 @@ pub use encrypt::{
 pub use hal::hal_backend_name;
 #[cfg(feature = "ckks")]
 pub use keys::{
-    client_key_bytes, keygen, load_client_key, load_server_key, save_client_key, save_server_key,
-    server_key_bytes, CkksClientKey, CkksServerKey, SCHEME_CKKS,
+    client_key_bytes, client_key_from_bytes, ensure_params_match, keygen, load_client_key,
+    load_server_key, save_client_key, save_server_key, server_key_bytes, server_key_from_bytes,
+    CkksClientKey, CkksServerKey, SCHEME_CKKS,
 };
 #[cfg(feature = "ckks")]
 pub use params::{slots, CkksParams, DEFAULT_PARAMS};
