@@ -19,6 +19,8 @@ pub struct NodeReport {
     pub input_lens: Vec<usize>,
     pub output_len: usize,
     pub counters: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub measured: BTreeMap<String, u64>,
 }
 
 /// Timing and verification report for a single input sample.
@@ -55,6 +57,9 @@ pub struct ModelRun {
     pub op_type_build_secs: BTreeMap<String, f64>,
     /// Summed counters for one sample — this backend's cost proxy.
     pub cost_proxy: BTreeMap<String, u64>,
+    /// Measured counters for one sample — ground truth, unlike `cost_proxy`.
+    #[serde(default)]
+    pub measured_totals: BTreeMap<String, u64>,
 }
 
 /// Where a report came from. A committed result file that cannot be attributed to a machine,
@@ -108,6 +113,7 @@ pub fn run_model<B: Backend>(
 
     let num_samples = samples.min(model.inputs.len()).max(1);
     let mut sample_reports = Vec::with_capacity(num_samples);
+    let mut first_measured_totals: BTreeMap<String, u64> = BTreeMap::new();
 
     let mut input_ct_bytes = 0;
     let mut output_ct_bytes = 0;
@@ -131,6 +137,11 @@ pub fn run_model<B: Backend>(
             output_ct_bytes = session.ct_bytes(&output_cts)?;
             first_cost_proxy = profile
                 .counter_totals()
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect();
+            first_measured_totals = profile
+                .measured_totals()
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v))
                 .collect();
@@ -193,6 +204,11 @@ pub fn run_model<B: Backend>(
                     .into_iter()
                     .map(|(k, v)| (k.to_string(), v))
                     .collect(),
+                measured: n
+                    .measured
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect(),
             })
             .collect();
 
@@ -244,6 +260,7 @@ pub fn run_model<B: Backend>(
         op_type_secs,
         op_type_build_secs,
         cost_proxy: first_cost_proxy,
+        measured_totals: first_measured_totals,
     })
 }
 
@@ -359,8 +376,8 @@ pub fn to_markdown(report: &Report) -> String {
 
     // Table 2: Per-Op-Type Eval Breakdown
     out.push_str("### 2. Per-Op-Type Eval Breakdown (Mean Seconds per Sample)\n\n");
-    out.push_str("| Model | Backend | Op Type | Calls | Build (s) | Eval (s) |\n");
-    out.push_str("|---|---|---|---:|---:|---:|\n");
+    out.push_str("| Model | Backend | Op Type | Calls | Build (s) | Eval (s) | PBS (measured) |\n");
+    out.push_str("|---|---|---|---:|---:|---:|---:|\n");
     for run in &report.runs {
         for (op, &eval_secs) in &run.op_type_secs {
             let calls = run
@@ -369,9 +386,26 @@ pub fn to_markdown(report: &Report) -> String {
                 .map(|s| s.nodes.iter().filter(|n| &n.op_type == op).count())
                 .unwrap_or(0);
             let build_secs = run.op_type_build_secs.get(op).copied().unwrap_or(0.0);
+            let pbs_str = run
+                .samples
+                .first()
+                .and_then(|s| {
+                    let nodes: Vec<_> = s.nodes.iter().filter(|n| &n.op_type == op).collect();
+                    let has_pbs = nodes.iter().any(|n| n.measured.contains_key("pbs"));
+                    if has_pbs {
+                        let sum: u64 = nodes
+                            .iter()
+                            .map(|n| n.measured.get("pbs").copied().unwrap_or(0))
+                            .sum();
+                        Some(sum.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| "-".to_string());
             out.push_str(&format!(
-                "| {} | {} | {} | {} | {:.4} | {:.4} |\n",
-                run.model, run.backend, op, calls, build_secs, eval_secs
+                "| {} | {} | {} | {} | {:.4} | {:.4} | {} |\n",
+                run.model, run.backend, op, calls, build_secs, eval_secs, pbs_str
             ));
         }
     }
@@ -387,7 +421,7 @@ pub fn to_markdown(report: &Report) -> String {
         let ck_sz = format_bytes(run.client_key_bytes);
         let sk_sz = format_bytes(run.server_key_bytes);
 
-        let proxy_str = if run.cost_proxy.is_empty() {
+        let mut proxy_str = if run.cost_proxy.is_empty() {
             "none".to_string()
         } else {
             run.cost_proxy
@@ -396,6 +430,19 @@ pub fn to_markdown(report: &Report) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
+        if !run.measured_totals.is_empty() {
+            let measured_parts = run
+                .measured_totals
+                .iter()
+                .map(|(k, v)| format!("measured {k}: {v}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            if proxy_str == "none" {
+                proxy_str = measured_parts;
+            } else {
+                proxy_str.push_str(&format!(", {measured_parts}"));
+            }
+        }
 
         out.push_str(&format!(
             "| {} | {} | {} | {} | {} | {} | {} |\n",
@@ -405,4 +452,24 @@ pub fn to_markdown(report: &Report) -> String {
     out.push('\n');
 
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_committed_comparison_json_deserialization() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let json_path = manifest_dir.join("../../docs/results/phase12-4-comparison.json");
+        if json_path.exists() {
+            let data = std::fs::read_to_string(&json_path).expect("read comparison json");
+            let report: Report = serde_json::from_str(&data).expect("deserialize Report");
+            assert!(!report.runs.is_empty());
+            let md = to_markdown(&report);
+            assert!(md.contains("Per-Op-Type Eval Breakdown"));
+            assert!(md.contains("PBS (measured)"));
+        }
+    }
 }
