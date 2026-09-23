@@ -401,21 +401,21 @@ in-process bindings and a clean one-call API.
 
 ### Tasks
 
-- [ ] **PyO3 bindings:** expose the Rust runtime (keygen, encrypt, evaluate, decrypt) to
+- [x] **PyO3 bindings:** expose the Rust runtime (keygen, encrypt, evaluate, decrypt) to
       Python directly, eliminating the subprocess/file round-trip.
 - [x] **One-call API:** implement `model.predict_encrypted(x)` that internally does
       keygen (or reuse) → encrypt → evaluate → decrypt and returns the prediction
-      (`PROJECT.md` §12). *(subprocess bridge; PyO3 in-process is the remaining polish)*
+      (`PROJECT.md` §12). *(in-process PyO3 bindings)*
 - [x] **Key management API:** `keygen()`, save/load keys, reuse keys across calls; document
-      which key goes where (client vs server). *(`penumbra.KeySet` + runtime `keygen` binary)*
+      which key goes where (client vs server). *(`penumbra.KeySet` + in-process `_penumbra.keygen`)*
 - [x] **Client/server split example:** a runnable demo with an actual process boundary —
       client encrypts and sends, server evaluates and returns, client decrypts. Proves the
       privacy story (server only ever touches ciphertext). *(`examples/client_server/`)*
 - [x] **Error messages:** audit all failure modes (unsupported op, over-budget bit-width,
       shape mismatch, key mismatch) for clear, actionable text. *(table in `docs/DEVELOPMENT.md`)*
-- [ ] **Crypto-param profile API:** ship a secure default; expose a single override knob
+- [x] **Crypto-param profile API:** ship a secure default; expose a single override knob
       (`PROJECT.md` §12). Do not surface raw `tfhe-rs` params to users.
-- [ ] Build wheels so `pip install penumbra-fhe` works (PyO3 + maturin).
+- [x] Build wheels so `pip install penumbra-fhe` works (PyO3 + maturin).
 
 ### Exit Criteria
 

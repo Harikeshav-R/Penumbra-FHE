@@ -92,11 +92,14 @@ jobs:
   python:
     name: Python front end (ruff, black, pytest)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: python
     steps:
       - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -111,15 +114,12 @@ jobs:
       - name: Sync dependencies
         run: uv sync --dev
 
-      # Lint/format the package, the top-level `tests/` tree (part of the suite), and the
-      # `examples/` generators. `--config` is explicit so the out-of-tree `../tests` and
-      # `../examples` dirs use the package settings — otherwise config discovery falls back
-      # to defaults (a stricter line length that silently diverges from the project's 100).
+      # Lint/format the package, tests, and examples.
       - name: Ruff
-        run: uv run ruff check --config pyproject.toml . ../tests ../examples
+        run: uv run ruff check python tests examples
 
       - name: Black (check)
-        run: uv run black --check --config pyproject.toml . ../tests ../examples
+        run: uv run black --check python tests examples
 
       - name: Pytest
         run: uv run pytest
@@ -137,3 +137,42 @@ jobs:
           uv venv "${RUNNER_TEMP}/sdist-check"
           uv pip install --python "${RUNNER_TEMP}/sdist-check" dist/*.tar.gz
           "${RUNNER_TEMP}/sdist-check/bin/python" -c "import penumbra; print(penumbra.__version__)"
+
+  wheels:
+    name: Build wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64
+            manylinux: "2014"
+            sdist: true
+          - os: macos-14
+            target: aarch64
+            manylinux: auto
+            sdist: false
+          - os: windows-latest
+            target: x86_64
+            manylinux: auto
+            sdist: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          manylinux: ${{ matrix.manylinux }}
+          sdist: ${{ matrix.sdist }}
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: dist

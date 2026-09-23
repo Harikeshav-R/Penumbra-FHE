@@ -3,7 +3,7 @@
 Cross-cutting tests for Penumbra-FHE. Per-op Rust unit tests and the FHE golden tests live in
 `runtime/tests/`; this directory holds the Python-side and cross-language tests.
 
-Run them with `cd python && uv run pytest` (pytest's `testpaths` points here).
+Run them with `uv run pytest` (pytest's `testpaths` points here).
 
 ## The golden test (sacred — `AGENTS.md` §1.1)
 

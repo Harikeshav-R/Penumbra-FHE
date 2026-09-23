@@ -57,18 +57,18 @@ changes. Torch + scikit-learn are the optional `ml` extra; **Olivetti downloads 
 `~/scikit_learn_data` and is then cached (unlike `load_digits`, which ships with scikit-learn):
 
 ```bash
-cd python && uv run --extra ml --system-certs python ../examples/faces/olivetti_export.py
+uv run --extra ml --system-certs python examples/faces/olivetti_export.py
 ```
 
 Run the tests:
 
 ```bash
 # Fast hermetic guard (every CI run; core onnx dep, no torch):
-cd python && uv run pytest ../tests/test_faces_fixture.py
+uv run pytest tests/test_faces_fixture.py
 
 # Inspect the per-tensor bit-widths without running FHE:
-cd runtime && cargo run --release --bin inspect ../examples/faces/phase7_faces_fixture.json
+cargo run --release --bin inspect examples/faces/phase7_faces_fixture.json
 
 # The FHE bit-for-bit gate (minutes/sample; #[ignore]d, run explicitly):
-cd runtime && cargo test --release --test golden_faces -- --ignored --nocapture
+cargo test --workspace --release --test golden_faces -- --ignored --nocapture
 ```

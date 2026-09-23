@@ -38,7 +38,7 @@ Torch + scikit-learn are the optional ``ml`` extra. Unlike the digit examples (s
 ``load_digits`` ships with the wheel), Olivetti is **downloaded once** (~4 MB) to
 ``~/scikit_learn_data`` and cached; regenerate only when the example changes::
 
-    cd python && uv run --extra ml --system-certs python ../examples/faces/olivetti_export.py
+    uv run --extra ml --system-certs python examples/faces/olivetti_export.py
 
 CI never runs this (it reads only the committed JSON), so the one-time download never touches CI.
 """

@@ -85,7 +85,6 @@ done
 ### Python front end
 
 ```bash
-cd python
 uv sync --all-extras       # create .venv and install deps (incl. torch/brevitas)
 uv run pytest              # run the Python test suite
 ```
@@ -101,8 +100,8 @@ without the heavy `torch`/`brevitas` ML extra.
 
 ## Running encrypted inference from Python
 
-`model.predict_encrypted(x)` runs the real encrypted forward pass (ROADMAP Phase 9). It
-quantizes `x`, hands the exported IR + the quantized batch to the Rust runtime, and returns the
+`model.predict_encrypted(x)` runs the real encrypted forward pass in-process via compiled PyO3
+bindings (ROADMAP Phase 9). It quantizes `x`, runs encrypted inference in Rust, and returns the
 client-side prediction:
 
 ```python
@@ -114,42 +113,32 @@ pred = model.predict_encrypted(x)             # single sample -> int label; batc
 labels, logits = model.predict_encrypted(X, return_logits=True)   # also get the raw logits
 ```
 
-This is the **subprocess bridge**: Python shells out to the runtime's `predict` binary via
-`cargo run --release --bin predict`, so it needs a **Rust toolchain** on `PATH` and a checkout
-of this repo (or set `PENUMBRA_RUNTIME_DIR` to the `runtime/` crate). Keygen runs once per call
-and is reused across the batch; FHE is seconds-to-minutes per sample. The server side only ever
-sees the quantized integer input and the graph — never a float or a scale (`PROJECT.md` §11).
-In-process PyO3 bindings and wheels are the remaining Phase-9 work.
+All crypto runs in-process without subprocessing or file round trips, and releases the Python GIL
+during execution. Keygen runs once per call and is reused across the batch. The server side only
+ever sees the quantized integer input and the graph — never a float or a scale (`PROJECT.md` §11).
 
-> **Choosing a backend.** `predict_encrypted` runs the `tfhe` backend by default; once the
-> CKKS backend lands it is selected by name (`backend="ckks"`), and the exported IR file is
-> unchanged either way — that is the point (`docs/IR-SPEC.md`, Backend neutrality). Keys and
-> ciphertext are **not** portable across backends: a `KeySet` generated for one backend is
-> rejected by the other with an actionable message, not a deserialization panic.
+> **Choosing a backend & crypto profile.** `predict_encrypted` runs the `tfhe` backend by default;
+> the CKKS backend is selected by name (`backend="ckks"`). Both backends consume the exact same
+> IR graph. Each backend exposes a single override knob via `CryptoProfile`:
+> - TFHE: `profile=fhe.CryptoProfile.tfhe("gaussian")` (named profile: `"default"` or `"gaussian"`)
+> - CKKS: `profile=fhe.CryptoProfile.ckks(15)` (maximum polynomial degree)
 >
-> Note that the six binary names (`keygen`, `encrypt`, `serve`, `decrypt`, `predict`,
-> `inspect`) are a **public contract with the Python bridge** — `client.py` invokes them by
-> name. A workspace refactor must keep them resolvable.
+> Keys and ciphertext are **not** portable across backends or incompatible parameter profiles:
+> a `KeySet` generated for one backend/profile is rejected by another with an actionable error.
 
-You can also drive the binary directly for debugging (a JSON batch of quantized int rows on
-stdin, decrypted outputs on stdout):
+You can also drive the runtime binaries directly for debugging (a JSON batch of quantized int rows
+on stdin, decrypted outputs on stdout):
 
 ```bash
-cd runtime
-echo '[[10,14,10, ...]]' | cargo run --release --bin predict -- ../examples/mnist/phase2_fixture.json
+echo '[[10,14,10, ...]]' | cargo run --release --bin predict -- examples/mnist/phase2_fixture.json
 ```
 
 The bridge's golden gate — under the `tfhe` backend, decrypted output equals the
-quantized-cleartext oracle bit-for-bit (`AGENTS.md` §1.1) — is the opt-in test
-`tests/test_predict_bridge.py`, run with real FHE via:
+quantized-cleartext oracle bit-for-bit (`AGENTS.md` §1.1) — runs ungated via:
 
 ```bash
-cd python && PENUMBRA_E2E=1 uv run pytest ../tests/test_predict_bridge.py
+uv run pytest tests/test_pyo3_roundtrip.py
 ```
-
-It is skipped by default (needs `cargo`, minutes/sample) so CI stays hermetic — the fast tests
-in that file inject a cleartext-oracle fake for the runtime and run everywhere.
-
 ### Reusing keys + the client/server split
 
 By default `predict_encrypted` runs the whole round trip (keygen → encrypt → evaluate →
@@ -173,7 +162,7 @@ differently-sized model fails loudly. `*.key` files are git-ignored — never co
 The runnable, self-contained demo is [`examples/client_server/`](../examples/client_server/):
 
 ```bash
-cd python && uv run python ../examples/client_server/demo.py    # tiny model, ~seconds
+uv run python examples/client_server/demo.py    # tiny model, ~seconds
 ```
 
 You can also drive the split binaries by hand (each is a thin CLI over the runtime's public
@@ -190,15 +179,18 @@ The encrypted path fails at the earliest point with an actionable message, never
 | Unsupported ONNX op | `load_onnx` (load time) | `operator X (node '…') not supported` (all at once) |
 | Over-budget bit-width | `check_graph_bit_width_budget` (before keygen) | names the offending node + required-vs-available bits |
 | Model not quantized | `predict_encrypted` | `call quantize() before predict_encrypted()` |
-| No Rust toolchain | `run_encrypted` | `cargo was not found on PATH …` |
-| Missing runtime crate | `run_encrypted` | `runtime crate not found … set PENUMBRA_RUNTIME_DIR` |
-| Key/model `num_blocks` mismatch | `run_encrypted` / `serve` | `key/model mismatch: keys for num_blocks=A, model needs B` |
-| Missing/corrupt key or ciphertext file | key/ciphertext load | `cannot read/deserialize … (is it a Penumbra … file?)` |
-| Runtime binary non-zero exit | `run_encrypted` | surfaces the binary's stderr |
+| Unknown backend | `run_encrypted` / `predict_encrypted` | `unknown backend '<x>'; available backends: tfhe` |
+| CKKS backend not compiled in | `run_encrypted` / `predict_encrypted` | `backend 'ckks' is not available in this build of penumbra-fhe: the CKKS backend needs a nightly Rust toolchain…` |
+| Unknown TFHE profile | `CryptoProfile.tfhe` | `unknown TFHE crypto profile '<x>'; available profiles: default, gaussian` |
+| Invalid CKKS degree | `CryptoProfile.ckks` | `max_poly_degree must be >= 1, got 0` |
+| Profile/backend mismatch | `run_encrypted` / `predict_encrypted` | `profile/backend mismatch: profile is for backend '…', but this run uses '…'` |
+| Both keys and profile passed | `run_encrypted` / `predict_encrypted` | `cannot specify both 'keys' and 'profile': keys already carry their parameter profile…` |
+| Key/model `num_blocks` mismatch | `run_encrypted` / `serve` | `key/model mismatch: this key was generated for num_blocks=A, but the model needs num_blocks=B…` |
+| Key/profile mismatch | `run_encrypted` / `serve` | `key/profile mismatch: this key was generated under crypto profile '…', but this run uses '…'…` |
+| Missing/corrupt key or ciphertext file | key/ciphertext load | `cannot deserialize … (is it a Penumbra … file?)` |
 | Op unsupported **on the selected backend** | graph load (before keygen) | names the op, the node, and the backend — never a silent approximation (`AGENTS.md` §1.4) |
-| Key or ciphertext from a **different backend** | key/ciphertext load | `these keys are for backend X, this run uses Y` — not a deserialization panic (Phase 12.1) |
+| Key or ciphertext from a **different backend** | key/ciphertext load | `backend/scheme mismatch for …: expected '…', found '…'` (Phase 12.1) |
 | Over-budget multiplicative depth (CKKS) | the depth/scale check (before keygen) | names the offending node + required-vs-available levels |
-
 ## Linting & formatting
 
 These run in CI and are enforced on PRs. Run them locally before pushing — **warnings are
@@ -212,9 +204,8 @@ cargo fmt --all -- --check            # check only (what CI runs)
 cargo clippy --all-targets -- -D warnings
 
 # Python
-cd python
-uv run ruff check .
-uv run black --check .
+uv run ruff check python tests examples
+uv run black --check python tests examples
 ```
 
 ## The golden invariant (read this)

@@ -39,8 +39,8 @@ will not be merged.
 See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md). In short:
 
 ```bash
-cd runtime && cargo test --release        # Rust runtime (use --release for FHE)
-cd python  && uv sync --all-extras && uv run pytest   # Python front end (uv, not poetry)
+cargo test --workspace --release                     # Rust runtime (use --release for FHE)
+uv sync --all-extras && uv run pytest               # Python front end (uv, not poetry)
 ```
 
 ## The canonical "add an op" path

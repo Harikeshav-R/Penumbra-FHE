@@ -192,5 +192,5 @@ meeting point**: Python emits → committed fixture → Rust consumes.
   and the expected `Linear → Argmax` structure.
 
 If you change the IR, regenerate the fixture
-(`cd python && uv run python ../examples/mnist/train_quantize_export.py`) so the committed
+(`uv run python examples/mnist/train_quantize_export.py`) so the committed
 artifact stays current — the drift guard fails otherwise.

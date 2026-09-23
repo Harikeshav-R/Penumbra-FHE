@@ -18,7 +18,7 @@ the small test set's noise, the quantization acting as a mild regularizer). The 
 Hermetic-fixture discipline (like every example): torch + brevitas are the optional ``ml`` extra,
 used only by this generator; CI reads the committed integers and never imports them. Regenerate::
 
-    cd python && uv run --extra ml --system-certs python ../examples/mnist/qat_export.py
+    uv run --extra ml --system-certs python examples/mnist/qat_export.py
 """
 
 from __future__ import annotations

@@ -104,11 +104,10 @@ backend is the reference implementation and its exactness gate is unchanged.
 
 ```bash
 # Rust runtime (build in --release; debug FHE is very slow)
-cd runtime && cargo test --release
+cargo test --workspace --release
 
 # Python front end (managed with uv)
-cd python && uv sync --all-extras && uv run pytest
-```
+uv sync --all-extras && uv run pytest
 
 The CKKS backend is not wired up yet; when it lands it gains its own test target and may
 require a separate toolchain — see [`docs/NOTES-ckks.md`](docs/NOTES-ckks.md).
