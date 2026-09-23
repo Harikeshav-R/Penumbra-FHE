@@ -55,6 +55,16 @@ pub trait Backend: 'static + Send + Sync {
     /// multiplicative depth and scale. Layer 2 knows only that a budget exists.
     fn check_graph_budget(&self, graph: &Graph) -> Result<(), String>;
 
+    /// Backend-measured, process-cumulative cost counters (monotonically increasing).
+    ///
+    /// Layer 2 samples these immediately before and after each node's eval and records the
+    /// delta. The names are opaque here, exactly as in [`crate::ops::Op::cost`] — the
+    /// difference is that these are *measured*, not derived. A backend MUST return the same
+    /// names in the same order on every call. Default: this backend measures nothing.
+    fn measured_counters(&self) -> Vec<(&'static str, u64)> {
+        Vec::new()
+    }
+
     // --- Server-side evaluation primitives ----------------------------------------------------
 
     /// Create a trivial (plaintext) encryption of zero sized to `num_blocks`.

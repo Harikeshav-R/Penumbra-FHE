@@ -15,6 +15,8 @@ pub struct NodeProfile {
     pub output_len: usize,
     /// Backend-declared cost counters (`Op::cost`). Names are opaque to Layer 2.
     pub counters: Vec<(&'static str, u64)>,
+    /// Backend-*measured* counter deltas for this node (`Backend::measured_counters`).
+    pub measured: Vec<(&'static str, u64)>,
 }
 
 /// A whole graph walk, node by node, in evaluation order.
@@ -56,6 +58,17 @@ impl GraphProfile {
         }
         totals
     }
+    /// Every measured counter summed across nodes — the graph's ground-truth cost.
+    pub fn measured_totals(&self) -> BTreeMap<&'static str, u64> {
+        let mut totals: BTreeMap<&'static str, u64> = BTreeMap::new();
+        for node in &self.nodes {
+            for &(name, count) in &node.measured {
+                *totals.entry(name).or_default() += count;
+            }
+        }
+        totals
+    }
+
 
     /// The op-type sequence in evaluation order — used to assert backend parity.
     pub fn op_types(&self) -> Vec<&'static str> {
@@ -83,6 +96,7 @@ mod tests {
             input_lens: vec![64],
             output_len: 10,
             counters: vec![("rotations", 2), ("rescales", 1)],
+            measured: vec![("pbs", 10)],
         });
 
         profile.nodes.push(NodeProfile {
@@ -93,6 +107,7 @@ mod tests {
             input_lens: vec![10],
             output_len: 10,
             counters: vec![("rescales", 3), ("poly_evals", 1)],
+            measured: vec![("pbs", 5)],
         });
 
         profile.nodes.push(NodeProfile {
@@ -103,6 +118,7 @@ mod tests {
             input_lens: vec![10],
             output_len: 2,
             counters: vec![("rotations", 5)],
+            measured: vec![("pbs", 15)],
         });
 
         assert_eq!(profile.op_types(), vec!["Linear", "Requant", "Linear"]);
@@ -119,5 +135,9 @@ mod tests {
         assert_eq!(totals.get("rescales"), Some(&4));
         assert_eq!(totals.get("poly_evals"), Some(&1));
         assert_eq!(totals.get("unknown"), None);
+
+        let measured_totals = profile.measured_totals();
+        assert_eq!(measured_totals.get("pbs"), Some(&30));
+        assert_eq!(measured_totals.get("unknown"), None);
     }
 }

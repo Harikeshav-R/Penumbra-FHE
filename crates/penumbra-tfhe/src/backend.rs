@@ -33,6 +33,9 @@ impl Backend for TfheBackend {
     fn check_graph_budget(&self, graph: &Graph) -> Result<(), String> {
         penumbra_core::bitwidth::check_graph_bit_width_budget(graph)
     }
+    fn measured_counters(&self) -> Vec<(&'static str, u64)> {
+        vec![("pbs", tfhe::shortint::server_key::get_pbs_count())]
+    }
     fn build_op(&self, spec: &OpSpec) -> Result<Box<dyn Op<Self>>, String> {
         spec.validate()?;
         match spec {
