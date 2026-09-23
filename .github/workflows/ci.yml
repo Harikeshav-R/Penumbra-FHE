@@ -41,6 +41,8 @@ jobs:
   ckks-spike:
     name: CKKS spike (fmt, clippy, test - nightly)
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-C target-feature=+avx2,+fma"
     defaults:
       run:
         working-directory: crates/spike-ckks
@@ -69,6 +71,8 @@ jobs:
   ckks-backend:
     name: CKKS backend (clippy, test - nightly)
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-C target-feature=+avx2,+fma"
     steps:
       - uses: actions/checkout@v7
       - name: Install Nightly Rust toolchain

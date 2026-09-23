@@ -60,6 +60,7 @@ but the public API is still subject to change."* Note that 0.6.0 was yanked.
 | 2026-09-21 | 0.8.3 | `poulpy-ckks::presets` contains only bootstrapping plans, no general parameter preset | `penumbra-ckks::params::DEFAULT_PARAMS` defines its own 128-bit secure parameter profile sized against HomomorphicEncryption.org standard tables |
 | 2026-09-21 | 0.8.3 | No poulpy type derives `serde` (`serde` is not a dependency of any poulpy crate) | Hand-rolled wire format over `poulpy_hal::layouts::{WriterTo, ReaderFrom}` wrapped in a serde envelope carrying layout metadata + `CKKSMeta` |
 | 2026-09-21 | 0.8.3 | Prepared (DFT-domain) keys implement neither `WriterTo` nor `ReaderFrom` | Persisted standard keys and re-prepared on load via `glwe_automorphism_key_prepare` / `prepare_tensor_key` |
+| 2026-09-22 | 0.8.3 | `poulpy-cpu-avx` requires explicit `avx2` and `fma` target features on x86-64 | Passed `RUSTFLAGS="-C target-feature=+avx2,+fma"` in nightly CI jobs and documented configuration for local x86-64 builds |
 ## ⚠️ Toolchain and platform prerequisites
 
 **Resolved in Phase 12.0:**
@@ -72,8 +73,11 @@ but the public API is still subject to change."* Note that 0.6.0 was yanked.
    TFHE backend in `runtime/` remains on stable Rust (`rust-version = "1.83"`).
 2. **The HAL backend is architecture-specific.** On Apple Silicon (AArch64), `poulpy-cpu-arm`
    with NEON acceleration (`FFT64Neon`) is active and verified. In CI and x86-64 environments,
-   `poulpy-cpu-avx` (`FFT64Avx`) with `poulpy-cpu-ref` (`FFT64Ref`) as portable fallback is used.
-   All Apple Silicon benchmarks are pinned to `FFT64Neon`.
+   `poulpy-cpu-avx` (`FFT64Avx`) is used. Note that `poulpy-cpu-avx 0.8.3` asserts `avx2` and
+   `fma` target features at compile time, requiring `RUSTFLAGS="-C target-feature=+avx2,+fma"`
+   (configured in CI workflow and `.cargo/config.toml` for local builds). `poulpy-cpu-ref` (`FFT64Ref`)
+   serves as the portable fallback for non-AVX/non-ARM targets. All Apple Silicon benchmarks
+   are pinned to `FFT64Neon`.
 3. **Two FHE libraries in one dependency graph.** `tfhe 1.8.1` and `poulpy-ckks 0.8.3` compile and
    execute concurrently in the same binary (`crates/spike-ckks/tests/spike_correctness.rs`)
    without any symbol clashes or dependency collisions.

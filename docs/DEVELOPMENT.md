@@ -17,7 +17,8 @@ for the working rules (they apply to humans too).
 > stays on stable** so an upstream toolchain change cannot break the reference backend's gate.
 >
 > `poulpy`'s CPU backend is also architecture-specific — pinned to `poulpy-cpu-arm` / `FFT64Neon`
-> on Apple Silicon, and `poulpy-cpu-avx` (AVX2/FMA) on x86-64.
+> on Apple Silicon, and `poulpy-cpu-avx` (AVX2/FMA) on x86-64. On x86-64, `poulpy-cpu-avx` requires
+> AVX2 and FMA target features enabled via `RUSTFLAGS="-C target-feature=+avx2,+fma"`.
 
 ## Layout
 
@@ -58,10 +59,15 @@ cargo run -p penumbra-bench --release --bin penumbra-bench-report -- --models ph
 cargo bench -p penumbra-bench
 
 # CKKS backend (nightly toolchain, requires --features ckks)
+# On x86-64, pass RUSTFLAGS="-C target-feature=+avx2,+fma" (or add it to .cargo/config.toml):
 cargo +nightly test -p penumbra-ckks --features ckks --release
 cargo +nightly test -p penumbra-bench --features ckks --release
 cargo +nightly run -p penumbra-bench --features ckks --release --bin penumbra-bench-report -- --models phase2_logreg
 PENUMBRA_BENCH_MODELS=phase2_logreg cargo +nightly bench -p penumbra-bench --features ckks
+
+# Tip for local x86-64 development: you can persist target features in .cargo/config.toml:
+# [target.'cfg(all(target_arch = "x86_64", target_os = "linux"))']
+# rustflags = ["-C", "target-feature=+avx2,+fma"]
 
 # Full cross-backend comparison sweep across all 7 fixtures:
 mkdir -p target/bench-results
