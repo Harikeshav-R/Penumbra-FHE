@@ -2,9 +2,6 @@
 name = "penumbra-fhe"
 version = "0.0.0"
 description = "Encrypted ML inference on ONNX models over pluggable FHE backends — load a model, run it under FHE, never write crypto code."
-# Must live inside this directory: the package is rooted at `python/`, so an sdist cannot carry
-# a file from the repo root. hatchling enforces this as of 1.32.0; before that `../README.md`
-# was accepted here but would have produced an sdist that could not be rebuilt.
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Harikeshav Rameshkumar" }]
@@ -69,15 +66,13 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [build-system]
-# Bounded on purpose. `uv.lock` does not lock the build backend, so an unpinned requirement
-# resolves to the newest hatchling on every sync — which is how 1.32.0's new readme-path check
-# broke CI with no commit and no lockfile diff. The upper bound keeps a backend major from
-# changing build behavior out from under us again.
-requires = ["hatchling>=1.27,<2"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.9,<2.0"]
+build-backend = "maturin"
 
-[tool.hatch.build.targets.wheel]
-packages = ["penumbra"]
+[tool.maturin]
+python-source = "python"
+manifest-path = "crates/penumbra-py/Cargo.toml"
+module-name = "penumbra._penumbra"
 
 # ---------------------------------------------------------------------------
 # Dev tooling. `uv` is the project standard for env/deps (PROJECT.md §15) — not poetry.
@@ -92,6 +87,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+src = ["python"]
 
 [tool.ruff.lint]
 # Sensible default set: pycodestyle, pyflakes, isort, pyupgrade, bugbear.
@@ -102,5 +98,4 @@ line-length = 100
 target-version = ["py310"]
 
 [tool.pytest.ini_options]
-testpaths = ["../tests"]
-pythonpath = ["."]
+testpaths = ["tests"]
