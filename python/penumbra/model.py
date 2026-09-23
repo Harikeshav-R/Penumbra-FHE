@@ -48,7 +48,7 @@ from penumbra.bitwidth import (
     internal_bits,
     propagate_bit_widths,
 )
-from penumbra.client import KeySet, run_encrypted
+from penumbra.client import CryptoProfile, KeySet, run_encrypted
 from penumbra.compile import RequantChannelParams, insert_requants
 from penumbra.ir import SCHEMA_VERSION, ArgmaxSpec, Graph
 from penumbra.layers import Activation, Conv2d, Layer, LayerContext, Linear, QuantConfig
@@ -405,15 +405,20 @@ class Model:
     # -- encrypted inference ---------------------------------------------------------------
 
     def predict_encrypted(
-        self, x: np.ndarray, *, return_logits: bool = False, keys: KeySet | None = None
+        self,
+        x: np.ndarray,
+        *,
+        return_logits: bool = False,
+        keys: KeySet | None = None,
+        backend: str = "tfhe",
+        profile: CryptoProfile | None = None,
     ):
         """Run the encrypted forward pass on ``x`` and return the prediction(s).
 
         The one-call round trip (``PROJECT.md`` §12): quantize ``x`` to the graph's integer
-        input domain, hand the exported IR + quantized batch to the Rust runtime (which does
-        keygen -> encrypt -> evaluate -> decrypt under FHE, :mod:`penumbra.client`), and decode
-        the decrypted outputs client-side (argmax, ``PROJECT.md`` §11). Requires :meth:`quantize`
-        first.
+        input domain, run encrypted inference in-process via compiled PyO3 bindings
+        (:mod:`penumbra.client`), and decode the decrypted outputs client-side (argmax,
+        ``PROJECT.md`` §11). Requires :meth:`quantize` first.
 
         ``x`` is a float array: a single sample ``(feature_len,)`` or a batch ``(N, feature_len)``.
         Returns the predicted class label (an ``int``) for a single sample or a ``list[int]`` for a
@@ -422,15 +427,19 @@ class Model:
         inspection and for the golden cross-check against the
         :func:`penumbra.reference.evaluate_graph_int` oracle.
 
+        ``backend`` selects the cryptographic backend (``"tfhe"`` or ``"ckks"``). Under TFHE,
+        evaluation is exact and matches the quantized-cleartext oracle bit-for-bit (``AGENTS.md``
+        §1.1). Under CKKS, evaluation is approximate (bounded within the model's declared error
+        bound).
+
+        ``profile`` allows overriding the single backend crypto parameter profile
+        (:class:`~penumbra.client.CryptoProfile`).
+
         ``keys`` selects the round-trip path (:func:`penumbra.client.run_encrypted`): omit it for
-        the convenient single-process ``predict`` (ephemeral keys), or pass a
+        the convenient in-process all-in-one execution (ephemeral keys), or pass a
         :class:`~penumbra.client.KeySet` to **reuse** persisted keys and run the faithful
         client/server split (the server evaluates with only the public key). The keys must match
-        this model's radix width or the call fails loudly (``AGENTS.md`` §1.4).
-
-        Because TFHE is exact, the returned label equals the quantized-cleartext label bit-for-bit
-        (``AGENTS.md`` §1.1); this method adds no crypto — it only quantizes the input and argmaxes
-        the output, delegating the encrypted evaluation to the runtime.
+        this model's radix width and backend or the call fails loudly (``AGENTS.md`` §1.4).
         """
         if self.graph is None or self.input_scale is None:
             raise RuntimeError("call quantize() before predict_encrypted()")
@@ -445,7 +454,7 @@ class Model:
         in_spec = QuantSpec(scale=self.input_scale, bits=self.input_bits, signed=False)
         int_inputs = [in_spec.quantize(row).tolist() for row in batch]
 
-        outputs = run_encrypted(self.graph, int_inputs, keys=keys)
+        outputs = run_encrypted(self.graph, int_inputs, keys=keys, backend=backend, profile=profile)
         return self._decode(outputs, single=single, return_logits=return_logits)
 
     def _decode(self, outputs: list[list[int]], *, single: bool, return_logits: bool):
