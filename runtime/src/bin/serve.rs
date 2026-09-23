@@ -14,8 +14,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use penumbra_fhe_runtime::{
-    check_graph_bit_width_budget, ensure_num_blocks_match, ensure_profile_match, evaluate_graph,
-    load_server_key, CtVec, EvalCtx, Graph, TfheProfile,
+    check_graph_bit_width_budget, deserialize_cts_batch, ensure_num_blocks_match, load_server_key,
+    serialize_cts_batch, CtVec, EvalCtx, Graph, TfheBackend,
 };
 
 fn main() -> ExitCode {
@@ -64,16 +64,15 @@ fn run() -> Result<(), String> {
     // A key generated for a different radix width cannot evaluate this model (the "key mismatch"
     // failure mode, ROADMAP Phase 9) — fail loudly before touching ciphertext (`AGENTS.md` §1.4).
     ensure_num_blocks_match(key_num_blocks, graph.num_blocks)?;
-    ensure_profile_match(profile, TfheProfile::default())?;
+    // Evaluate under the profile the key was generated with: a "gaussian" server key is as
+    // valid as the default one (`PROJECT.md` §12 — the single TFHE override knob). The profile
+    // drives keygen and key serialization only; the graph walk is identical either way.
+    let backend = TfheBackend::new(profile);
 
     let in_bytes = std::fs::read(&in_path)
         .map_err(|e| format!("cannot read ciphertext from {}: {e}", in_path.display()))?;
-    let inputs: Vec<CtVec> = bincode::deserialize(&in_bytes).map_err(|e| {
-        format!(
-            "cannot deserialize ciphertext batch from {} (is it a Penumbra .cts file?): {e}",
-            in_path.display()
-        )
-    })?;
+    let inputs: Vec<CtVec> = deserialize_cts_batch(&in_bytes)
+        .map_err(|e| format!("{e} (from {})", in_path.display()))?;
 
     let ctx = EvalCtx {
         sk: &sk,
@@ -86,16 +85,15 @@ fn run() -> Result<(), String> {
     for (i, ct) in inputs.into_iter().enumerate() {
         let mut env = HashMap::new();
         env.insert(input_name.clone(), ct);
-        let out =
-            evaluate_graph(&ctx, &graph, env).map_err(|e| format!("evaluating sample {i}: {e}"))?;
+        let out = penumbra_core::eval::evaluate_graph(&backend, &ctx, &graph, env)
+            .map_err(|e| format!("evaluating sample {i}: {e}"))?;
         let produced = out
             .get(&output_name)
             .ok_or_else(|| format!("sample {i}: graph did not produce output '{output_name}'"))?;
         outputs.push(produced.clone());
     }
 
-    let out_bytes = bincode::serialize(&outputs)
-        .map_err(|e| format!("cannot serialize output ciphertext batch: {e}"))?;
+    let out_bytes = serialize_cts_batch(&outputs)?;
     std::fs::write(&out_path, out_bytes).map_err(|e| {
         format!(
             "cannot write output ciphertext to {}: {e}",

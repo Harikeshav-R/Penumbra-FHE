@@ -186,7 +186,6 @@ The encrypted path fails at the earliest point with an actionable message, never
 | Profile/backend mismatch | `run_encrypted` / `predict_encrypted` | `profile/backend mismatch: profile is for backend '…', but this run uses '…'` |
 | Both keys and profile passed | `run_encrypted` / `predict_encrypted` | `cannot specify both 'keys' and 'profile': keys already carry their parameter profile…` |
 | Key/model `num_blocks` mismatch | `run_encrypted` / `serve` | `key/model mismatch: this key was generated for num_blocks=A, but the model needs num_blocks=B…` |
-| Key/profile mismatch | `run_encrypted` / `serve` | `key/profile mismatch: this key was generated under crypto profile '…', but this run uses '…'…` |
 | Missing/corrupt key or ciphertext file | key/ciphertext load | `cannot deserialize … (is it a Penumbra … file?)` |
 | Op unsupported **on the selected backend** | graph load (before keygen) | names the op, the node, and the backend — never a silent approximation (`AGENTS.md` §1.4) |
 | Key or ciphertext from a **different backend** | key/ciphertext load | `backend/scheme mismatch for …: expected '…', found '…'` (Phase 12.1) |

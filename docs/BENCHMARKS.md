@@ -279,13 +279,13 @@ uv run --extra ml --system-certs python examples/faces/olivetti_export.py     # 
 
 # Time the encrypted forward pass (release; the golden tests carry the timing):
 cargo test --workspace --release --test golden_logreg -- --nocapture                  # ~30 s/sample
-cargo test --release --test golden_cnn    -- --nocapture                  # ~3-4 min/sample
-cargo test --release --test golden_digits -- --ignored --nocapture        # minutes/sample (real digits)
-cargo test --release --test golden_qat    -- --ignored --nocapture        # minutes/sample (QAT)
-cargo test --release --test golden_faces  -- --ignored --nocapture        # minutes/sample (faces)
+cargo test --workspace --release --test golden_cnn    -- --nocapture                  # ~3-4 min/sample
+cargo test --workspace --release --test golden_digits -- --ignored --nocapture        # minutes/sample (real digits)
+cargo test --workspace --release --test golden_qat    -- --ignored --nocapture        # minutes/sample (QAT)
+cargo test --workspace --release --test golden_faces  -- --ignored --nocapture        # minutes/sample (faces)
 
 # Inspect a model's per-tensor bit-widths without running FHE:
-cargo run --release --bin inspect ../examples/mnist/phase5_digits_fixture.json
+cargo run --release -p penumbra-fhe-runtime --bin inspect examples/mnist/phase5_digits_fixture.json
 
 # Full cross-backend comparison sweep across all 7 fixtures (machine otherwise idle):
 cargo +nightly build -p penumbra-bench --features ckks --release --bin penumbra-bench-report
