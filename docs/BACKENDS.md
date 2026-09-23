@@ -8,9 +8,8 @@ Read [`PROJECT.md`](../PROJECT.md) §4–§6 first for the narrow-waist architec
 
 | Backend | Crate | Scheme | Library | Arithmetic | Status |
 |---|---|---|---|---|---|
-| `tfhe` | `penumbra-tfhe` | TFHE / CGGI | [`tfhe-rs`](https://github.com/zama-ai/tfhe-rs) | exact, small signed integers | reference implementation |
-| `ckks` | `penumbra-ckks` | CKKS | [`poulpy-ckks`](https://github.com/phantomzone-org/poulpy) | approximate reals, SIMD-batched | planned (`ROADMAP.md` Phase 12) |
-
+| `tfhe` | `penumbra-tfhe` | TFHE / CGGI | [`tfhe-rs`](https://github.com/zama-ai/tfhe-rs) | exact, small signed integers | reference implementation (Phase 12.1) |
+| `ckks` | `penumbra-ckks` | CKKS | [`poulpy-ckks`](https://github.com/phantomzone-org/poulpy) | approximate reals, SIMD-batched | implemented (Phase 12.2) |
 The second backend exists to make a **controlled comparison** possible, not to make Penumbra
 a general multi-scheme framework (`PROJECT.md` §1, §18). Everything below is in service of
 that: two schemes, one graph, one harness, one set of numbers.
@@ -25,21 +24,21 @@ schemes multiply.
 ┌─ Layer 3: MODEL ADAPTERS (grows per use case — NO crypto here) ─────┐
 │  MNIST CNN │ face classifier │ tabular MLP │ ...                     │
 └───────────────────────────────┬──────────────────────────────────────┘
-                                 │  ◀── waist 1: the stable IR
+                                │  ◀── waist 1: the stable IR
 ┌─ Layer 2: IR + OP REGISTRY + EVAL LOOP (fixed, backend-neutral) ────┐
 │  a graph of ~8 op types, walked once: Linear, Conv2d, Requant, ...   │
 └───────────────────────────────┬──────────────────────────────────────┘
-                                 │  ◀── waist 2: the `Backend` trait
+                                │  ◀── waist 2: the `Backend` trait
 ┌─ Layer 1: FHE BACKENDS (pluggable — one per scheme) ────────────────┐
 │   penumbra-tfhe (tfhe-rs)      │      penumbra-ckks (poulpy-ckks)    │
 │   exact ints, LUT via PBS      │      approx reals, polynomials      │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-Layer 2 is written once and knows nothing about either scheme. This is not aspirational —
-it is already nearly true: `eval.rs` and `ir.rs` contain **zero** `tfhe` imports today, and
-five of the seven ops (`linear`, `conv2d`, `pool`, `add`, `argmax`) never name a `tfhe` type
-either. The coupling that remains lives in two type aliases and two ops (see below).
+Layer 2 is written once and knows nothing about either scheme. As of Phase 12.1,
+`crates/penumbra-core` contains **zero** cryptographic dependencies, and `crates/penumbra-tfhe`
+realizes the `Backend` trait against `tfhe-rs`. The `runtime` crate serves as a backward-compatible
+facade re-exporting both crates.
 
 ### The discipline, stated both ways
 
@@ -80,16 +79,17 @@ what a general FHE API might look like. Every row below is a real call site.
 | ct ≫ k | `requant.rs:226` | `scalar_right_shift_parallelized` | rescale / plaintext scaling |
 | apply univariate f | `activation.rs:104-115`, `requant.rs:193-232` | `generate_lookup_table` + `apply_lookup_table` (**PBS**) | polynomial approximation of the same tabulated f |
 
-### Key and boundary primitives (client side)
+### Key and boundary primitives (client side & preflight)
 
-| Primitive | Used by | `tfhe-rs` today |
-|---|---|---|
-| keygen | `keys.rs:58` | `gen_keys_radix` |
-| encrypt | `encrypt.rs:21` | `ck.encrypt_signed` |
-| decrypt | `encrypt.rs:35`, `:44` | `ck.decrypt_signed` |
-| key (de)serialize | `keys.rs:98-165` | `bincode` over serde |
-| ciphertext (de)serialize | `encrypt.rs` | `bincode` over serde |
-
+| Primitive | Used by | `tfhe-rs` today | CKKS realization |
+|---|---|---|---|
+| keygen | `keys.rs:58` | `gen_keys_radix` | `keygen(&params)` |
+| encrypt | `encrypt.rs:21` | `ck.encrypt_signed` | `encrypt(ck, input)` |
+| decrypt | `encrypt.rs:35`, `:44` | `ck.decrypt_signed` | `decrypt_vec(ck, out)` / `decrypt_label` |
+| key wire serialize | `keys.rs:45`, `:96` | `TaggedKey` over `bincode` | `TaggedKey` over `bincode` |
+| ciphertext (de)serialize | `wire.rs` / `encrypt.rs` | `TaggedCts` over `bincode` (shared Layer 2) | `TaggedCts` over `bincode` (shared Layer 2) |
+| budget preflight | `backend.rs:27` | `check_graph_bit_width_budget` | `check_graph_depth_budget` |
+| op cost proxy | `ops/*.rs` | analytic `Op::cost` | analytic `Op::cost` |
 ### The two hard rows
 
 Everything above except the last two rows of the evaluation table maps onto CKKS cleanly.
@@ -137,6 +137,31 @@ property of the chosen scale rather than of the implementation.
 ## Cost models
 
 The two schemes are fast and slow at opposite things. There is no single cost proxy.
+Cost proxies are derived analytically via `Op::cost(&self, input_lens: &[usize]) -> Vec<(&'static str, u64)>`
+so the measurement code in `penumbra-core` and `penumbra-bench` stays completely scheme-neutral:
+
+### TFHE Cost Counters
+
+| Counter | Meaning |
+|---|---|
+| `bootstraps` | explicit programmable bootstraps issued (`apply_lookup_table`) |
+| `cmp_pbs_ops` | PBS-bearing comparison/shift primitives invoked (`scalar_max`, `scalar_min`, `scalar_right_shift`, `scalar_ge`, `max`); each costs >= 1 internal PBS |
+| `scalar_mul` | ciphertext x plaintext scalar (PBS-free) |
+| `scalar_add` | ciphertext + plaintext scalar (PBS-free) |
+| `ct_add` | ciphertext + ciphertext (PBS-free) |
+
+### CKKS Cost Counters
+
+| Counter | Meaning |
+|---|---|
+| `rotations` | slot rotations the BSGS linear map plan performs (`PreparedLinearMap::rotation_count`) |
+| `rescales` | rescales consumed — one per linear-map evaluation, one per polynomial level |
+| `poly_evals` | polynomial approximations evaluated |
+| `depth_levels` | multiplicative levels consumed (realized depth) |
+
+*Note on depth:* `depth_levels` is the **realized** depth of the fitted polynomial (`precision_at_depth(..).depth`),
+whereas `check_graph_depth_budget` budgets the **worst case** `bsgs_eval_depth(max_poly_degree, MinDepth)`.
+Realized <= budgeted is expected, not a bug.
 
 | | TFHE (`penumbra-tfhe`) | CKKS (`penumbra-ckks`) |
 |---|---|---|
@@ -160,7 +185,7 @@ layer named (`AGENTS.md` §1.3). They are not the same budget.
 | The budget | radix capacity: `num_blocks × MESSAGE_BITS` bits | multiplicative depth / level budget, and scale precision |
 | What consumes it | accumulator growth (`b + log2(N)`) | every ciphertext-plaintext multiply and every polynomial degree |
 | What restores it | `Requant` (a PBS) narrows back to `MESSAGE_BITS` | rescale, or bootstrapping |
-| Enforced by | `check_graph_bit_width_budget` (`eval.rs:237`) | a depth/scale check at the same seam |
+| Enforced by | `Backend::check_graph_budget` (radix check) | `Backend::check_graph_budget` (depth/scale check) |
 | Overflow symptom | silently wrong ciphertext | precision collapse, then noise |
 
 The bit-width tracker in Layer 2 (`propagate_bit_widths`, `eval.rs:182`) is scheme-neutral
@@ -178,8 +203,9 @@ in the same change:
    at load time with the op and node named.
 4. **Declare the comparator** — exact, or a per-model error bound — and add correctness tests
    against `reference.py`'s output at that comparator, for the committed fixtures.
-5. **Register with the harness** (`penumbra-bench`) so the backend is measured by the same
-   code as every other backend.
+5. **Register with the harness** (`penumbra-bench`): implement `check_graph_budget`, `serialize_client_key`,
+   `serialize_server_key`, and `Op::cost`, then add the backend constructor to `available_backends()` so
+   the backend is measured by the same code as every other backend.
 6. **Docs**: this file's tables, `docs/SUPPORTED-OPS.md` support columns, and a
    `docs/NOTES-<scheme>.md` spike record.
 
@@ -203,10 +229,13 @@ currency is `CtVec` — conceptually one ciphertext per scalar value.
   become rotation-and-sum patterns. Substantially more implementation work and a real risk of
   the packing layout leaking upward into Layer 2.
 
-**Recommendation: B, with A as the spike's stepping stone.** A single-slot spike proves the
-plumbing (Phase 12.0); shipping A as the final backend would make the headline result an
-artifact of our implementation rather than of the scheme. Whichever is chosen must be stated
-in `docs/COMPARISON.md`'s threats-to-validity section.
+**Decision (settled in Phase 12.0): Option B (tensor slot packing).** Empirical benchmarks in
+the Phase-12.0 spike (`crates/spike-ckks`, `docs/NOTES-ckks.md`) showed that evaluating an
+activation layer across 128 packed slots in a single ciphertext requires only ~0.26 ms in
+`--release`. Evaluating scalar ciphertexts one value at a time (Option A) would require 128
+independent polynomial evaluations, making inference over $100\times$ slower and artificially
+crippling CKKS. Whichever is chosen must be stated in `docs/COMPARISON.md`'s threats-to-validity
+section.
 
 ### 2. What `Requant` means under CKKS
 
@@ -218,27 +247,29 @@ CKKS has no such constraint — its analogue is a rescale, which is nearly free.
 - **Option B — split it**: apply the ReLU polynomial, treat the fixed-point rescale as a
   no-op absorbed into the scale bookkeeping.
 
-**Recommendation: A**, because it keeps both backends walking an identical node list, which
-is what backend parity requires. B is a Phase-12.4 optimization if the numbers justify it.
+**Decision (settled in Phase 12.2): Option A.** Keeps both backends walking an identical node
+list, which is what backend parity requires (`AGENTS.md` §1.2). The continuous piecewise-linear
+function `f(t) = clamp((max(t, 0)·mult + round_bias) / 2^shift, 0, max_val)` is fitted over
+the active clamp interval `[-t_sat, t_sat]`.
 
 ### 3. How the approximation knob is exposed
 
 Polynomial degree trades accuracy against depth against latency — it is CKKS's central
 tuning parameter, with no TFHE counterpart. `PROJECT.md` §12 commits to *one* crypto override
-knob. Options: fold degree into the per-backend parameter profile (keeping "one knob" true
-per backend), or expose it separately as an accuracy target the library converts to a degree.
-**Recommendation: the former** — it preserves the documented API discipline, and an accuracy
-target is a better user-facing shape than a raw degree.
+knob.
 
+**Decision (settled in Phase 12.2):** Folded into the per-backend parameter profile as
+`CkksParams::max_poly_degree` (preserving the one-knob discipline, `PROJECT.md` §12). The
+per-backend profile exposes this single lever while quantization remains an automated library
+service.
 ## Backend selection
 
 Selection is not parameter exposure. Users pick a **named backend**; they never touch
 `tfhe-rs` or `poulpy` parameters directly (`PROJECT.md` §12, `AGENTS.md` §6).
 
-> ⚠️ Keys and ciphertext are **not** portable between backends, and the `.cts` wire format
-> carries no scheme tag today. Feeding a TFHE key to the CKKS backend must fail with an
-> actionable message, not a deserialization panic (`AGENTS.md` §1.4). Tagging the wire format
-> is a Phase-12.1 task.
+> Keys and ciphertext are **not** portable between backends. The wire format is tagged with a
+> backend scheme header (`"tfhe"` or `"ckks"`); feeding mismatched material fails loudly at
+> load time with an actionable message naming both backends (`AGENTS.md` §1.4).
 
 ## See also
 

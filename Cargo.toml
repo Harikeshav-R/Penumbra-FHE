@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/penumbra-core",
+    "crates/penumbra-tfhe",
+    "crates/penumbra-ckks",
+    "crates/penumbra-bench",
+    "runtime",
+]
+exclude = [
+    "crates/spike-ckks",
+]
+
+[profile.release]
+opt-level = 3

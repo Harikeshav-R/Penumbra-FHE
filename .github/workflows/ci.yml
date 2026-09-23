@@ -15,11 +15,8 @@ env:
 
 jobs:
   rust:
-    name: Rust runtime (fmt, clippy, test)
+    name: Rust workspace (fmt, clippy, test)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: runtime
     steps:
       - uses: actions/checkout@v7
 
@@ -30,19 +27,68 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: runtime
 
       - name: Format check
         run: cargo fmt --all -- --check
 
       - name: Clippy (warnings as errors)
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       # FHE is dramatically faster in release; debug test runs are impractically slow.
       - name: Test (release)
-        run: cargo test --release --all-features
+        run: cargo test --workspace --release
 
+  ckks-spike:
+    name: CKKS spike (fmt, clippy, test - nightly)
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-C target-feature=+avx2,+fma"
+    defaults:
+      run:
+        working-directory: crates/spike-ckks
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Nightly Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/spike-ckks
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (warnings as errors)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test (release)
+        run: cargo test --release
+
+  ckks-backend:
+    name: CKKS backend (clippy, test - nightly)
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-C target-feature=+avx2,+fma"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Nightly Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Clippy (warnings as errors)
+        run: |
+          cargo clippy -p penumbra-ckks --features ckks --all-targets -- -D warnings
+          cargo clippy -p penumbra-bench --features ckks --all-targets -- -D warnings
+      - name: Test (release)
+        run: |
+          cargo test -p penumbra-ckks --features ckks --release
+          cargo test -p penumbra-bench --features ckks --release
   python:
     name: Python front end (ruff, black, pytest)
     runs-on: ubuntu-latest

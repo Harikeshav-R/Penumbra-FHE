@@ -535,41 +535,41 @@ Prove the crypto plumbing before designing anything around it. If something core
 or broken upstream, that must surface **now**, not after a trait boundary has been built
 around it.
 
-- [ ] **Answer the toolchain question.** Does `poulpy-ckks` 0.8.3 build on stable Rust, or
+- [x] **Answer the toolchain question.** Does `poulpy-ckks` 0.8.3 build on stable Rust, or
       does it require the nightly its upstream `rust-toolchain.toml` pins (it depends on
       `libm`'s `unstable-float`)? Record the answer in `docs/NOTES-ckks.md`.
-- [ ] **Answer the platform question.** Confirm `poulpy-cpu-arm` (NEON) works on the
+- [x] **Answer the platform question.** Confirm `poulpy-cpu-arm` (NEON) works on the
       development machine. `poulpy-cpu-avx` is x86-64 only; CI is x86-64. Decide which HAL
       backend benchmarks are pinned to.
-- [ ] **Confirm coexistence.** `tfhe` 1.6 and the `poulpy` crates must resolve together in one
+- [x] **Confirm coexistence.** `tfhe` 1.6 and the `poulpy` crates must resolve together in one
       lockfile. Cheaper to discover before the refactor than after.
-- [ ] **Implement one real operation** from Penumbra's inference path — a packed dot product
+- [x] **Implement one real operation** from Penumbra's inference path — a packed dot product
       or a single `Linear` layer — directly against `poulpy-ckks`, standalone. Encrypt → op →
       decrypt → correct output, end to end.
-- [ ] **Implement one nonlinearity** as a polynomial: ReLU via the `approximation` module, and
+- [x] **Implement one nonlinearity** as a polynomial: ReLU via the `approximation` module, and
       measure its error. This is where CKKS and TFHE genuinely diverge; do not defer it.
-- [ ] Record the parameter profile, the primitives used, and measured costs in
+- [x] Record the parameter profile, the primitives used, and measured costs in
       `docs/NOTES-ckks.md` — the same way `docs/NOTES-tfhe.md` closed the Phase-1 spike.
-- [ ] **Decide the slot-packing fork** (`docs/BACKENDS.md`) with the spike's evidence in hand.
+- [x] **Decide the slot-packing fork** (`docs/BACKENDS.md`) with the spike's evidence in hand.
 
 #### 12.1 — Workspace refactor + `Backend` trait extraction
 
 Keep this **mechanical**. It is a boundary-drawing exercise, not a rewrite.
 
-- [ ] Convert to a Cargo workspace under `crates/`: `penumbra-core`, `penumbra-tfhe`,
+- [x] Convert to a Cargo workspace under `crates/`: `penumbra-core`, `penumbra-tfhe`,
       `penumbra-bench` (`PROJECT.md` §13).
-- [ ] Move `ir.rs` and `eval.rs` into `penumbra-core` unchanged — they already have **zero**
+- [x] Move `ir.rs` and `eval.rs` into `penumbra-core` unchanged — they already have **zero**
       `tfhe` imports.
-- [ ] Extract the `Backend` trait from the primitives the ops already call
+- [x] Extract the `Backend` trait from the primitives the ops already call
       (`docs/BACKENDS.md`). Generalize `CtVec`/`EvalCtx` over it; change op *logic* as little
       as possible.
-- [ ] Move `keys.rs`, `encrypt.rs`, and `ops/` into `penumbra-tfhe` and implement the trait.
-- [ ] **Tag the key and ciphertext wire formats with a backend/scheme identifier.** Today
+- [x] Move `keys.rs`, `encrypt.rs`, and `ops/` into `penumbra-tfhe` and implement the trait.
+- [x] **Tag the key and ciphertext wire formats with a backend/scheme identifier.** Today
       `.cts` is bare `bincode` with no tag or version, so a cross-backend mix-up would be a
       deserialization panic rather than an actionable message (`AGENTS.md` §1.4).
-- [ ] Keep the six binary names (`keygen`, `encrypt`, `serve`, `decrypt`, `predict`,
+- [x] Keep the six binary names (`keygen`, `encrypt`, `serve`, `decrypt`, `predict`,
       `inspect`) resolvable — `python/penumbra/client.py` shells out to them by name.
-- [ ] Update CI: workspace-aware caching and working directories; decide what
+- [x] Update CI: workspace-aware caching and working directories; decide what
       `--all-features` means now that it could enable two backends at once.
 
 > **Exit criterion for this stage specifically: every existing test passes unchanged.** That
@@ -578,35 +578,35 @@ Keep this **mechanical**. It is a boundary-drawing exercise, not a rewrite.
 
 #### 12.2 — The CKKS backend
 
-- [ ] New `penumbra-ckks` crate implementing `Backend` against the pinned `poulpy-ckks`.
-- [ ] Implement the op set: `Linear`, `Conv2d`, `Pool`, `Add` (native), `Activation` and
+- [x] New `penumbra-ckks` crate implementing `Backend` against the pinned `poulpy-ckks`.
+- [x] Implement the op set: `Linear`, `Conv2d`, `Pool`, `Add` (native), `Activation` and
       `Requant` (polynomial), `Argmax` (polynomial step, or rejected — decide and document).
-- [ ] Any op the backend cannot realize is **rejected loudly at load time**, naming the op,
+- [x] Any op the backend cannot realize is **rejected loudly at load time**, naming the op,
       the node, and the backend. Never silently approximated.
-- [ ] Depth/scale budget check at the same seam as the TFHE bit-width budget check, failing
+- [x] Depth/scale budget check at the same seam as the TFHE bit-width budget check, failing
       loudly with the offending layer named (`AGENTS.md` §1.3).
-- [ ] **Declare and commit a per-model error bound**; correctness tests assert against
+- [x] **Declare and commit a per-model error bound**; correctness tests assert against
       `reference.py`'s output at that comparator and always report the measured error.
-- [ ] Log every `poulpy` API surprise in `docs/NOTES-ckks.md` rather than working around it
+- [x] Log every `poulpy` API surprise in `docs/NOTES-ckks.md` rather than working around it
       quietly.
 
 #### 12.3 — The shared harness
 
-- [ ] Per-node timing and op-counting instrumented once in `penumbra-core`'s graph walker, so
+- [x] Per-node timing and op-counting instrumented once in `penumbra-core`'s graph walker, so
       both backends are measured by the same code. There is **no** timing instrumentation in
       the repo today — this is greenfield, which is good for the comparison.
-- [ ] `criterion` benchmarks in `penumbra-bench`, parameterized over backend × model.
-- [ ] Report ciphertext size, key material size, and each scheme's own cost proxy (bootstrap
+- [x] `criterion` benchmarks in `penumbra-bench`, parameterized over backend × model.
+- [x] Report ciphertext size, key material size, and each scheme's own cost proxy (bootstrap
       count for TFHE; depth, rotations, rescales for CKKS).
-- [ ] Confirm both backends run the same model/op set through the same entry point.
+- [x] Confirm both backends run the same model/op set through the same entry point.
 
 #### 12.4 — The comparison
 
-- [ ] Run both backends over the committed fixtures (Phase-2 logreg through Phase-7 faces) in
+- [x] Run both backends over the committed fixtures (Phase-2 logreg through Phase-7 faces) in
       `--release`, on the pinned machine and HAL backend.
-- [ ] Fill in `docs/BENCHMARKS.md` (the numbers) and `docs/COMPARISON.md` (the argument,
+- [x] Fill in `docs/BENCHMARKS.md` (the numbers) and `docs/COMPARISON.md` (the argument,
       including which threats to validity are live for each number).
-- [ ] State the slot-packing decision prominently wherever results appear.
+- [x] State the slot-packing decision prominently wherever results appear.
 
 ### Exit Criteria
 

@@ -156,15 +156,14 @@ approximated, and the vocabulary never forks per backend (`AGENTS.md` §1.2).
 
 | Op | `tfhe` (reference) | `ckks` (Phase 12) | CKKS realization |
 |---|---|---|---|
-| `Linear` | ✅ exact, no PBS | planned | plaintext-mul + adds, SIMD-batched; spends one level |
-| `Conv2d` | ✅ exact, no PBS | planned | same pattern, batched; rotations for the window |
-| `Pool` (`avg`) | ✅ exact, no PBS | planned | adds / rotations |
-| `Pool` (`max`) | ✅ exact, comparison PBS | planned | polynomial max — approximate |
-| `Add` | ✅ exact, no PBS | planned | native ciphertext add |
-| `Activation` | ✅ exact, one PBS | planned | polynomial fitted to the same `lut` table — approximate |
-| `Requant` | ✅ exact, one PBS | planned | ReLU polynomial + native rescale — approximate |
-| `Argmax` | ✅ exact, comparison PBS | **undecided** | a polynomial step function, poor at low degree. May be rejected instead; multi-class heads already decrypt logits and argmax client-side. |
-
+| `Linear` | ✅ exact, no PBS | ✅ approximate within declared bound | BSGS diagonal transform + plaintext adds; spends one level (`log_delta` bits) |
+| `Conv2d` | ✅ exact, no PBS | ✅ approximate within declared bound | lowered to plaintext im2col matrix; evaluated via BSGS diagonal transform |
+| `Pool` (`avg`) | ✅ exact, no PBS | ✅ approximate within declared bound | lowered to 0/1 window sum matrix; evaluated via BSGS diagonal transform |
+| `Pool` (`max`) | ✅ exact, comparison PBS | ❌ rejected at load time | polynomial sign approximation depth exceeds level budget; use Pool(avg) or TFHE backend |
+| `Add` | ✅ exact, no PBS | ✅ approximate within declared bound | native ciphertext-ciphertext add (zero depth) |
+| `Activation` | ✅ exact, one PBS | ✅ approximate within declared bound | exact Chebyshev interpolating polynomial over LUT domain; zero fit error on integer inputs |
+| `Requant` | ✅ exact, one PBS | ✅ approximate within declared bound | continuous ReLU polynomial approximation + scale/shift; per-channel via 0/1 mask multiply |
+| `Argmax` | ✅ exact, comparison PBS | ✅ approximate within declared bound | continuous piecewise-linear step approximation evaluated over normalized logit |
 Two notes that explain the whole column:
 
 - **CKKS has no lookup table and no programmable bootstrap.** Every op marked *approximate*

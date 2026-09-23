@@ -1,6 +1,6 @@
 # ---- Rust ----
-/target/
-runtime/target/
+target/
+**/target/
 **/*.rs.bk
 # Cargo.lock IS committed: the runtime is the deployable app (publish = false), so we want
 # reproducible builds. uv.lock (Python) is committed for the same reason.
@@ -47,5 +47,6 @@ data/
 
 # ---- Agent / session scaffolding (local only, never tracked) ----
 .claude/
+.omp/
 # local code-review notes — not project source
 CODE_REVIEW_*.md

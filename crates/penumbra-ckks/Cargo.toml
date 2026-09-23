@@ -1,0 +1,94 @@
+[package]
+name = "penumbra-ckks"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.83"
+license = "Apache-2.0"
+description = "Layer 1 of Penumbra-FHE: CKKS backend implemented over poulpy-ckks."
+repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
+publish = false
+
+[features]
+# OFF by default: poulpy 0.8.3 needs nightly (`#![feature(f128)]` in poulpy-ckks,
+# `#![feature(associated_type_defaults)]` in poulpy-hal). With the feature off this crate
+# is an empty lib that compiles on stable, so an upstream toolchain change cannot break
+# the reference TFHE backend's stable CI gate (ROADMAP Phase 12 pitfalls, "Nightly creep").
+default = []
+ckks = [
+    "dep:poulpy-hal",
+    "dep:poulpy-core",
+    "dep:poulpy-ckks",
+    "dep:poulpy-cpu-ref",
+    "dep:poulpy-cpu-arm",
+    "dep:poulpy-cpu-avx",
+    "dep:anyhow",
+    "dep:getrandom",
+]
+
+[dependencies]
+penumbra-core = { path = "../penumbra-core" }
+serde = { version = "1", features = ["derive"] }
+bincode = "1.3"
+poulpy-hal = { version = "=0.8.3", optional = true }
+serde_json = "1"
+poulpy-core = { version = "=0.8.3", optional = true }
+# NOTE: deliberately no `test-utils` — that feature gates poulpy's test_suite, which a
+# production backend must not depend on (docs/NOTES-ckks.md).
+poulpy-ckks = { version = "=0.8.3", optional = true }
+getrandom = { version = "0.2", optional = true }
+poulpy-cpu-ref = { version = "=0.8.3", features = ["enable-ckks", "enable-core"], optional = true }
+anyhow = { version = "1.0", optional = true }
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+poulpy-cpu-arm = { version = "=0.8.3", features = ["enable-neon", "enable-ckks"], optional = true }
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+poulpy-cpu-avx = { version = "=0.8.3", features = ["enable-avx", "enable-ckks"], optional = true }
+
+[[example]]
+name = "calibrate"
+required-features = ["ckks"]
+
+[[test]]
+name = "wire_format_tags"
+required-features = ["ckks"]
+
+[[test]]
+name = "ckks_unsupported_ops"
+required-features = ["ckks"]
+
+[[test]]
+name = "ckks_golden_sklearn"
+required-features = ["ckks"]
+
+[[test]]
+name = "ckks_golden_logreg"
+required-features = ["ckks"]
+
+[[test]]
+name = "ckks_golden_cnn"
+required-features = ["ckks"]
+
+[[test]]
+name = "ckks_golden_digits"
+required-features = ["ckks"]
+
+[[test]]
+name = "ckks_golden_qat"
+required-features = ["ckks"]
+
+[[test]]
+name = "ckks_golden_onnx"
+required-features = ["ckks"]
+
+[[test]]
+name = "ckks_golden_faces"
+required-features = ["ckks"]
+
+[[test]]
+name = "ckks_golden_ops"
+required-features = ["ckks"]
+
+[[test]]
+name = "cost_model"
+required-features = ["ckks"]

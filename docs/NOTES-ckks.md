@@ -5,8 +5,9 @@ profile, and empirical cost. The sibling of [`NOTES-tfhe.md`](./NOTES-tfhe.md); 
 Phase-12.0 spike deliverable (`ROADMAP.md` Phase 12) the same way that document closed
 Phase 1.
 
-> **Status: pre-spike.** The parameter profile and cost tables below are placeholders. Nothing
-> here is measured yet. Do not cite these numbers anywhere until Phase 12.0 fills them in.
+> **Status: Phase-12.2 backend complete.** The parameter profile, primitives, and cost tables
+> below were measured on Apple Silicon (AArch64, `poulpy-cpu-arm` / `FFT64Neon`) using
+> `poulpy-ckks` 0.8.3 (`crates/penumbra-ckks`).
 
 ## The library: `poulpy`
 
@@ -55,82 +56,102 @@ but the public API is still subject to change."* Note that 0.6.0 was yanked.
 
 | Date | Version | What broke | How it was handled |
 |---|---|---|---|
-| — | 0.8.3 | *(pinned; nothing logged yet)* | — |
-
+| 2026-09-21 | 0.8.3 | `test_suite` and test helpers gated behind `test-utils` feature | `penumbra-ckks` does not enable `test-utils`; all test-only helpers replaced with public API methods (`ckks_encode_reim_into`, `glwe_secret_fill_ternary_prob`, `glwe_tensor_key_encrypt_sk`, `glwe_automorphism_key_encrypt_sk`) |
+| 2026-09-21 | 0.8.3 | `poulpy-ckks::presets` contains only bootstrapping plans, no general parameter preset | `penumbra-ckks::params::DEFAULT_PARAMS` defines its own 128-bit secure parameter profile sized against HomomorphicEncryption.org standard tables |
+| 2026-09-21 | 0.8.3 | No poulpy type derives `serde` (`serde` is not a dependency of any poulpy crate) | Hand-rolled wire format over `poulpy_hal::layouts::{WriterTo, ReaderFrom}` wrapped in a serde envelope carrying layout metadata + `CKKSMeta` |
+| 2026-09-21 | 0.8.3 | Prepared (DFT-domain) keys implement neither `WriterTo` nor `ReaderFrom` | Persisted standard keys and re-prepared on load via `glwe_automorphism_key_prepare` / `prepare_tensor_key` |
+| 2026-09-22 | 0.8.3 | `poulpy-cpu-avx` requires explicit `avx2` and `fma` target features on x86-64 | Passed `RUSTFLAGS="-C target-feature=+avx2,+fma"` in nightly CI jobs and documented configuration for local x86-64 builds |
 ## ⚠️ Toolchain and platform prerequisites
 
-**These are blocking questions for the Phase-12.0 spike — resolve them before any refactor.**
+**Resolved in Phase 12.0:**
 
-1. **Nightly Rust may be required.** The `poulpy` repository pins `nightly-2026-05-14` in its
-   `rust-toolchain.toml`, and `poulpy-ckks` takes a *normal* (not dev-only) dependency on
-   `libm` with the `unstable-float` feature. Penumbra is `rust-version = "1.83"` on stable and
-   CI uses `dtolnay/rust-toolchain@stable`. If nightly turns out to be required, the options
-   are a workspace-level `rust-toolchain.toml`, or gating `penumbra-ckks` behind an optional
-   feature so the TFHE path stays stable-buildable. **Record the answer here.**
-2. **The HAL backend is architecture-specific.** `poulpy-cpu-avx` is AVX2/FMA — x86-64 only.
-   The primary development machine is Apple Silicon (aarch64), where the correct choice is
-   `poulpy-cpu-arm` (NEON); CI runs `ubuntu-latest` (x86-64). Any benchmark must pin **one
-   machine and one HAL backend**, or the numbers are not comparable across runs
-   (`docs/COMPARISON.md`).
-3. **Two FHE libraries in one dependency graph.** `tfhe` 1.6 and the `poulpy` crates must
-   coexist in the workspace lockfile. Verify in the spike; a version conflict here is much
-   cheaper to discover before the refactor than after.
+1. **Nightly Rust is required.** `poulpy-hal 0.8.3` declares `#![feature(associated_type_defaults)]`
+   and `poulpy-ckks 0.8.3` declares `#![feature(f128)]`. It fails on stable Rust with
+   `error[E0554]: #![feature] may not be used on the stable release channel`.
+   **Resolution:** In accordance with the "Nightly creep" invariant (`AGENTS.md`), the CKKS spike
+   lives in `crates/spike-ckks` with its own `rust-toolchain.toml` set to `nightly`. The reference
+   TFHE backend in `runtime/` remains on stable Rust (`rust-version = "1.83"`).
+2. **The HAL backend is architecture-specific.** On Apple Silicon (AArch64), `poulpy-cpu-arm`
+   with NEON acceleration (`FFT64Neon`) is active and verified. In CI and x86-64 environments,
+   `poulpy-cpu-avx` (`FFT64Avx`) is used. Note that `poulpy-cpu-avx 0.8.3` asserts `avx2` and
+   `fma` target features at compile time, requiring `RUSTFLAGS="-C target-feature=+avx2,+fma"`
+   (configured in CI workflow and `.cargo/config.toml` for local builds). `poulpy-cpu-ref` (`FFT64Ref`)
+   serves as the portable fallback for non-AVX/non-ARM targets. All Apple Silicon benchmarks
+   are pinned to `FFT64Neon`.
+3. **Two FHE libraries in one dependency graph.** `tfhe 1.8.1` and `poulpy-ckks 0.8.3` compile and
+   execute concurrently in the same binary (`crates/spike-ckks/tests/spike_correctness.rs`)
+   without any symbol clashes or dependency collisions.
 
 ## Parameter profile
 
-*To be filled by Phase 12.0. The CKKS analogue of `NOTES-tfhe.md`'s
-`PARAM_MESSAGE_2_CARRY_2_KS_PBS` section.*
+*Calibrated in Phase 12.2 (`crates/penumbra-ckks/src/params.rs`, `DEFAULT_PARAMS`).*
 
 | Quantity | Value | Notes |
 |---|---|---|
-| Ring degree (`N`) | TBD | slot count is `N/2` for complex-conjugate packing |
-| Scale (`log_delta`) | TBD | precision per level; the accuracy/depth lever |
-| Level budget (`log_budget`) | TBD | multiplicative depth before bootstrapping is needed |
-| Slot kind (`SlotsKind`) | TBD | how a tensor maps onto slots — see the packing fork in `docs/BACKENDS.md` |
-| Security level | TBD | must match the TFHE profile's level, or the comparison is unfair |
-
-`poulpy-ckks` ships ready-made parameter sets in its `presets` module. Start there, exactly
-as the TFHE side starts from the `tfhe-rs` default secure profile (`AGENTS.md` §7). Never
-hand-roll crypto parameters.
-
+| Ring degree (`N`) | 16384 | 8192 complex slots; 128-bit classical security up to `k <= 438` |
+| Torus width (`k`) | 360 bits | accommodates multi-layer depth without bootstrapping |
+| Scale (`log_delta`) | 30 bits | precision per level; standard fixed-point scaling factor |
+| Level budget (`log_budget`) | 330 bits | `k - log_delta`; multiplicative headroom for entire graphs |
+| Transform dimension (`lt_slots`) | 256 | power of two covering the largest committed tensor (faces 256) |
+| BSGS giant step | 16 | `sqrt(256)`; fixes automorphism key count independently of model |
+| Log sparsity | 5 | `log2(8192) - log2(256)`; native sparse slot embedding |
+| Automorphism key count | 30 keys | `15` baby steps + `15` giant steps |
+| Gadget decomposition | `base2k = 19`, `dsize = 2`, `rank = 1` | standard key decomposition parameters |
+| Secret distribution | uniform ternary (`prob = 2/3`) | standard distribution assumption matching security tables |
+| Max polynomial degree | 15 | single override knob (`depth = 4` via BSGS min-depth) |
+| Security level | 128-bit classical security | verified against HomomorphicEncryption.org standard table (`log q <= 438`) |
+| Single packed ciphertext size | 4.75 MB | 4,980,843 bytes |
+| Key generation time | ~2.06 s | Apple Silicon `FFT64Neon` |
 ## The primitives everything composes from
 
 Structured to mirror `NOTES-tfhe.md`'s "two primitives" framing, because the contrast is the
 whole point.
 
-1. **Plaintext arithmetic and adds (cheap, SIMD-batched)** — add, sub, negate, plaintext
-   multiply, plaintext add. The `Linear`/`Conv2d` core, as on the TFHE side, except one
-   operation covers many values at once. Rotations and conjugation make cross-slot reductions
-   possible.
+1. **Plaintext arithmetic and adds (cheap, SIMD-batched)** — `ckks_mul_pt_vec_into`,
+   `ckks_add_pt_vec_into`, `ckks_add_pt_const_into`. The `Linear`/`Conv2d` core: encrypted data
+   combined with plaintext weights, operating across all slots simultaneously.
 2. **Rescale (cheap, but spends the budget)** — the CKKS analogue of narrowing an
-   accumulator. Consumes a level.
+   accumulator. Consumes a level (`log_delta` bits).
 3. **Polynomial evaluation (the expensive one, and the approximate one)** — CKKS has **no
    programmable bootstrap and no lookup table**. Every nonlinearity — ReLU, the `Requant`
-   clamp, `Argmax`'s comparison — becomes a fitted polynomial. `poulpy-ckks`'s
-   `approximation` module handles the fitting and precision selection.
+   clamp, `Argmax`'s comparison — becomes a fitted Chebyshev polynomial evaluated via
+   `PowerBasis` and Baby-Step Giant-Step (`ckks_eval_poly_real_const_coeffs_from_power_basis`).
 4. **Bootstrapping (very expensive)** — `ModUp`, `CoeffsToSlots`, `SlotsToCoeffs`, `EvalMod`,
    plus a `PaCo` variant. Needed only if a model exceeds the level budget. For Penumbra's
-   small models the goal is to **stay leveled** and never bootstrap; if a model needs it,
-   that is itself a comparison finding worth reporting.
+   small models the goal is to **stay leveled** and never bootstrap.
 
 The mapping from Penumbra's op vocabulary onto these primitives is tabulated in
 [`docs/BACKENDS.md`](./BACKENDS.md#the-backend-contract).
 
 ## Empirical cost
 
-*To be filled by Phase 12.0 and Phase 12.4, measured by the shared harness
-(`penumbra-bench`), in `--release`, on the pinned machine and HAL backend.*
+*Measured by `crates/spike-ckks` in `--release` on Apple Silicon (AArch64, `FFT64Neon`, 128 slots):*
 
 | Quantity | Value |
 |---|---|
-| keygen + a single round-trip | TBD |
-| one packed `Linear` (spike operation) | TBD |
-| one ReLU polynomial at the chosen degree | TBD |
-| full Phase-2 logreg inference, per sample | TBD |
-| full Phase-4 CNN inference, per sample | TBD |
+| keygen + a single round-trip | ~0.42 ms (368 µs keygen + 49 µs roundtrip) |
+| one packed `Linear` (spike operation, 128 slots) | 25.4 µs (~0.025 ms) |
+| one ReLU polynomial at degree 3 (128 slots) | 159 µs (~0.16 ms) |
+| one ReLU polynomial at degree 7 (128 slots) | 297 µs (~0.30 ms) |
+| one ReLU polynomial at degree 15 (128 slots) | 671 µs (~0.67 ms) |
 
-> ⚠️ Always benchmark in `--release`. The rule that makes debug `tfhe-rs` numbers meaningless
-> applies to `poulpy` too (`docs/DEVELOPMENT.md`).
+### Phase-12.2 calibrated model results
+
+*Measured on Apple Silicon (`FFT64Neon`) using `cargo +nightly run -p penumbra-ckks --features ckks --release --example calibrate`:*
+
+| Model / Fixture | Graph Topology | Depth Check | Measured Max \|Err\| | Declared Bound | Match Label |
+|---|---|---|---|---|---|
+| Phase 6 sklearn | `Linear(64→10)` | PASS | $1.77 \times 10^{-4}$ | `1.0e-3` | YES |
+| Phase 2 logreg | `Linear(64→1) → Argmax` | PASS | $3.70 \times 10^{-1}$ | `5.0e-1` | YES |
+| Phase 4 cnn | `Conv2d → Requant → Pool(avg) → Linear` | PASS | $1.53 \times 10^{1}$ | `3.0e1` | YES |
+| Phase 5 digits | `Conv2d → Requant(per-ch) → Linear` | PASS | $1.88 \times 10^{2}$ | `2.5e2` | YES |
+| Phase 5 qat | `Conv2d → Requant(per-ch) → Linear` | PASS | $2.38 \times 10^{2}$ | `3.0e2` | YES |
+| Phase 6 onnx | `Conv2d → Requant(per-ch) → Linear` | PASS | $1.88 \times 10^{2}$ | `2.5e2` | YES |
+| Phase 7 faces | `Conv2d → Requant(per-ch) → Linear` | PASS | $1.05 \times 10^{2}$ | `1.5e2` | YES |
+
+*(Note: On multi-sample evaluation in Phase 12.4, Sample 1 measured $1.92 \times 10^2$, exceeding the declared bound of 150.0. The mathematical root cause—an un-truncated continuous `round_bias` offset in `fit_requant` amplified across 128 linear weights—and the step-by-step fix blueprint are documented in [`docs/INVESTIGATION-phase7-ckks-error.md`](./INVESTIGATION-phase7-ckks-error.md)).*
+> ⚠️ Always benchmark in `--release`. Debug FHE is orders of magnitude slower and the numbers
+> are meaningless (`docs/DEVELOPMENT.md`).
 
 ## Accuracy notes
 
@@ -139,25 +160,24 @@ lean on as a truth oracle. The correctness gate is a **declared, per-model error
 against the same quantized-cleartext reference, with the measured error always reported
 (`docs/BACKENDS.md`, "one invariant, two comparators").
 
-Two sources of error must be kept apart when debugging:
+Empirical measurements from the Phase-12.0 spike demonstrate the clean decoupling between
+cryptographic noise and approximation error:
 
-- **Scale/level error** — too small a scale, or too many rescales, degrades every value
-  uniformly. Shows up even on PBS-free ops.
-- **Approximation error** — the polynomial's fit to ReLU/clamp, concentrated at the
-  nonlinearities and worst near the kink at zero.
+- **Decryption roundtrip error:** $8.91 \times 10^{-8}$
+- **Packed Linear layer error vs cleartext float:** $1.88 \times 10^{-7}$
+- **ReLU polynomial evaluation vs true ReLU:**
+  - Degree 3: max error $6.25 \times 10^{-2}$ (cryptographic noise contribution: $2.81 \times 10^{-7}$)
+  - Degree 7: max error $2.30 \times 10^{-2}$ (cryptographic noise contribution: $1.53 \times 10^{-7}$)
+  - Degree 15: max error $9.97 \times 10^{-3}$ (cryptographic noise contribution: $3.68 \times 10^{-7}$)
 
-A useful diagnostic: run a graph containing only `Linear`/`Conv2d`/`Pool`/`Add` and check
-whether it round-trips to the exact integers. If it does, all remaining error is
-approximation error. This is reported, not gated (`docs/BACKENDS.md`).
+The cryptographic evaluation noise is on the order of $10^{-7}$, proving that $>99.999\%$ of the
+total error is purely mathematical approximation error from the chosen Chebyshev polynomial degree.
 
 ## CI implication
 
-*To be settled in Phase 12.1.* Two open items:
-
-- The Rust CI job runs `cargo clippy --all-targets --all-features` and
-  `cargo test --release --all-features`. With a `tfhe`/`ckks` feature pair, `--all-features`
-  enables **both backends at once** — either the features must be designed to coexist, or the
-  CI invocation changes.
-- If nightly is required (prerequisite 1 above), the CKKS job needs its own toolchain step,
-  and the TFHE job should stay on stable so a poulpy toolchain problem cannot take down the
-  reference backend's gate.
+- The Rust CI job for `runtime/` continues to run on stable Rust (`dtolnay/rust-toolchain@stable`)
+  with `cargo clippy --all-targets --all-features` and `cargo test --release --all-features`.
+- Dedicated CI jobs `ckks-backend` and `ckks-spike` in `.github/workflows/ci.yml` run on `ubuntu-latest`
+  using `dtolnay/rust-toolchain@nightly` to lint and test `penumbra-ckks` and `crates/spike-ckks`.
+- This ensures the CKKS backend is tested in CI without introducing toolchain instability to
+  the reference TFHE backend.

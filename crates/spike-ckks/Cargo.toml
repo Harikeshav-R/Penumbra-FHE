@@ -1,0 +1,25 @@
+[package]
+name = "spike-ckks"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+poulpy-hal = "0.8.3"
+poulpy-core = "0.8.3"
+poulpy-ckks = { version = "0.8.3", features = ["test-utils"] }
+poulpy-cpu-ref = { version = "0.8.3", features = ["enable-ckks", "enable-core"] }
+anyhow = "1.0"
+
+[dev-dependencies]
+# Coexistence test dependency: verify tfhe and poulpy compile together in one lockfile
+tfhe = { version = "1.8.1", features = ["shortint", "integer"] }
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+poulpy-cpu-arm = { version = "0.8.3", features = ["enable-neon", "enable-ckks"] }
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+poulpy-cpu-avx = { version = "0.8.3", features = ["enable-avx", "enable-ckks"] }
+
+[profile.release]
+opt-level = 3
