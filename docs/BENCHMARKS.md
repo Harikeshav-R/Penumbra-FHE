@@ -270,18 +270,15 @@ Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/r
 
 ```bash
 # Regenerate the synthetic fixtures (NumPy only; prints accuracy):
-cd python
-uv run python ../examples/mnist/train_quantize_export.py   # Phase-2 logreg
-uv run python ../examples/mnist/cnn_export.py               # Phase-4 CNN
-
+uv run python examples/mnist/train_quantize_export.py   # Phase-2 logreg
+uv run python examples/mnist/cnn_export.py               # Phase-4 CNN
 # Regenerate the real-data fixtures (needs the optional `ml` extra: torch + sklearn + brevitas):
-uv run --extra ml --system-certs python ../examples/mnist/real_digits_export.py  # Phase-5 PTQ
-uv run --extra ml --system-certs python ../examples/mnist/qat_export.py          # Phase-5 QAT
-uv run --extra ml --system-certs python ../examples/faces/olivetti_export.py     # Phase-7 faces (one-time ~4 MB download)
+uv run --extra ml --system-certs python examples/mnist/real_digits_export.py  # Phase-5 PTQ
+uv run --extra ml --system-certs python examples/mnist/qat_export.py          # Phase-5 QAT
+uv run --extra ml --system-certs python examples/faces/olivetti_export.py     # Phase-7 faces (one-time ~4 MB download)
 
 # Time the encrypted forward pass (release; the golden tests carry the timing):
-cd ../runtime
-cargo test --release --test golden_logreg -- --nocapture                  # ~30 s/sample
+cargo test --workspace --release --test golden_logreg -- --nocapture                  # ~30 s/sample
 cargo test --release --test golden_cnn    -- --nocapture                  # ~3-4 min/sample
 cargo test --release --test golden_digits -- --ignored --nocapture        # minutes/sample (real digits)
 cargo test --release --test golden_qat    -- --ignored --nocapture        # minutes/sample (QAT)

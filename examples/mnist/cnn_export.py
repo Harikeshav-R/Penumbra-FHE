@@ -19,7 +19,7 @@ would learn the label anyway).
 The fixture is **committed**, so CI never retrains or hits the network — it just reads the
 integers. Regenerate it only when the example changes::
 
-    cd python && uv run python ../examples/mnist/cnn_export.py
+    uv run python examples/mnist/cnn_export.py
 
 Dataset note (same discipline as the Phase-2 example): to stay hermetic and dependency-light
 (NumPy only — no torch / sklearn / network), this uses a **deterministic synthetic 10-class**

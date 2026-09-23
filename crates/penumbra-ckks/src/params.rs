@@ -134,4 +134,18 @@ impl CkksParams {
     pub fn coeffs_meta(&self) -> CoeffsMeta {
         CoeffsMeta::from_delta_budget(self.log_delta, self.log_budget())
     }
+
+    /// Override the single CKKS knob. Upper bounds are enforced per-graph by
+    /// `check_graph_depth_budget`, which names the offending node.
+    pub fn with_max_poly_degree(self, max_poly_degree: usize) -> Result<Self, String> {
+        if max_poly_degree < 1 {
+            return Err(format!(
+                "max_poly_degree must be >= 1, got {max_poly_degree}"
+            ));
+        }
+        Ok(Self {
+            max_poly_degree,
+            ..self
+        })
+    }
 }

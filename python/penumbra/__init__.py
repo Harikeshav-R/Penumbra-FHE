@@ -5,8 +5,8 @@ lower it to the Intermediate Representation (IR), and run inference under Fully
 Homomorphic Encryption — without writing any cryptography code.
 
 This is the Python front end (Layer 3 + quantization + ONNX loader + IR emitter). The
-TFHE backend (Layers 1 + 2) lives in the ``runtime/`` Rust crate; the two are bridged by
-the IR file format (``ir.py`` <-> ``runtime/src/ir.rs``). See ``PROJECT.md`` §4, §13.
+cryptographic runtime runs in-process via compiled PyO3 bindings (``penumbra._penumbra``)
+over pluggable backends (TFHE and CKKS). See ``PROJECT.md`` §4, §13.
 
 The public API is intentionally small (``PROJECT.md`` §12). As of Phase 5 the quantization
 service is live — assemble a float model, quantize it with calibration data (no manual scale
@@ -23,7 +23,7 @@ math), and export the IR the runtime walks::
     model.export("model.fhe")                     # serialize for the Rust runtime
 
 The ONNX front door (``fhe.load_onnx("model.onnx")``) and the one-call
-``model.predict_encrypted(x)`` round trip are later phases (ROADMAP Phase 6 / Phase 9); they
+``model.predict_encrypted(x)`` round trip run encrypted inference in-process; they
 build on the same ``Model`` / IR objects.
 """
 
@@ -36,7 +36,7 @@ from penumbra.bitwidth import (
     propagate_bit_widths,
     radix_capacity_bits,
 )
-from penumbra.client import KeySet
+from penumbra.client import CryptoProfile, KeySet, available_backends
 from penumbra.compile import insert_requants
 from penumbra.ir import (
     SCHEMA_VERSION,
@@ -94,4 +94,6 @@ __all__ = [
     "UnsupportedModelError",
     # Encrypted inference bridge + key management (Phase 9, PROJECT.md §11, §12)
     "KeySet",
+    "CryptoProfile",
+    "available_backends",
 ]

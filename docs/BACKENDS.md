@@ -256,11 +256,14 @@ the active clamp interval `[-t_sat, t_sat]`.
 
 Polynomial degree trades accuracy against depth against latency — it is CKKS's central
 tuning parameter, with no TFHE counterpart. `PROJECT.md` §12 commits to *one* crypto override
-knob.
+knob per backend.
 
-**Decision (settled in Phase 12.2):** Folded into the per-backend parameter profile as
-`CkksParams::max_poly_degree` (preserving the one-knob discipline, `PROJECT.md` §12). The
-per-backend profile exposes this single lever while quantization remains an automated library
+**Decision (settled in Phase 9 / 12.2):** Each backend exposes exactly one parameter profile knob
+via `CryptoProfile`:
+- **TFHE:** `TfheProfile` — named profiles `"default"` (TUniform noise) and `"gaussian"` (discrete-Gaussian noise).
+- **CKKS:** `max_poly_degree` (`CkksParams::max_poly_degree`) — the maximum polynomial degree any op may fit.
+
+The per-backend profile exposes this single lever while quantization remains an automated library
 service.
 ## Backend selection
 

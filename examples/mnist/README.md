@@ -28,10 +28,10 @@ backend's input too — same graph, same reference, a tolerance comparator inste
 
 ```bash
 # Regenerate the fixture (only when the example changes; NumPy-only, no network):
-cd python && uv run python ../examples/mnist/train_quantize_export.py
+uv run python examples/mnist/train_quantize_export.py
 
 # Run the golden test (the gate). Release is mandatory — debug FHE is far too slow:
-cd runtime && cargo test --release
+cargo test --workspace --release
 ```
 
 > **Dataset note.** To stay hermetic and dependency-light, the Phase-2 generator uses a

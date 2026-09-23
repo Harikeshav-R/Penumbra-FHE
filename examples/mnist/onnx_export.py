@@ -28,7 +28,7 @@ Two committed artifacts are written next to this script:
 
 Torch + scikit-learn are the optional ``ml`` extra; regenerate only when the example changes::
 
-    cd python && uv run --extra ml --system-certs python ../examples/mnist/onnx_export.py
+    uv run --extra ml --system-certs python examples/mnist/onnx_export.py
 """
 
 from __future__ import annotations

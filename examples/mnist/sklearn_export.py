@@ -34,7 +34,7 @@ Two committed artifacts are written next to this script:
 
 scikit-learn + skl2onnx are the optional ``ml`` extra; regenerate only when the example changes::
 
-    cd python && uv run --extra ml --system-certs python ../examples/mnist/sklearn_export.py
+    uv run --extra ml --system-certs python examples/mnist/sklearn_export.py
 """
 
 from __future__ import annotations

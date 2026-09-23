@@ -25,7 +25,7 @@ The fixture is **committed**, so CI never retrains or imports torch — it just 
 (the hermetic-fixture discipline, like the other examples). Torch + scikit-learn are the optional
 ``ml`` extra; regenerate only when the example changes::
 
-    cd python && uv run --extra ml --system-certs python ../examples/mnist/real_digits_export.py
+    uv run --extra ml --system-certs python examples/mnist/real_digits_export.py
 
 Accuracy is honest, not headline: ~0.96 float, ~0.94 quantized. The small remaining gap is the
 cost of capping activations at a single 2-bit block (``MESSAGE_BITS``) — the hard

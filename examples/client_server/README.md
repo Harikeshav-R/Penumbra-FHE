@@ -40,7 +40,7 @@ Needs a Rust toolchain (`cargo`) on `PATH`; no network, no ML stack, no committe
 It uses a tiny single-`Linear` model so the whole round trip runs in seconds.
 
 ```bash
-cd python && uv run python ../examples/client_server/demo.py
+uv run python examples/client_server/demo.py
 ```
 
 Expected: each sample prints its label + logits and `OK`, then a summary confirming the server

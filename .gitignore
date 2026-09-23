@@ -8,6 +8,8 @@ target/
 # ---- Python ----
 __pycache__/
 *.py[cod]
+*.so
+*.pyd
 *.egg-info/
 .eggs/
 build/

@@ -5,6 +5,7 @@ members = [
     "crates/penumbra-tfhe",
     "crates/penumbra-ckks",
     "crates/penumbra-bench",
+    "crates/penumbra-py",
     "runtime",
 ]
 exclude = [

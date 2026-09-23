@@ -31,7 +31,7 @@ fn run() -> Result<(), String> {
     let client_path = PathBuf::from(args.next().ok_or_else(|| usage.to_string())?);
     let out_path = PathBuf::from(args.next().ok_or_else(|| usage.to_string())?);
 
-    let (ck, _num_blocks) = load_client_key(&client_path)?;
+    let (ck, _num_blocks, _profile) = load_client_key(&client_path)?;
 
     let mut stdin_text = String::new();
     std::io::stdin()

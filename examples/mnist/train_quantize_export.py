@@ -12,7 +12,7 @@ The golden test asserts FHE output == quantized-cleartext output, bit-for-bit
 The fixture is **committed**, so CI never needs to retrain or hit the network — it just
 reads the integers. Regenerate it only when the example changes::
 
-    cd python && uv run python ../examples/mnist/train_quantize_export.py
+    uv run python examples/mnist/train_quantize_export.py
 
 Dataset note: Phase 2's goal is to prove the pipeline + the golden invariant, not model
 accuracy. To keep this generator hermetic and dependency-light (NumPy only — no torch /

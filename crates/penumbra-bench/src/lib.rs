@@ -15,7 +15,7 @@ pub use session::Session;
 
 /// Return a configured instance of the TFHE backend.
 pub fn tfhe_backend() -> penumbra_tfhe::TfheBackend {
-    penumbra_tfhe::TfheBackend
+    penumbra_tfhe::TfheBackend::default()
 }
 
 /// Return a configured instance of the CKKS backend with default parameters.
