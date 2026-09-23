@@ -17,9 +17,9 @@ pub mod bitwidth;
 pub mod eval;
 pub mod ir;
 pub mod ops;
+pub mod optimize;
 pub mod profile;
 pub mod wire;
-pub mod optimize;
 
 pub use backend::{Backend, CtVec, EvalCtx};
 pub use bitwidth::{

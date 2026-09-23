@@ -14,6 +14,7 @@ use penumbra_fhe_runtime::{
     SCHEMA_VERSION,
 };
 
+#[allow(clippy::identity_op)]
 fn reference_unfused_eval(input: &[i64]) -> Vec<i64> {
     assert_eq!(input.len(), 2);
     // 1. Linear: weights [[1, 2], [2, 1]], bias [0, 0]
@@ -127,8 +128,7 @@ fn test_golden_fusion_exact_agreement() {
         in_map.insert("x".to_string(), encrypt(&ck, &input));
 
         // evaluate_graph invokes optimize_graph internally
-        let out_map = evaluate_graph(&ctx, &graph, in_map)
-            .expect("evaluate_graph should succeed");
+        let out_map = evaluate_graph(&ctx, &graph, in_map).expect("evaluate_graph should succeed");
 
         let out_ct = out_map.get("out").expect("output 'out' must be present");
         let got = decrypt_vec(&ck, out_ct);

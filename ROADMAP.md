@@ -439,10 +439,11 @@ is reducing and parallelizing PBS, plus tuning crypto params.
 
 ### Tasks
 
-- [ ] **Profile:** instrument the eval loop to count PBS ops and time per op type. Identify
+- [x] **Profile:** instrument the eval loop to count PBS ops and time per op type. Identify
       the dominant cost (almost always activations/requant).
-- [ ] **Reduce bootstraps:** fuse adjacent requant/activation where possible; skip
+- [x] **Reduce bootstraps:** fuse adjacent requant/activation where possible; skip
       unnecessary requant; choose op orderings that minimize PBS.
+      *Note:* the requant/activation fusion rules are implemented in `penumbra-core::optimize` but currently match no committed fixture; the measured reduction came from the `Linear`/`Conv2d`/`Pool(avg)` MAC loop.
 - [ ] **Parallelism:** evaluate independent ciphertexts/channels in parallel (rayon). PBS over
       a layer's outputs is embarrassingly parallel.
 - [ ] **Parameter tuning:** experiment with `tfhe-rs` `shortint` parameter sets to trade

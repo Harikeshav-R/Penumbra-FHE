@@ -472,4 +472,19 @@ mod tests {
             assert!(md.contains("PBS (measured)"));
         }
     }
+
+    #[test]
+    fn test_committed_phase10_sweep_json_deserialization() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let json_path = manifest_dir.join("../../docs/results/phase10-tfhe-sweep.json");
+        if json_path.exists() {
+            let data = std::fs::read_to_string(&json_path).expect("read phase10 sweep json");
+            let report: Report = serde_json::from_str(&data).expect("deserialize Report");
+            assert_eq!(report.runs.len(), 7);
+            let md = to_markdown(&report);
+            assert!(md.contains("Per-Op-Type Eval Breakdown"));
+            assert!(md.contains("PBS (measured)"));
+            assert!(md.contains("measured pbs:"));
+        }
+    }
 }

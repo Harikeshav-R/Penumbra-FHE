@@ -69,7 +69,6 @@ impl GraphProfile {
         totals
     }
 
-
     /// The op-type sequence in evaluation order — used to assert backend parity.
     pub fn op_types(&self) -> Vec<&'static str> {
         self.nodes.iter().map(|n| n.op_type).collect()

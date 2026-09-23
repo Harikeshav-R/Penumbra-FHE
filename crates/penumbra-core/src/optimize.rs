@@ -57,7 +57,10 @@ fn step_fuse(g: &Graph) -> Result<Option<Graph>, String> {
     let mut tensor_consumers: HashMap<&str, Vec<usize>> = HashMap::new();
     for (idx, node) in g.nodes.iter().enumerate() {
         for input in &node.inputs {
-            tensor_consumers.entry(input.as_str()).or_default().push(idx);
+            tensor_consumers
+                .entry(input.as_str())
+                .or_default()
+                .push(idx);
         }
     }
     let graph_outputs: HashSet<&str> = g.outputs.iter().map(String::as_str).collect();
@@ -148,9 +151,7 @@ fn step_fuse(g: &Graph) -> Result<Option<Graph>, String> {
 
         // Rule R2: Activation -> Activation => one Activation
         if let (
-            OpSpec::Activation {
-                lut: first_lut, ..
-            },
+            OpSpec::Activation { lut: first_lut, .. },
             OpSpec::Activation {
                 lut: second_lut,
                 output_bits: second_out_bits,

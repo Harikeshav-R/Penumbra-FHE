@@ -176,7 +176,8 @@ impl Op<TfheBackend> for Conv2d {
                         }
                     }
 
-                    let mut group_terms: Vec<SignedRadixCiphertext> = Vec::with_capacity(groups.len());
+                    let mut group_terms: Vec<SignedRadixCiphertext> =
+                        Vec::with_capacity(groups.len());
                     for (w, cts) in groups {
                         let s = if cts.len() == 1 {
                             cts[0].clone()
