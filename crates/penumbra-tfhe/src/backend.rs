@@ -12,8 +12,15 @@ use crate::ops::{Activation, Add, Argmax, Conv2d, Linear, Pool, Requant};
 
 /// The concrete TFHE / CGGI backend.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct TfheBackend;
+pub struct TfheBackend {
+    pub profile: crate::keys::TfheProfile,
+}
 
+impl TfheBackend {
+    pub fn new(profile: crate::keys::TfheProfile) -> Self {
+        Self { profile }
+    }
+}
 impl Backend for TfheBackend {
     type Ciphertext = SignedRadixCiphertext;
     type ServerKey = ServerKey;
@@ -219,7 +226,7 @@ impl Backend for TfheBackend {
     }
 
     fn keygen(&self, num_blocks: usize) -> (Self::ClientKey, Self::ServerKey) {
-        crate::keys::keygen(num_blocks)
+        crate::keys::keygen_with_profile(num_blocks, self.profile)
     }
 
     fn encrypt(&self, ck: &Self::ClientKey, input: &[i64]) -> Vec<Self::Ciphertext> {
@@ -247,7 +254,7 @@ impl Backend for TfheBackend {
         ck: &Self::ClientKey,
         num_blocks: usize,
     ) -> Result<Vec<u8>, String> {
-        crate::keys::client_key_bytes(ck, num_blocks)
+        crate::keys::client_key_bytes(ck, num_blocks, self.profile)
     }
 
     fn serialize_server_key(
@@ -255,6 +262,6 @@ impl Backend for TfheBackend {
         sk: &Self::ServerKey,
         num_blocks: usize,
     ) -> Result<Vec<u8>, String> {
-        crate::keys::server_key_bytes(sk, num_blocks)
+        crate::keys::server_key_bytes(sk, num_blocks, self.profile)
     }
 }

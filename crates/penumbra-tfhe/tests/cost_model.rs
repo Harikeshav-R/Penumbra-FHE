@@ -16,7 +16,7 @@ fn load_fixture_graph(rel_path: &str) -> Graph {
 
 #[test]
 fn test_tfhe_cost_model_fixtures() {
-    let backend = TfheBackend;
+    let backend = TfheBackend::default();
 
     // 1. Phase-5 digits fixture: conv0__requant should report 108 bootstraps (12 channels x 3x3)
     let g5 = load_fixture_graph("../../examples/mnist/phase5_digits_fixture.json");
@@ -71,7 +71,7 @@ fn test_tfhe_conv2d_mac_count() {
     // Total = 27.
     assert_eq!(conv.mac_count(), 27);
 
-    let backend = TfheBackend;
+    let backend = TfheBackend::default();
     let spec = OpSpec::Conv2d {
         weights: vec![vec![1, 0, 2, 3]],
         bias: vec![0],
@@ -93,7 +93,7 @@ fn test_tfhe_conv2d_mac_count() {
 
 #[test]
 fn test_tfhe_requant_zero_multipliers_and_biases() {
-    let backend = TfheBackend;
+    let backend = TfheBackend::default();
     let spec = OpSpec::Requant {
         shift: 4,
         mult: 1,

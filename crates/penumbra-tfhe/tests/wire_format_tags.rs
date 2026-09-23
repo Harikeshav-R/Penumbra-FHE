@@ -6,7 +6,10 @@
 
 use penumbra_core::wire::TaggedCts;
 use penumbra_tfhe::encrypt::{deserialize_cts, deserialize_cts_batch};
-use penumbra_tfhe::keys::{load_client_key, load_server_key, TaggedKey};
+use penumbra_tfhe::keys::{
+    keygen_with_profile, load_client_key, load_server_key, save_client_key, save_server_key,
+    TaggedKey, TfheProfile,
+};
 
 #[test]
 fn client_key_scheme_mismatch_fails_loudly() {
@@ -18,6 +21,7 @@ fn client_key_scheme_mismatch_fails_loudly() {
     let fake_tagged = TaggedKey {
         scheme: "ckks".to_string(),
         num_blocks: 4,
+        profile: "default".to_string(),
         key: (),
     };
     let bytes = bincode::serialize(&fake_tagged).unwrap();
@@ -45,6 +49,7 @@ fn server_key_scheme_mismatch_fails_loudly() {
     let fake_tagged = TaggedKey {
         scheme: "ckks".to_string(),
         num_blocks: 4,
+        profile: "default".to_string(),
         key: (),
     };
     let bytes = bincode::serialize(&fake_tagged).unwrap();
@@ -93,4 +98,33 @@ fn ciphertext_scheme_mismatch_fails_loudly() {
         err_batch.contains("expected 'tfhe', but found 'ckks'"),
         "expected error to name both schemes: {err_batch}"
     );
+}
+
+#[test]
+fn profile_survives_save_load_roundtrip() {
+    let dir =
+        std::env::temp_dir().join(format!("penumbra_wire_test_profile_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    for profile in [TfheProfile::Default, TfheProfile::Gaussian] {
+        let num_blocks = 2;
+        let (ck, sk) = keygen_with_profile(num_blocks, profile);
+        let ck_path = dir.join(format!("{profile}_client.key"));
+        let sk_path = dir.join(format!("{profile}_server.key"));
+
+        save_client_key(&ck, num_blocks, profile, &ck_path).expect("save client key");
+        save_server_key(&sk, num_blocks, profile, &sk_path).expect("save server key");
+
+        let (_loaded_ck, ck_nb, loaded_ck_prof) =
+            load_client_key(&ck_path).expect("load client key");
+        let (_loaded_sk, sk_nb, loaded_sk_prof) =
+            load_server_key(&sk_path).expect("load server key");
+
+        assert_eq!(ck_nb, num_blocks);
+        assert_eq!(sk_nb, num_blocks);
+        assert_eq!(loaded_ck_prof, profile);
+        assert_eq!(loaded_sk_prof, profile);
+    }
+
+    std::fs::remove_dir_all(&dir).ok();
 }

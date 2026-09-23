@@ -14,8 +14,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use penumbra_fhe_runtime::{
-    check_graph_bit_width_budget, ensure_num_blocks_match, evaluate_graph, load_server_key, CtVec,
-    EvalCtx, Graph,
+    check_graph_bit_width_budget, ensure_num_blocks_match, ensure_profile_match, evaluate_graph,
+    load_server_key, CtVec, EvalCtx, Graph, TfheProfile,
 };
 
 fn main() -> ExitCode {
@@ -60,10 +60,11 @@ fn run() -> Result<(), String> {
     check_graph_bit_width_budget(&graph)?;
 
     // The server holds ONLY the public server key (`PROJECT.md` §11) — never the client key.
-    let (sk, key_num_blocks) = load_server_key(&server_path)?;
+    let (sk, key_num_blocks, profile) = load_server_key(&server_path)?;
     // A key generated for a different radix width cannot evaluate this model (the "key mismatch"
     // failure mode, ROADMAP Phase 9) — fail loudly before touching ciphertext (`AGENTS.md` §1.4).
     ensure_num_blocks_match(key_num_blocks, graph.num_blocks)?;
+    ensure_profile_match(profile, TfheProfile::default())?;
 
     let in_bytes = std::fs::read(&in_path)
         .map_err(|e| format!("cannot read ciphertext from {}: {e}", in_path.display()))?;

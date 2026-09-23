@@ -13,7 +13,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use penumbra_fhe_runtime::{keygen, save_client_key, save_server_key};
+use penumbra_fhe_runtime::{keygen, save_client_key, save_server_key, TfheProfile};
 
 fn main() -> ExitCode {
     match run() {
@@ -46,8 +46,8 @@ fn run() -> Result<(), String> {
     // Keygen is the expensive per-`num_blocks` cost; doing it once here is the whole point of
     // persisting keys for reuse (ROADMAP Phase 9).
     let (ck, sk) = keygen(num_blocks);
-    save_client_key(&ck, num_blocks, &client_path)?;
-    save_server_key(&sk, num_blocks, &server_path)?;
+    save_client_key(&ck, num_blocks, TfheProfile::default(), &client_path)?;
+    save_server_key(&sk, num_blocks, TfheProfile::default(), &server_path)?;
 
     eprintln!(
         "wrote client key {} and server key {} for num_blocks={num_blocks}",

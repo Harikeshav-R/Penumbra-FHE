@@ -16,9 +16,10 @@ pub use penumbra_tfhe::encrypt::{
     serialize_cts_batch, CtVec,
 };
 pub use penumbra_tfhe::keys::{
-    ensure_num_blocks_match, keygen, load_client_key, load_server_key, magnitude_bits,
-    radix_capacity_bits, save_client_key, save_server_key, DEFAULT_PARAMS, MESSAGE_BITS,
-    SCHEME_TFHE,
+    client_key_bytes, client_key_from_bytes, ensure_num_blocks_match, ensure_profile_match, keygen,
+    keygen_with_profile, load_client_key, load_server_key, magnitude_bits, radix_capacity_bits,
+    save_client_key, save_server_key, server_key_bytes, server_key_from_bytes, TfheProfile,
+    DEFAULT_PARAMS, MESSAGE_BITS, SCHEME_TFHE,
 };
 pub use penumbra_tfhe::ops::{Activation, Add, Argmax, Conv2d, EvalCtx, Linear, Op, Pool, Requant};
 pub use penumbra_tfhe::{evaluate, evaluate_graph};
