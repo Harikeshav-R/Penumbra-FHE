@@ -37,6 +37,7 @@ match bit-for-bit; argmax of the quantized logits is what the fixture commits as
 
 from __future__ import annotations
 
+import argparse
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -44,13 +45,14 @@ from pathlib import Path
 import numpy as np
 
 from penumbra import insert_requants, propagate_bit_widths, radix_capacity_bits
-from penumbra.bitwidth import MESSAGE_BITS
+from penumbra.bitwidth import MESSAGE_BITS, minimal_num_blocks
 from penumbra.ir import SCHEMA_VERSION, Conv2dSpec, Graph, LinearSpec, Node, PoolSpec
 from penumbra.quantization import (
     quantize_conv,
     quantize_linear_integer_input,
     symmetric_spec,
 )
+from penumbra.quantization.minimize import BitPlan, format_trace, minimize_bit_widths
 
 # --- Configuration (the only knobs) -----------------------------------------------------
 IN_H = IN_W = 6  # 6x6 single-channel input (small, to keep FHE latency feasible)
@@ -162,10 +164,112 @@ def softmax_train(feats: np.ndarray, y: np.ndarray, *, iters: int = 4000, lr: fl
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--minimize",
+        action="store_true",
+        help="Run bit-plan minimization search on train split without writing fixture",
+    )
+    args = parser.parse_args()
+
     rng = np.random.default_rng(SEED)
     x, y = make_dataset(rng)
     x_tr, y_tr = x[:N_TRAIN], y[:N_TRAIN]
     x_te, y_te = x[N_TRAIN:], y[N_TRAIN:]
+
+    act_ceiling = (1 << ACT_BITS) - 1
+
+    def build(plan: BitPlan) -> tuple[Graph, float]:
+        x_sp = symmetric_spec(x_tr, plan.input_bits, signed=False)
+        w1_q_fl, _, _ = quantize_conv(CONV_FILTERS[:, None, :, :], bits=plan.weight_bits[0])
+        w1_q_c = w1_q_fl.reshape(CONV_CH, KERNEL, KERNEL)
+        x_tr_c = x_sp.quantize(x_tr)
+        conv_tr_f = conv2d_valid(x_tr_c.astype(np.float64), w1_q_c.astype(np.float64))
+        conv_tr_c = conv_tr_f.astype(np.int64)
+        relu_max_c = int(max(1, conv_tr_c.clip(min=0).max()))
+        sh = 0
+        while (relu_max_c >> sh) > act_ceiling:
+            sh += 1
+        act_tr_c = np.clip(np.maximum(conv_tr_c >> sh, 0), 0, act_ceiling)
+        pooled_tr_c = avgpool_sum(act_tr_c.astype(np.float64)).reshape(len(x_tr), -1)
+        w2_f_c, b2_f_c = softmax_train(pooled_tr_c, y_tr)
+        w2_q_c, b2_q_c, _ = quantize_linear_integer_input(
+            w2_f_c.T, b2_f_c, bits=plan.weight_bits[0]
+        )
+        pooled_tr_i = pooled_tr_c.astype(np.int64)
+        logits_tr = pooled_tr_i @ w2_q_c.T + b2_q_c
+        acc_tr = float(np.mean(logits_tr.argmax(1) == y_tr))
+
+        conv_weights_c = [w1_q_c[c].reshape(-1).tolist() for c in range(CONV_CH)]
+        raw_c = Graph(
+            schema_version=SCHEMA_VERSION,
+            num_blocks=2,
+            input_bits=plan.input_bits,
+            inputs=["x"],
+            outputs=["logits"],
+            nodes=[
+                Node(
+                    name="conv",
+                    inputs=["x"],
+                    outputs=["conv_acc"],
+                    op=Conv2dSpec(
+                        weights=conv_weights_c,
+                        bias=[0] * CONV_CH,
+                        weight_bits=plan.weight_bits[0],
+                        in_h=IN_H,
+                        in_w=IN_W,
+                        in_channels=IN_CH,
+                        kernel_h=KERNEL,
+                        kernel_w=KERNEL,
+                        stride=1,
+                        padding=0,
+                    ),
+                ),
+                Node(
+                    name="pool",
+                    inputs=["conv_acc"],
+                    outputs=["pooled"],
+                    op=PoolSpec(
+                        mode="avg",
+                        in_h=OUT_H,
+                        in_w=OUT_W,
+                        channels=CONV_CH,
+                        pool_h=POOL,
+                        pool_w=POOL,
+                        stride=POOL,
+                    ),
+                ),
+                Node(
+                    name="head",
+                    inputs=["pooled"],
+                    outputs=["logits"],
+                    op=LinearSpec(
+                        weights=w2_q_c.tolist(),
+                        bias=b2_q_c.tolist(),
+                        weight_bits=plan.weight_bits[0],
+                    ),
+                ),
+            ],
+        )
+        probe_c = insert_requants(replace(raw_c, num_blocks=64), shifts={"conv": sh})
+        nb = minimal_num_blocks(probe_c)
+        cand_g = insert_requants(replace(raw_c, num_blocks=nb), shifts={"conv": sh})
+        return cand_g, acc_tr
+
+    if args.minimize:
+        start = BitPlan(input_bits=INPUT_BITS, weight_bits=(WEIGHT_BITS,), max_mult_bits=5)
+        best, trace = minimize_bit_widths(
+            build=build,
+            start=start,
+            knobs=("input_bits", "weight_bits"),
+        )
+        print("=== Bit-Width Minimization Trace (train split) ===")
+        print(format_trace(trace))
+        print(
+            f"\nChosen plan: {best.plan} -> num_blocks={best.num_blocks}, "
+            f"train_acc={best.accuracy:.4f}"
+        )
+        return
 
     # --- Quantize inputs and the fixed conv filters via the quantization service --------
     # The conv quantizer takes (out_ch, in_ch, kh, kw) float kernels and returns the IR's flat
@@ -275,8 +379,7 @@ def main() -> None:
     # Size num_blocks to the widest tensor of the *requant-inserted* graph, then re-run the
     # pass against that real budget. We first insert with a generous radix to learn the widths.
     probe = insert_requants(replace(raw, num_blocks=64), shifts={"conv": shift})
-    max_bits = max(propagate_bit_widths(probe).values())
-    num_blocks = (max_bits + MESSAGE_BITS - 1) // MESSAGE_BITS
+    num_blocks = minimal_num_blocks(probe)
     graph = insert_requants(replace(raw, num_blocks=num_blocks), shifts={"conv": shift})
     assert max(propagate_bit_widths(graph).values()) <= radix_capacity_bits(num_blocks)
 
@@ -299,6 +402,12 @@ def main() -> None:
             "conv_weight": w1_spec.scale,
             "head_weight": w2_spec.scale,
             "requant_shift": shift,
+        },
+        "bit_plan": {
+            "input_bits": INPUT_BITS,
+            "weight_bits": [WEIGHT_BITS],
+            "act_bits": ACT_BITS,
+            "max_mult_bits": 5,
         },
         "accuracy": {"float": acc_float, "quantized": acc_quant},
         "test_inputs": x_batch_q.tolist(),

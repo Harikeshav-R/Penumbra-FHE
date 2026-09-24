@@ -40,12 +40,14 @@ and ``Linear::output_bits`` enforces this same rule.
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
 import numpy as np
 
-from penumbra.ir import build_linear_argmax_graph
+from penumbra.bitwidth import minimal_num_blocks
+from penumbra.ir import Graph, build_linear_argmax_graph
 from penumbra.quantization import (
     QuantSpec,
     linear_logit_int,
@@ -53,12 +55,13 @@ from penumbra.quantization import (
     quantize_linear,
     symmetric_spec,
 )
+from penumbra.quantization.minimize import BitPlan, format_trace, minimize_bit_widths
 
 # --- Configuration (the only knobs) -----------------------------------------------------
 N_FEATURES = 64  # 8x8, the MNIST-downsample feature count Phase 2 targets
-INPUT_BITS = 4  # small non-negative input range
-WEIGHT_BITS = 4  # signed weights, range -8..7
-NUM_BLOCKS = 8  # 16-bit signed radix under PARAM_MESSAGE_2_CARRY_2 (the budget)
+INPUT_BITS = 2  # small non-negative input range (minimized Phase 10)
+WEIGHT_BITS = 2  # signed weights, range -2..1 (minimized Phase 10)
+NUM_BLOCKS = 6  # 12-bit signed radix under PARAM_MESSAGE_2_CARRY_2 (computed by minimal_num_blocks)
 N_TRAIN = 400
 N_TEST = 4  # committed test batch — small on purpose: each FHE sample is ~30s in CI
 SEED = 0
@@ -107,12 +110,65 @@ def train_logreg(x: np.ndarray, y: np.ndarray, *, iters: int = 2000, lr: float =
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--minimize",
+        action="store_true",
+        help="Run bit-plan minimization search on train split without writing fixture",
+    )
+    args = parser.parse_args()
+
     rng = np.random.default_rng(SEED)
     x, y = make_dataset(rng)
     x_tr, y_tr = x[:N_TRAIN], y[:N_TRAIN]
     x_te, y_te = x[N_TRAIN:], y[N_TRAIN:]
 
     w_f, b_f = train_logreg(x_tr, y_tr)
+    threshold = 0
+
+    def build(plan: BitPlan) -> tuple[Graph, float]:
+        x_sp = symmetric_spec(x_tr, plan.input_bits, signed=False)
+        w_q_r, b_q_r, _ = quantize_linear(
+            w_f[None, :], np.array([b_f]), x_sp.scale, bits=plan.weight_bits[0]
+        )
+        w_cand = w_q_r[0]
+        b_cand = int(b_q_r[0])
+        probe = build_linear_argmax_graph(
+            num_blocks=2,
+            input_bits=plan.input_bits,
+            weights=[w_cand.tolist()],
+            bias=[b_cand],
+            weight_bits=plan.weight_bits[0],
+            threshold=threshold,
+        )
+        nb = minimal_num_blocks(probe)
+        cand_graph = build_linear_argmax_graph(
+            num_blocks=nb,
+            input_bits=plan.input_bits,
+            weights=[w_cand.tolist()],
+            bias=[b_cand],
+            weight_bits=plan.weight_bits[0],
+            threshold=threshold,
+        )
+        x_tr_cand = x_sp.quantize(x_tr)
+        l_q = linear_logit_int(x_tr_cand, w_cand, b_cand)
+        acc = float(np.mean((l_q >= threshold).astype(np.int64) == y_tr))
+        return cand_graph, acc
+
+    if args.minimize:
+        start = BitPlan(input_bits=INPUT_BITS, weight_bits=(WEIGHT_BITS,), max_mult_bits=5)
+        best, trace = minimize_bit_widths(
+            build=build,
+            start=start,
+            knobs=("input_bits", "weight_bits"),
+        )
+        print("=== Bit-Width Minimization Trace (train split) ===")
+        print(format_trace(trace))
+        print(
+            f"\nChosen plan: {best.plan} -> num_blocks={best.num_blocks}, "
+            f"train_acc={best.accuracy:.4f}"
+        )
+        return
 
     # --- Quantize via the library quantization service (Phase 5) ------------------------
     # Inputs are non-negative; calibrate the input scale on the training data. The per-layer
@@ -128,10 +184,6 @@ def main() -> None:
     acc_scale = x_spec.scale * w_spec.scale  # for the committed `scales` metadata
 
     x_te_q = x_spec.quantize(x_te)  # (n_te, 64) ints
-
-    # Decision: float logit (w_f . x + b_f) >= 0  <=>  int logit (w_q . x_q + bias_q) >= 0.
-    # So the integer threshold is simply 0.
-    threshold = 0
 
     # --- Cleartext quantized oracle (this is what FHE must match bit-for-bit) -----------
     logits_q = linear_logit_int(x_te_q, w_q, bias_q)  # (n_te,)
@@ -160,15 +212,23 @@ def main() -> None:
     # --- The serializable IR graph (Phase 3) --------------------------------------------
     # `Linear → Argmax`. A single weight row / bias / threshold: the 2-class single-logit
     # classifier. The Rust runtime deserializes and walks this; no hardcoded model anywhere.
-    graph = build_linear_argmax_graph(
-        num_blocks=NUM_BLOCKS,
+    probe = build_linear_argmax_graph(
+        num_blocks=2,
         input_bits=INPUT_BITS,
         weights=[w_q.tolist()],
         bias=[bias_q],
         weight_bits=WEIGHT_BITS,
         threshold=threshold,
     )
-
+    num_blocks = minimal_num_blocks(probe)
+    graph = build_linear_argmax_graph(
+        num_blocks=num_blocks,
+        input_bits=INPUT_BITS,
+        weights=[w_q.tolist()],
+        bias=[bias_q],
+        weight_bits=WEIGHT_BITS,
+        threshold=threshold,
+    )
     fixture = {
         "_comment": (
             "Phase-3 golden-test fixture. The model is the serializable IR graph under "
@@ -178,6 +238,12 @@ def main() -> None:
         ),
         "graph": graph.to_dict(),
         "scales": {"input": x_spec.scale, "weight": w_spec.scale, "acc": acc_scale},
+        "bit_plan": {
+            "input_bits": INPUT_BITS,
+            "weight_bits": [WEIGHT_BITS],
+            "act_bits": 2,
+            "max_mult_bits": 5,
+        },
         "accuracy": {"float": acc_float, "quantized": acc_quant},
         "activation": {
             "lut": relu_lut,
@@ -193,7 +259,7 @@ def main() -> None:
     print(f"wrote {FIXTURE_PATH}")
     print(f"  float accuracy     = {acc_float:.4f}")
     print(f"  quantized accuracy = {acc_quant:.4f}")
-    print(f"  test batch         = {len(labels_batch)} samples, num_blocks={NUM_BLOCKS}")
+    print(f"  test batch         = {len(labels_batch)} samples, num_blocks={num_blocks}")
 
 
 if __name__ == "__main__":

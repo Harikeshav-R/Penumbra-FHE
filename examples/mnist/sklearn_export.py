@@ -39,6 +39,7 @@ scikit-learn + skl2onnx are the optional ``ml`` extra; regenerate only when the 
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -50,7 +51,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPRegressor
 
 import penumbra as fhe
+from penumbra.ir import Graph
 from penumbra.quantization import accuracy_report
+from penumbra.quantization.minimize import BitPlan, format_trace, minimize_bit_widths
 from penumbra.reference import evaluate_graph_int
 
 # --- Configuration -------------------------------------------------------------------------
@@ -58,9 +61,9 @@ N_FEATURES = 64  # load_digits is 8x8 = 64 pixels, flattened
 N_CLASSES = 10
 
 INPUT_BITS = 4  # inputs quantized into [0, 15] (digits pixels are already [0, 16])
-WEIGHT_BITS = 8  # a single well-conditioned logit head quantizes tightly at 8-bit per-tensor
+# A single well-conditioned logit head quantizes tightly at 8-bit per-tensor
+WEIGHT_BITS: tuple[int, ...] | int = 8
 SEED = 0
-
 N_TEST = 2  # committed FHE test batch (kept small: the wide-radix Linear is ~a minute per sample)
 
 ONNX_PATH = Path(__file__).resolve().parent / "digit_linear_sklearn.onnx"
@@ -96,15 +99,46 @@ def export_onnx(model: MLPRegressor) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--minimize",
+        action="store_true",
+        help="Run bit-plan minimization search on train split without writing fixture",
+    )
+    args = parser.parse_args()
+
     model, x_tr, y_tr, x_te, y_te = train()
-
-    # Export to ONNX, then lower it back through the front door — the point of the example: the
-    # Model is produced by load_onnx from a *scikit-learn* export, not hand-built or from torch.
     export_onnx(model)
-    fmodel = fhe.load_onnx(str(ONNX_PATH), input_bits=INPUT_BITS)
-
     cal = x_tr.astype(np.float64)
-    graph = fmodel.quantize(cal, n_bits=WEIGHT_BITS, calibration="mse")
+
+    def build(plan: BitPlan) -> tuple[Graph, float]:
+        fm = fhe.load_onnx(str(ONNX_PATH), input_bits=plan.input_bits)
+        g = fm.quantize(cal, n_bits=list(plan.weight_bits), calibration="mse")
+        s_in = fm.input_scale
+        q = np.clip(np.round(cal / s_in), 0, (1 << plan.input_bits) - 1).astype(np.int64)
+        preds = [int(np.argmax(evaluate_graph_int(g, {"x": r.tolist()})[g.outputs[0]])) for r in q]
+        acc_tr = float(np.mean(np.array(preds) == y_tr))
+        return g, acc_tr
+
+    if args.minimize:
+        start_wb = (WEIGHT_BITS,) if isinstance(WEIGHT_BITS, int) else tuple(WEIGHT_BITS)
+        start = BitPlan(input_bits=INPUT_BITS, weight_bits=start_wb, max_mult_bits=5)
+        best, trace = minimize_bit_widths(
+            build=build,
+            start=start,
+            knobs=("input_bits", "weight_bits"),
+        )
+        print("=== Bit-Width Minimization Trace (train split) ===")
+        print(format_trace(trace))
+        print(
+            f"\nChosen plan: {best.plan} -> num_blocks={best.num_blocks}, "
+            f"train_acc={best.accuracy:.4f}"
+        )
+        return
+
+    fmodel = fhe.load_onnx(str(ONNX_PATH), input_bits=INPUT_BITS)
+    wb = list(WEIGHT_BITS) if isinstance(WEIGHT_BITS, (tuple, list)) else WEIGHT_BITS
+    graph = fmodel.quantize(cal, n_bits=wb, calibration="mse")
 
     # --- Quantized-integer oracle = what FHE must match. Compute over the test set. --------
     in_scale = fmodel.input_scale
@@ -148,6 +182,14 @@ def main() -> None:
         ),
         "graph": graph.to_dict(),
         "scales": {"input": in_scale},
+        "bit_plan": {
+            "input_bits": INPUT_BITS,
+            "weight_bits": (
+                list(WEIGHT_BITS) if isinstance(WEIGHT_BITS, (tuple, list)) else [WEIGHT_BITS]
+            ),
+            "act_bits": 2,
+            "max_mult_bits": 5,
+        },
         "accuracy": {"float": report.float_accuracy, "quantized": report.quantized_accuracy},
         "test_inputs": x_batch_q.tolist(),
         "expected_labels": labels_batch.tolist(),

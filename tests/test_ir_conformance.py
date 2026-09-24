@@ -101,7 +101,7 @@ def test_committed_graph_is_linear_argmax():
     fc, head = g.nodes
     assert fc.inputs == ["x"] and fc.outputs == ["logit"]
     assert isinstance(fc.op, LinearSpec)
-    assert fc.op.weight_bits == 4
+    assert fc.op.weight_bits == 2
     assert len(fc.op.weights) == 1 and len(fc.op.weights[0]) == 64
 
     assert head.inputs == ["logit"] and head.outputs == ["label"]
