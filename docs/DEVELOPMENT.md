@@ -76,7 +76,9 @@ for m in phase2_logreg phase4_cnn phase5_digits phase5_qat phase6_onnx phase6_sk
     --models "$m" --backends tfhe,ckks --samples 2 \
     --format json --out "target/bench-results/$m.json"
 done
+```
 
+For tuning knobs, bit-width minimization, and the CI regression gate, see [`docs/PERFORMANCE.md`](./PERFORMANCE.md).
 > ⚠️ **Build in `--release` for anything that runs FHE.** Debug builds are *extremely* slow
 > (orders of magnitude) — true of `poulpy` as much as of `tfhe-rs`. The first compile is slow
 > regardless; both libraries pull large dependency trees. The `hello_fhe` test proves the

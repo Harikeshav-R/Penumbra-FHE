@@ -94,6 +94,7 @@ backend is the reference implementation and its exactness gate is unchanged.
   per-channel scales, the bit-width budget, and the accuracy/speed tradeoff.
 - [`docs/SUPPORTED-OPS.md`](docs/SUPPORTED-OPS.md) — the operators the runtime implements.
 - [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) — accuracy and latency for the example models.
+- [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) — per-backend tuning guide, knobs, and regression gate.
 - [`docs/NOTES-tfhe.md`](docs/NOTES-tfhe.md) · [`docs/NOTES-ckks.md`](docs/NOTES-ckks.md) —
   per-scheme parameter profiles, primitives, and measured costs.
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — toolchain, build, and test instructions.

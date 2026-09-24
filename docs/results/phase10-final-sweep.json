@@ -1,0 +1,2552 @@
+{
+  "meta": {
+    "os": "macos",
+    "arch": "aarch64",
+    "release": true,
+    "backends_compiled": [
+      "tfhe",
+      "ckks"
+    ],
+    "ckks_hal": "FFT64Neon",
+    "samples_requested": 2,
+    "machine": "Apple M3 Pro, macOS 25.6.0",
+    "rustc": "rustc 1.100.0-nightly (bba531001 2026-09-20)",
+    "commit": "9b38c1bc2c8fd126f27ca109c25800c0ab769f5f",
+    "date": "2026-09-24",
+    "harness": "penumbra-bench-report --models all --backends tfhe,ckks --samples 2",
+    "note": "Phase-10 final cross-backend sweep with bit-width minimized fixtures."
+  },
+  "runs": [
+    {
+      "backend": "tfhe",
+      "profile": "classic",
+      "model": "phase2_logreg",
+      "fixture": "../../examples/mnist/phase2_fixture.json",
+      "num_blocks": 6,
+      "keygen_secs": 0.500462125,
+      "client_key_bytes": 23940,
+      "server_key_bytes": 120419227,
+      "input_ct_bytes": 6322708,
+      "output_ct_bytes": 98812,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.016613916,
+          "eval_secs": 0.573331208,
+          "decrypt_secs": 4.584e-06,
+          "nodes": [
+            {
+              "name": "fc",
+              "op_type": "Linear",
+              "build_secs": 2.458e-06,
+              "eval_secs": 0.557596666,
+              "input_lens": [
+                64
+              ],
+              "output_len": 1,
+              "counters": {
+                "ct_add": 31,
+                "scalar_add": 1,
+                "scalar_mul": 1
+              },
+              "measured": {
+                "pbs": 136
+              }
+            },
+            {
+              "name": "head",
+              "op_type": "Argmax",
+              "build_secs": 3.75e-07,
+              "eval_secs": 0.015726875,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "cmp_pbs_ops": 1
+              },
+              "measured": {
+                "pbs": 1
+              }
+            }
+          ],
+          "decrypted": [
+            1
+          ],
+          "max_abs_err": null,
+          "mean_abs_err": null,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.016663375,
+          "eval_secs": 0.469307584,
+          "decrypt_secs": 5.167e-06,
+          "nodes": [
+            {
+              "name": "fc",
+              "op_type": "Linear",
+              "build_secs": 1.042e-06,
+              "eval_secs": 0.45302,
+              "input_lens": [
+                64
+              ],
+              "output_len": 1,
+              "counters": {
+                "ct_add": 31,
+                "scalar_add": 1,
+                "scalar_mul": 1
+              },
+              "measured": {
+                "pbs": 136
+              }
+            },
+            {
+              "name": "head",
+              "op_type": "Argmax",
+              "build_secs": 4.17e-07,
+              "eval_secs": 0.016280125,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "cmp_pbs_ops": 1
+              },
+              "measured": {
+                "pbs": 1
+              }
+            }
+          ],
+          "decrypted": [
+            0
+          ],
+          "max_abs_err": null,
+          "mean_abs_err": null,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Argmax": 0.0160035,
+        "Linear": 0.505308333
+      },
+      "op_type_build_secs": {
+        "Argmax": 3.96e-07,
+        "Linear": 1.75e-06
+      },
+      "cost_proxy": {
+        "cmp_pbs_ops": 1,
+        "ct_add": 31,
+        "scalar_add": 1,
+        "scalar_mul": 1
+      },
+      "measured_totals": {
+        "pbs": 137
+      },
+      "accuracy": {
+        "float": 1.0,
+        "quantized": 1.0
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 2,
+        "max_mult_bits": 5,
+        "weight_bits": [
+          2
+        ]
+      },
+      "ir_bytes": 5076,
+      "ir_load_secs": 0.000436708
+    },
+    {
+      "backend": "ckks",
+      "profile": null,
+      "model": "phase2_logreg",
+      "fixture": "../../examples/mnist/phase2_fixture.json",
+      "num_blocks": 6,
+      "keygen_secs": 2.152675959,
+      "client_key_bytes": 131196,
+      "server_key_bytes": 1869089408,
+      "input_ct_bytes": 4980843,
+      "output_ct_bytes": 4980843,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.008116,
+          "eval_secs": 0.903888667,
+          "decrypt_secs": 0.000817417,
+          "nodes": [
+            {
+              "name": "fc",
+              "op_type": "Linear",
+              "build_secs": 0.00012375,
+              "eval_secs": 0.740385417,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 16
+              },
+              "measured": {}
+            },
+            {
+              "name": "head",
+              "op_type": "Argmax",
+              "build_secs": 0.001450791,
+              "eval_secs": 0.161917667,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 4,
+                "poly_evals": 1,
+                "rescales": 4
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            1
+          ],
+          "max_abs_err": null,
+          "mean_abs_err": null,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.005264458,
+          "eval_secs": 0.389582667,
+          "decrypt_secs": 0.000899958,
+          "nodes": [
+            {
+              "name": "fc",
+              "op_type": "Linear",
+              "build_secs": 2.7875e-05,
+              "eval_secs": 0.26627025,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 16
+              },
+              "measured": {}
+            },
+            {
+              "name": "head",
+              "op_type": "Argmax",
+              "build_secs": 0.001232083,
+              "eval_secs": 0.122044625,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 4,
+                "poly_evals": 1,
+                "rescales": 4
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            0
+          ],
+          "max_abs_err": null,
+          "mean_abs_err": null,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Argmax": 0.141981146,
+        "Linear": 0.5033278335
+      },
+      "op_type_build_secs": {
+        "Argmax": 0.001341437,
+        "Linear": 7.58125e-05
+      },
+      "cost_proxy": {
+        "depth_levels": 5,
+        "poly_evals": 1,
+        "rescales": 5,
+        "rotations": 16
+      },
+      "measured_totals": {},
+      "accuracy": {
+        "float": 1.0,
+        "quantized": 1.0
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 2,
+        "max_mult_bits": 5,
+        "weight_bits": [
+          2
+        ]
+      },
+      "ir_bytes": 5076,
+      "ir_load_secs": 0.000436708
+    },
+    {
+      "backend": "tfhe",
+      "profile": "classic",
+      "model": "phase4_cnn",
+      "fixture": "../../examples/mnist/phase4_cnn_fixture.json",
+      "num_blocks": 7,
+      "keygen_secs": 0.524344334,
+      "client_key_bytes": 23940,
+      "server_key_bytes": 120419227,
+      "input_ct_bytes": 4149236,
+      "output_ct_bytes": 1152580,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.010882,
+          "eval_secs": 26.663443875,
+          "decrypt_secs": 4.7667e-05,
+          "nodes": [
+            {
+              "name": "conv",
+              "op_type": "Conv2d",
+              "build_secs": 1.208e-06,
+              "eval_secs": 17.246001375,
+              "input_lens": [
+                36
+              ],
+              "output_len": 32,
+              "counters": {
+                "ct_add": 160,
+                "scalar_add": 32,
+                "scalar_mul": 64
+              },
+              "measured": {
+                "pbs": 5824
+              }
+            },
+            {
+              "name": "conv__requant",
+              "op_type": "Requant",
+              "build_secs": 1.083e-06,
+              "eval_secs": 3.104904,
+              "input_lens": [
+                32
+              ],
+              "output_len": 32,
+              "counters": {
+                "bootstraps": 32,
+                "cmp_pbs_ops": 96
+              },
+              "measured": {
+                "pbs": 1024
+              }
+            },
+            {
+              "name": "pool",
+              "op_type": "Pool",
+              "build_secs": 7.08e-07,
+              "eval_secs": 0.142365333,
+              "input_lens": [
+                32
+              ],
+              "output_len": 8,
+              "counters": {
+                "ct_add": 24
+              },
+              "measured": {
+                "pbs": 48
+              }
+            },
+            {
+              "name": "head",
+              "op_type": "Linear",
+              "build_secs": 7.417e-06,
+              "eval_secs": 6.170127875,
+              "input_lens": [
+                8
+              ],
+              "output_len": 10,
+              "counters": {
+                "ct_add": 59,
+                "scalar_add": 10,
+                "scalar_mul": 50
+              },
+              "measured": {
+                "pbs": 2208
+              }
+            }
+          ],
+          "decrypted": [
+            -5,
+            1,
+            -4,
+            2,
+            12,
+            -1,
+            -14,
+            0,
+            4,
+            0
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.011719667,
+          "eval_secs": 27.635174125,
+          "decrypt_secs": 5.8e-05,
+          "nodes": [
+            {
+              "name": "conv",
+              "op_type": "Conv2d",
+              "build_secs": 1e-06,
+              "eval_secs": 17.896537417,
+              "input_lens": [
+                36
+              ],
+              "output_len": 32,
+              "counters": {
+                "ct_add": 160,
+                "scalar_add": 32,
+                "scalar_mul": 64
+              },
+              "measured": {
+                "pbs": 5824
+              }
+            },
+            {
+              "name": "conv__requant",
+              "op_type": "Requant",
+              "build_secs": 8.75e-07,
+              "eval_secs": 3.22940575,
+              "input_lens": [
+                32
+              ],
+              "output_len": 32,
+              "counters": {
+                "bootstraps": 32,
+                "cmp_pbs_ops": 96
+              },
+              "measured": {
+                "pbs": 1024
+              }
+            },
+            {
+              "name": "pool",
+              "op_type": "Pool",
+              "build_secs": 5e-07,
+              "eval_secs": 0.144907,
+              "input_lens": [
+                32
+              ],
+              "output_len": 8,
+              "counters": {
+                "ct_add": 24
+              },
+              "measured": {
+                "pbs": 48
+              }
+            },
+            {
+              "name": "head",
+              "op_type": "Linear",
+              "build_secs": 5.375e-06,
+              "eval_secs": 6.364286625,
+              "input_lens": [
+                8
+              ],
+              "output_len": 10,
+              "counters": {
+                "ct_add": 59,
+                "scalar_add": 10,
+                "scalar_mul": 50
+              },
+              "measured": {
+                "pbs": 2208
+              }
+            }
+          ],
+          "decrypted": [
+            14,
+            -9,
+            -4,
+            -2,
+            -4,
+            -2,
+            -3,
+            0,
+            -9,
+            16
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Conv2d": 17.571269395999998,
+        "Linear": 6.26720725,
+        "Pool": 0.1436361665,
+        "Requant": 3.167154875
+      },
+      "op_type_build_secs": {
+        "Conv2d": 1.104e-06,
+        "Linear": 6.396e-06,
+        "Pool": 6.040000000000001e-07,
+        "Requant": 9.79e-07
+      },
+      "cost_proxy": {
+        "bootstraps": 32,
+        "cmp_pbs_ops": 96,
+        "ct_add": 243,
+        "scalar_add": 42,
+        "scalar_mul": 114
+      },
+      "measured_totals": {
+        "pbs": 9104
+      },
+      "accuracy": {
+        "float": 0.98046875,
+        "quantized": 0.95703125
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 4,
+        "max_mult_bits": 5,
+        "weight_bits": [
+          4
+        ]
+      },
+      "ir_bytes": 5699,
+      "ir_load_secs": 0.000453875
+    },
+    {
+      "backend": "ckks",
+      "profile": null,
+      "model": "phase4_cnn",
+      "fixture": "../../examples/mnist/phase4_cnn_fixture.json",
+      "num_blocks": 7,
+      "keygen_secs": 2.184091959,
+      "client_key_bytes": 131196,
+      "server_key_bytes": 1869089408,
+      "input_ct_bytes": 4980843,
+      "output_ct_bytes": 4980843,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.010003541,
+          "eval_secs": 0.788014416,
+          "decrypt_secs": 0.000489667,
+          "nodes": [
+            {
+              "name": "conv",
+              "op_type": "Conv2d",
+              "build_secs": 0.000104125,
+              "eval_secs": 0.37538625,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 15
+              },
+              "measured": {}
+            },
+            {
+              "name": "conv__requant",
+              "op_type": "Requant",
+              "build_secs": 0.001574666,
+              "eval_secs": 0.137248459,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 4,
+                "poly_evals": 1,
+                "rescales": 4
+              },
+              "measured": {}
+            },
+            {
+              "name": "pool",
+              "op_type": "Pool",
+              "build_secs": 3.45e-05,
+              "eval_secs": 0.139004666,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 14
+              },
+              "measured": {}
+            },
+            {
+              "name": "head",
+              "op_type": "Linear",
+              "build_secs": 2.4042e-05,
+              "eval_secs": 0.134615459,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 16
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            -2,
+            -1,
+            -4,
+            2,
+            13,
+            -3,
+            -14,
+            1,
+            5,
+            -3
+          ],
+          "max_abs_err": 3.0,
+          "mean_abs_err": 1.3,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.004099459,
+          "eval_secs": 0.531018625,
+          "decrypt_secs": 0.000490625,
+          "nodes": [
+            {
+              "name": "conv",
+              "op_type": "Conv2d",
+              "build_secs": 3.2375e-05,
+              "eval_secs": 0.205895166,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 15
+              },
+              "measured": {}
+            },
+            {
+              "name": "conv__requant",
+              "op_type": "Requant",
+              "build_secs": 0.001573292,
+              "eval_secs": 0.122688041,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 4,
+                "poly_evals": 1,
+                "rescales": 4
+              },
+              "measured": {}
+            },
+            {
+              "name": "pool",
+              "op_type": "Pool",
+              "build_secs": 2.6542e-05,
+              "eval_secs": 0.109169542,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 14
+              },
+              "measured": {}
+            },
+            {
+              "name": "head",
+              "op_type": "Linear",
+              "build_secs": 2.0459e-05,
+              "eval_secs": 0.091596292,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 16
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            10,
+            -8,
+            -5,
+            1,
+            -3,
+            1,
+            -3,
+            -2,
+            -11,
+            18
+          ],
+          "max_abs_err": 4.0,
+          "mean_abs_err": 1.9,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Conv2d": 0.29064070799999997,
+        "Linear": 0.1131058755,
+        "Pool": 0.124087104,
+        "Requant": 0.12996825
+      },
+      "op_type_build_secs": {
+        "Conv2d": 6.825e-05,
+        "Linear": 2.22505e-05,
+        "Pool": 3.0521e-05,
+        "Requant": 0.001573979
+      },
+      "cost_proxy": {
+        "depth_levels": 7,
+        "poly_evals": 1,
+        "rescales": 7,
+        "rotations": 45
+      },
+      "measured_totals": {},
+      "accuracy": {
+        "float": 0.98046875,
+        "quantized": 0.95703125
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 4,
+        "max_mult_bits": 5,
+        "weight_bits": [
+          4
+        ]
+      },
+      "ir_bytes": 5699,
+      "ir_load_secs": 0.000453875
+    },
+    {
+      "backend": "tfhe",
+      "profile": "classic",
+      "model": "phase5_digits",
+      "fixture": "../../examples/mnist/phase5_digits_fixture.json",
+      "num_blocks": 9,
+      "keygen_secs": 0.499656917,
+      "client_key_bytes": 23940,
+      "server_key_bytes": 120419227,
+      "input_ct_bytes": 9483796,
+      "output_ct_bytes": 1481860,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.025065,
+          "eval_secs": 220.482127791,
+          "decrypt_secs": 6.2667e-05,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 2.375e-06,
+              "eval_secs": 149.060108834,
+              "input_lens": [
+                64
+              ],
+              "output_len": 108,
+              "counters": {
+                "ct_add": 801,
+                "scalar_add": 108,
+                "scalar_mul": 765
+              },
+              "measured": {
+                "pbs": 48888
+              }
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 1.292e-06,
+              "eval_secs": 22.197236125,
+              "input_lens": [
+                108
+              ],
+              "output_len": 108,
+              "counters": {
+                "bootstraps": 108,
+                "cmp_pbs_ops": 324,
+                "scalar_add": 108
+              },
+              "measured": {
+                "pbs": 7128
+              }
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 2.417e-06,
+              "eval_secs": 49.224678958,
+              "input_lens": [
+                108
+              ],
+              "output_len": 10,
+              "counters": {
+                "ct_add": 990,
+                "scalar_add": 10,
+                "scalar_mul": 299
+              },
+              "measured": {
+                "pbs": 19137
+              }
+            }
+          ],
+          "decrypted": [
+            -18,
+            -98,
+            47,
+            -76,
+            -40,
+            -89,
+            -39,
+            114,
+            -55,
+            -3
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.025296,
+          "eval_secs": 224.172933209,
+          "decrypt_secs": 6.6625e-05,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 1.625e-06,
+              "eval_secs": 149.391642833,
+              "input_lens": [
+                64
+              ],
+              "output_len": 108,
+              "counters": {
+                "ct_add": 801,
+                "scalar_add": 108,
+                "scalar_mul": 765
+              },
+              "measured": {
+                "pbs": 48888
+              }
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 9.17e-07,
+              "eval_secs": 21.089812792,
+              "input_lens": [
+                108
+              ],
+              "output_len": 108,
+              "counters": {
+                "bootstraps": 108,
+                "cmp_pbs_ops": 324,
+                "scalar_add": 108
+              },
+              "measured": {
+                "pbs": 7128
+              }
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 6.208e-06,
+              "eval_secs": 53.691410958,
+              "input_lens": [
+                108
+              ],
+              "output_len": 10,
+              "counters": {
+                "ct_add": 990,
+                "scalar_add": 10,
+                "scalar_mul": 299
+              },
+              "measured": {
+                "pbs": 19137
+              }
+            }
+          ],
+          "decrypted": [
+            -10,
+            -2,
+            -83,
+            -119,
+            -39,
+            -52,
+            72,
+            -107,
+            14,
+            -148
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Conv2d": 149.2258758335,
+        "Linear": 51.458044958,
+        "Requant": 21.6435244585
+      },
+      "op_type_build_secs": {
+        "Conv2d": 2e-06,
+        "Linear": 4.3125e-06,
+        "Requant": 1.1045e-06
+      },
+      "cost_proxy": {
+        "bootstraps": 108,
+        "cmp_pbs_ops": 324,
+        "ct_add": 1791,
+        "scalar_add": 226,
+        "scalar_mul": 1064
+      },
+      "measured_totals": {
+        "pbs": 75153
+      },
+      "accuracy": {
+        "float": 0.9638888888888888,
+        "quantized": 0.9166666666666666
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 3,
+        "max_mult_bits": 1,
+        "weight_bits": [
+          5,
+          6
+        ]
+      },
+      "ir_bytes": 26262,
+      "ir_load_secs": 0.000393958
+    },
+    {
+      "backend": "ckks",
+      "profile": null,
+      "model": "phase5_digits",
+      "fixture": "../../examples/mnist/phase5_digits_fixture.json",
+      "num_blocks": 9,
+      "keygen_secs": 2.17634025,
+      "client_key_bytes": 131196,
+      "server_key_bytes": 1869089408,
+      "input_ct_bytes": 4980843,
+      "output_ct_bytes": 4980843,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.005585084,
+          "eval_secs": 1.581998167,
+          "decrypt_secs": 0.0004945,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 0.000107084,
+              "eval_secs": 1.0779997080000001,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 24
+              },
+              "measured": {}
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 0.003011916,
+              "eval_secs": 0.250375,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 5,
+                "poly_evals": 2,
+                "rescales": 5
+              },
+              "measured": {}
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 5.475e-05,
+              "eval_secs": 0.250407875,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 22
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            -38,
+            -85,
+            55,
+            -63,
+            -26,
+            -91,
+            -52,
+            113,
+            -49,
+            -1
+          ],
+          "max_abs_err": 20.0,
+          "mean_abs_err": 9.2,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.004007709,
+          "eval_secs": 1.152028292,
+          "decrypt_secs": 0.000507167,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 6.3209e-05,
+              "eval_secs": 0.683458584,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 24
+              },
+              "measured": {}
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 0.003003875,
+              "eval_secs": 0.25057975,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 5,
+                "poly_evals": 2,
+                "rescales": 5
+              },
+              "measured": {}
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 4.1875e-05,
+              "eval_secs": 0.214855333,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 22
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            -33,
+            -38,
+            -103,
+            -123,
+            -27,
+            -61,
+            64,
+            -145,
+            7,
+            -153
+          ],
+          "max_abs_err": 38.0,
+          "mean_abs_err": 16.2,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Conv2d": 0.8807291460000001,
+        "Linear": 0.232631604,
+        "Requant": 0.250477375
+      },
+      "op_type_build_secs": {
+        "Conv2d": 8.514650000000001e-05,
+        "Linear": 4.83125e-05,
+        "Requant": 0.0030078954999999997
+      },
+      "cost_proxy": {
+        "depth_levels": 7,
+        "poly_evals": 2,
+        "rescales": 7,
+        "rotations": 46
+      },
+      "measured_totals": {},
+      "accuracy": {
+        "float": 0.9638888888888888,
+        "quantized": 0.9166666666666666
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 3,
+        "max_mult_bits": 1,
+        "weight_bits": [
+          5,
+          6
+        ]
+      },
+      "ir_bytes": 26262,
+      "ir_load_secs": 0.000393958
+    },
+    {
+      "backend": "tfhe",
+      "profile": "classic",
+      "model": "phase5_qat",
+      "fixture": "../../examples/mnist/phase5_qat_fixture.json",
+      "num_blocks": 8,
+      "keygen_secs": 0.496404,
+      "client_key_bytes": 23940,
+      "server_key_bytes": 120419227,
+      "input_ct_bytes": 8430100,
+      "output_ct_bytes": 1317220,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.022417125,
+          "eval_secs": 179.357406292,
+          "decrypt_secs": 5.575e-05,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 1.458e-06,
+              "eval_secs": 138.543575333,
+              "input_lens": [
+                64
+              ],
+              "output_len": 108,
+              "counters": {
+                "ct_add": 819,
+                "scalar_add": 108,
+                "scalar_mul": 855
+              },
+              "measured": {
+                "pbs": 43479
+              }
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 1.125e-06,
+              "eval_secs": 18.374582375,
+              "input_lens": [
+                108
+              ],
+              "output_len": 108,
+              "counters": {
+                "bootstraps": 108,
+                "cmp_pbs_ops": 324,
+                "scalar_add": 108
+              },
+              "measured": {
+                "pbs": 6156
+              }
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 1.7875e-05,
+              "eval_secs": 22.439170417,
+              "input_lens": [
+                108
+              ],
+              "output_len": 10,
+              "counters": {
+                "ct_add": 833,
+                "scalar_add": 10,
+                "scalar_mul": 111
+              },
+              "measured": {
+                "pbs": 6835
+              }
+            }
+          ],
+          "decrypted": [
+            -24,
+            -16,
+            7,
+            -30,
+            3,
+            -44,
+            -15,
+            26,
+            -9,
+            -6
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.022453917,
+          "eval_secs": 178.508896,
+          "decrypt_secs": 7.15e-05,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 1.792e-06,
+              "eval_secs": 137.911818458,
+              "input_lens": [
+                64
+              ],
+              "output_len": 108,
+              "counters": {
+                "ct_add": 819,
+                "scalar_add": 108,
+                "scalar_mul": 855
+              },
+              "measured": {
+                "pbs": 43479
+              }
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 5.292e-06,
+              "eval_secs": 21.218780250000002,
+              "input_lens": [
+                108
+              ],
+              "output_len": 108,
+              "counters": {
+                "bootstraps": 108,
+                "cmp_pbs_ops": 324,
+                "scalar_add": 108
+              },
+              "measured": {
+                "pbs": 6156
+              }
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 4.625e-06,
+              "eval_secs": 19.378235417,
+              "input_lens": [
+                108
+              ],
+              "output_len": 10,
+              "counters": {
+                "ct_add": 833,
+                "scalar_add": 10,
+                "scalar_mul": 111
+              },
+              "measured": {
+                "pbs": 6835
+              }
+            }
+          ],
+          "decrypted": [
+            -7,
+            -23,
+            -28,
+            -55,
+            -1,
+            -7,
+            37,
+            -31,
+            3,
+            -52
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Conv2d": 138.2276968955,
+        "Linear": 20.908702917,
+        "Requant": 19.7966813125
+      },
+      "op_type_build_secs": {
+        "Conv2d": 1.6250000000000001e-06,
+        "Linear": 1.125e-05,
+        "Requant": 3.2085000000000003e-06
+      },
+      "cost_proxy": {
+        "bootstraps": 108,
+        "cmp_pbs_ops": 324,
+        "ct_add": 1652,
+        "scalar_add": 226,
+        "scalar_mul": 966
+      },
+      "measured_totals": {
+        "pbs": 56470
+      },
+      "accuracy": {
+        "float": 0.9333333333333332,
+        "quantized": 0.9361111111111112
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 3,
+        "max_mult_bits": 1,
+        "weight_bits": [
+          5,
+          4
+        ]
+      },
+      "ir_bytes": 26052,
+      "ir_load_secs": 0.000380709
+    },
+    {
+      "backend": "ckks",
+      "profile": null,
+      "model": "phase5_qat",
+      "fixture": "../../examples/mnist/phase5_qat_fixture.json",
+      "num_blocks": 8,
+      "keygen_secs": 2.301347541,
+      "client_key_bytes": 131196,
+      "server_key_bytes": 1869089408,
+      "input_ct_bytes": 4980843,
+      "output_ct_bytes": 4980843,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.013982208,
+          "eval_secs": 1.352816584,
+          "decrypt_secs": 0.000645416,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 0.000327542,
+              "eval_secs": 0.982671042,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 24
+              },
+              "measured": {}
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 0.001720084,
+              "eval_secs": 0.128415209,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 5,
+                "poly_evals": 1,
+                "rescales": 5
+              },
+              "measured": {}
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 5.725e-05,
+              "eval_secs": 0.239599125,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 22
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            -22,
+            -25,
+            14,
+            -26,
+            -6,
+            -42,
+            -21,
+            30,
+            -11,
+            -8
+          ],
+          "max_abs_err": 9.0,
+          "mean_abs_err": 4.7,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.004458041,
+          "eval_secs": 0.98662325,
+          "decrypt_secs": 0.000479875,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 6.2708e-05,
+              "eval_secs": 0.663395417,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 24
+              },
+              "measured": {}
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 0.001667209,
+              "eval_secs": 0.120613917,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 5,
+                "poly_evals": 1,
+                "rescales": 5
+              },
+              "measured": {}
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 3.7833e-05,
+              "eval_secs": 0.200824083,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 22
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            -4,
+            -23,
+            -32,
+            -60,
+            -8,
+            -17,
+            36,
+            -40,
+            0,
+            -59
+          ],
+          "max_abs_err": 10.0,
+          "mean_abs_err": 4.9,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Conv2d": 0.8230332295,
+        "Linear": 0.220211604,
+        "Requant": 0.124514563
+      },
+      "op_type_build_secs": {
+        "Conv2d": 0.00019512499999999999,
+        "Linear": 4.7541500000000006e-05,
+        "Requant": 0.0016936465
+      },
+      "cost_proxy": {
+        "depth_levels": 7,
+        "poly_evals": 1,
+        "rescales": 7,
+        "rotations": 46
+      },
+      "measured_totals": {},
+      "accuracy": {
+        "float": 0.9333333333333332,
+        "quantized": 0.9361111111111112
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 3,
+        "max_mult_bits": 1,
+        "weight_bits": [
+          5,
+          4
+        ]
+      },
+      "ir_bytes": 26052,
+      "ir_load_secs": 0.000380709
+    },
+    {
+      "backend": "tfhe",
+      "profile": "classic",
+      "model": "phase6_onnx",
+      "fixture": "../../examples/mnist/phase6_onnx_fixture.json",
+      "num_blocks": 9,
+      "keygen_secs": 0.501042042,
+      "client_key_bytes": 23940,
+      "server_key_bytes": 120419227,
+      "input_ct_bytes": 9483796,
+      "output_ct_bytes": 1481860,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.025050625,
+          "eval_secs": 220.7245845,
+          "decrypt_secs": 5.6625e-05,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 1.333e-06,
+              "eval_secs": 149.23439175,
+              "input_lens": [
+                64
+              ],
+              "output_len": 108,
+              "counters": {
+                "ct_add": 801,
+                "scalar_add": 108,
+                "scalar_mul": 765
+              },
+              "measured": {
+                "pbs": 48888
+              }
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 1.167e-06,
+              "eval_secs": 21.053421541,
+              "input_lens": [
+                108
+              ],
+              "output_len": 108,
+              "counters": {
+                "bootstraps": 108,
+                "cmp_pbs_ops": 324,
+                "scalar_add": 108
+              },
+              "measured": {
+                "pbs": 7128
+              }
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 5.583e-06,
+              "eval_secs": 50.436691583,
+              "input_lens": [
+                108
+              ],
+              "output_len": 10,
+              "counters": {
+                "ct_add": 990,
+                "scalar_add": 10,
+                "scalar_mul": 299
+              },
+              "measured": {
+                "pbs": 19137
+              }
+            }
+          ],
+          "decrypted": [
+            -18,
+            -98,
+            47,
+            -76,
+            -40,
+            -89,
+            -39,
+            114,
+            -55,
+            -3
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.025601333,
+          "eval_secs": 215.207663,
+          "decrypt_secs": 8.0708e-05,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 8.167e-06,
+              "eval_secs": 144.577109625,
+              "input_lens": [
+                64
+              ],
+              "output_len": 108,
+              "counters": {
+                "ct_add": 801,
+                "scalar_add": 108,
+                "scalar_mul": 765
+              },
+              "measured": {
+                "pbs": 48888
+              }
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 2.875e-06,
+              "eval_secs": 21.206477541,
+              "input_lens": [
+                108
+              ],
+              "output_len": 108,
+              "counters": {
+                "bootstraps": 108,
+                "cmp_pbs_ops": 324,
+                "scalar_add": 108
+              },
+              "measured": {
+                "pbs": 7128
+              }
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 2.125e-06,
+              "eval_secs": 49.424004458,
+              "input_lens": [
+                108
+              ],
+              "output_len": 10,
+              "counters": {
+                "ct_add": 990,
+                "scalar_add": 10,
+                "scalar_mul": 299
+              },
+              "measured": {
+                "pbs": 19137
+              }
+            }
+          ],
+          "decrypted": [
+            -10,
+            -2,
+            -83,
+            -119,
+            -39,
+            -52,
+            72,
+            -107,
+            14,
+            -148
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Conv2d": 146.9057506875,
+        "Linear": 49.9303480205,
+        "Requant": 21.129949541000002
+      },
+      "op_type_build_secs": {
+        "Conv2d": 4.75e-06,
+        "Linear": 3.854e-06,
+        "Requant": 2.021e-06
+      },
+      "cost_proxy": {
+        "bootstraps": 108,
+        "cmp_pbs_ops": 324,
+        "ct_add": 1791,
+        "scalar_add": 226,
+        "scalar_mul": 1064
+      },
+      "measured_totals": {
+        "pbs": 75153
+      },
+      "accuracy": {
+        "float": 0.9638888888888888,
+        "quantized": 0.9166666666666666
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 3,
+        "max_mult_bits": 1,
+        "weight_bits": [
+          5,
+          6
+        ]
+      },
+      "ir_bytes": 26396,
+      "ir_load_secs": 0.000399875
+    },
+    {
+      "backend": "ckks",
+      "profile": null,
+      "model": "phase6_onnx",
+      "fixture": "../../examples/mnist/phase6_onnx_fixture.json",
+      "num_blocks": 9,
+      "keygen_secs": 2.095409958,
+      "client_key_bytes": 131196,
+      "server_key_bytes": 1869089408,
+      "input_ct_bytes": 4980843,
+      "output_ct_bytes": 4980843,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.011116834,
+          "eval_secs": 1.571063708,
+          "decrypt_secs": 0.000490167,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 0.000123125,
+              "eval_secs": 1.0777365,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 24
+              },
+              "measured": {}
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 0.003036666,
+              "eval_secs": 0.24936425,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 5,
+                "poly_evals": 2,
+                "rescales": 5
+              },
+              "measured": {}
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 5.3625e-05,
+              "eval_secs": 0.240717833,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 22
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            -38,
+            -85,
+            55,
+            -63,
+            -26,
+            -91,
+            -52,
+            113,
+            -49,
+            -1
+          ],
+          "max_abs_err": 20.0,
+          "mean_abs_err": 9.2,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.003874666,
+          "eval_secs": 1.118545333,
+          "decrypt_secs": 0.000507459,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 6.6708e-05,
+              "eval_secs": 0.667148167,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 24
+              },
+              "measured": {}
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 0.002973667,
+              "eval_secs": 0.24332575,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 5,
+                "poly_evals": 2,
+                "rescales": 5
+              },
+              "measured": {}
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 3.5833e-05,
+              "eval_secs": 0.20497375,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 22
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            -33,
+            -38,
+            -103,
+            -123,
+            -27,
+            -61,
+            64,
+            -145,
+            7,
+            -153
+          ],
+          "max_abs_err": 38.0,
+          "mean_abs_err": 16.2,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Conv2d": 0.8724423335,
+        "Linear": 0.2228457915,
+        "Requant": 0.246345
+      },
+      "op_type_build_secs": {
+        "Conv2d": 9.491649999999999e-05,
+        "Linear": 4.4729e-05,
+        "Requant": 0.0030051665
+      },
+      "cost_proxy": {
+        "depth_levels": 7,
+        "poly_evals": 2,
+        "rescales": 7,
+        "rotations": 46
+      },
+      "measured_totals": {},
+      "accuracy": {
+        "float": 0.9638888888888888,
+        "quantized": 0.9166666666666666
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 3,
+        "max_mult_bits": 1,
+        "weight_bits": [
+          5,
+          6
+        ]
+      },
+      "ir_bytes": 26396,
+      "ir_load_secs": 0.000399875
+    },
+    {
+      "backend": "tfhe",
+      "profile": "classic",
+      "model": "phase6_sklearn",
+      "fixture": "../../examples/mnist/phase6_sklearn_fixture.json",
+      "num_blocks": 10,
+      "keygen_secs": 0.491783166,
+      "client_key_bytes": 23940,
+      "server_key_bytes": 120419227,
+      "input_ct_bytes": 10537492,
+      "output_ct_bytes": 1646500,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.027542292,
+          "eval_secs": 39.844887625,
+          "decrypt_secs": 6.65e-05,
+          "nodes": [
+            {
+              "name": "linear0",
+              "op_type": "Linear",
+              "build_secs": 1.209e-06,
+              "eval_secs": 39.844863167,
+              "input_lens": [
+                64
+              ],
+              "output_len": 10,
+              "counters": {
+                "ct_add": 457,
+                "scalar_add": 10,
+                "scalar_mul": 140
+              },
+              "measured": {
+                "pbs": 13376
+              }
+            }
+          ],
+          "decrypted": [
+            27,
+            12,
+            28,
+            -18,
+            15,
+            19,
+            -43,
+            79,
+            43,
+            36
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.028077292,
+          "eval_secs": 41.276189875,
+          "decrypt_secs": 7.1958e-05,
+          "nodes": [
+            {
+              "name": "linear0",
+              "op_type": "Linear",
+              "build_secs": 1.917e-06,
+              "eval_secs": 41.276166125,
+              "input_lens": [
+                64
+              ],
+              "output_len": 10,
+              "counters": {
+                "ct_add": 457,
+                "scalar_add": 10,
+                "scalar_mul": 140
+              },
+              "measured": {
+                "pbs": 13376
+              }
+            }
+          ],
+          "decrypted": [
+            42,
+            12,
+            -9,
+            -24,
+            17,
+            9,
+            149,
+            -38,
+            63,
+            46
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Linear": 40.560514646
+      },
+      "op_type_build_secs": {
+        "Linear": 1.5630000000000001e-06
+      },
+      "cost_proxy": {
+        "ct_add": 457,
+        "scalar_add": 10,
+        "scalar_mul": 140
+      },
+      "measured_totals": {
+        "pbs": 13376
+      },
+      "accuracy": {
+        "float": 0.8944444444444445,
+        "quantized": 0.8805555555555555
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 4,
+        "max_mult_bits": 5,
+        "weight_bits": [
+          8
+        ]
+      },
+      "ir_bytes": 14517,
+      "ir_load_secs": 0.000409875
+    },
+    {
+      "backend": "ckks",
+      "profile": null,
+      "model": "phase6_sklearn",
+      "fixture": "../../examples/mnist/phase6_sklearn_fixture.json",
+      "num_blocks": 10,
+      "keygen_secs": 1.914853666,
+      "client_key_bytes": 131196,
+      "server_key_bytes": 1869089408,
+      "input_ct_bytes": 4980843,
+      "output_ct_bytes": 4980843,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.011304916,
+          "eval_secs": 0.627358417,
+          "decrypt_secs": 0.001402458,
+          "nodes": [
+            {
+              "name": "linear0",
+              "op_type": "Linear",
+              "build_secs": 0.000607083,
+              "eval_secs": 0.626738375,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 19
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            27,
+            12,
+            28,
+            -18,
+            15,
+            19,
+            -43,
+            79,
+            43,
+            36
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.004108333,
+          "eval_secs": 0.389526958,
+          "decrypt_secs": 0.001289709,
+          "nodes": [
+            {
+              "name": "linear0",
+              "op_type": "Linear",
+              "build_secs": 3.2708e-05,
+              "eval_secs": 0.389488583,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 19
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            42,
+            12,
+            -9,
+            -24,
+            17,
+            9,
+            149,
+            -38,
+            63,
+            46
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Linear": 0.5081134789999999
+      },
+      "op_type_build_secs": {
+        "Linear": 0.0003198955
+      },
+      "cost_proxy": {
+        "depth_levels": 1,
+        "rescales": 1,
+        "rotations": 19
+      },
+      "measured_totals": {},
+      "accuracy": {
+        "float": 0.8944444444444445,
+        "quantized": 0.8805555555555555
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 4,
+        "max_mult_bits": 5,
+        "weight_bits": [
+          8
+        ]
+      },
+      "ir_bytes": 14517,
+      "ir_load_secs": 0.000409875
+    },
+    {
+      "backend": "tfhe",
+      "profile": "classic",
+      "model": "phase7_faces",
+      "fixture": "../../examples/faces/phase7_faces_fixture.json",
+      "num_blocks": 11,
+      "keygen_secs": 0.519870584,
+      "client_key_bytes": 23940,
+      "server_key_bytes": 120419227,
+      "input_ct_bytes": 46364692,
+      "output_ct_bytes": 1448916,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.13018575,
+          "eval_secs": 364.942299458,
+          "decrypt_secs": 5.3958e-05,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 3.042e-06,
+              "eval_secs": 251.364421125,
+              "input_lens": [
+                256
+              ],
+              "output_len": 128,
+              "counters": {
+                "ct_add": 1024,
+                "scalar_add": 128,
+                "scalar_mul": 1040
+              },
+              "measured": {
+                "pbs": 84880
+              }
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 1.25e-05,
+              "eval_secs": 47.570906209,
+              "input_lens": [
+                128
+              ],
+              "output_len": 128,
+              "counters": {
+                "bootstraps": 128,
+                "cmp_pbs_ops": 384,
+                "scalar_add": 128,
+                "scalar_mul": 128
+              },
+              "measured": {
+                "pbs": 16720
+              }
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 1.959e-06,
+              "eval_secs": 66.006856833,
+              "input_lens": [
+                128
+              ],
+              "output_len": 8,
+              "counters": {
+                "ct_add": 938,
+                "scalar_add": 8,
+                "scalar_mul": 332
+              },
+              "measured": {
+                "pbs": 26971
+              }
+            }
+          ],
+          "decrypted": [
+            12,
+            122,
+            -146,
+            -34,
+            33,
+            -33,
+            -72,
+            -151
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.121063584,
+          "eval_secs": 376.161401209,
+          "decrypt_secs": 9.2833e-05,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 5.084e-06,
+              "eval_secs": 253.5537905,
+              "input_lens": [
+                256
+              ],
+              "output_len": 128,
+              "counters": {
+                "ct_add": 1024,
+                "scalar_add": 128,
+                "scalar_mul": 1040
+              },
+              "measured": {
+                "pbs": 84880
+              }
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 7.5e-06,
+              "eval_secs": 50.953911417,
+              "input_lens": [
+                128
+              ],
+              "output_len": 128,
+              "counters": {
+                "bootstraps": 128,
+                "cmp_pbs_ops": 384,
+                "scalar_add": 128,
+                "scalar_mul": 128
+              },
+              "measured": {
+                "pbs": 16720
+              }
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 1.666e-06,
+              "eval_secs": 71.653607583,
+              "input_lens": [
+                128
+              ],
+              "output_len": 8,
+              "counters": {
+                "ct_add": 938,
+                "scalar_add": 8,
+                "scalar_mul": 332
+              },
+              "measured": {
+                "pbs": 26971
+              }
+            }
+          ],
+          "decrypted": [
+            -102,
+            -262,
+            185,
+            24,
+            7,
+            -40,
+            51,
+            -96
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Conv2d": 252.4591058125,
+        "Linear": 68.830232208,
+        "Requant": 49.262408813
+      },
+      "op_type_build_secs": {
+        "Conv2d": 4.063e-06,
+        "Linear": 1.8125e-06,
+        "Requant": 1e-05
+      },
+      "cost_proxy": {
+        "bootstraps": 128,
+        "cmp_pbs_ops": 384,
+        "ct_add": 1962,
+        "scalar_add": 264,
+        "scalar_mul": 1500
+      },
+      "measured_totals": {
+        "pbs": 128571
+      },
+      "accuracy": {
+        "float": 0.95,
+        "quantized": 0.9
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 4,
+        "max_mult_bits": 5,
+        "weight_bits": [
+          6,
+          6
+        ]
+      },
+      "ir_bytes": 28311,
+      "ir_load_secs": 0.000577042
+    },
+    {
+      "backend": "ckks",
+      "profile": null,
+      "model": "phase7_faces",
+      "fixture": "../../examples/faces/phase7_faces_fixture.json",
+      "num_blocks": 11,
+      "keygen_secs": 2.457593667,
+      "client_key_bytes": 131196,
+      "server_key_bytes": 1869089408,
+      "input_ct_bytes": 4980843,
+      "output_ct_bytes": 4980843,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.009722459,
+          "eval_secs": 2.5509850419999998,
+          "decrypt_secs": 0.000333167,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 0.000195792,
+              "eval_secs": 1.662222708,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 30
+              },
+              "measured": {}
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 0.008536542,
+              "eval_secs": 0.719321834,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 5,
+                "poly_evals": 6,
+                "rescales": 5
+              },
+              "measured": {}
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 5.0292e-05,
+              "eval_secs": 0.160614958,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 23
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            -8,
+            100,
+            -94,
+            -22,
+            -13,
+            -67,
+            -13,
+            -77
+          ],
+          "max_abs_err": 74.0,
+          "mean_abs_err": 39.875,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.003874292,
+          "eval_secs": 2.04983175,
+          "decrypt_secs": 0.000332959,
+          "nodes": [
+            {
+              "name": "conv0",
+              "op_type": "Conv2d",
+              "build_secs": 8.0708e-05,
+              "eval_secs": 1.166365542,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 30
+              },
+              "measured": {}
+            },
+            {
+              "name": "conv0__requant",
+              "op_type": "Requant",
+              "build_secs": 0.008210417,
+              "eval_secs": 0.719329916,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 5,
+                "poly_evals": 6,
+                "rescales": 5
+              },
+              "measured": {}
+            },
+            {
+              "name": "linear2",
+              "op_type": "Linear",
+              "build_secs": 3.8375e-05,
+              "eval_secs": 0.155777916,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "depth_levels": 1,
+                "rescales": 1,
+                "rotations": 23
+              },
+              "measured": {}
+            }
+          ],
+          "decrypted": [
+            -88,
+            -299,
+            145,
+            5,
+            3,
+            -9,
+            67,
+            -75
+          ],
+          "max_abs_err": 40.0,
+          "mean_abs_err": 22.75,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Conv2d": 1.414294125,
+        "Linear": 0.158196437,
+        "Requant": 0.719325875
+      },
+      "op_type_build_secs": {
+        "Conv2d": 0.00013825,
+        "Linear": 4.43335e-05,
+        "Requant": 0.0083734795
+      },
+      "cost_proxy": {
+        "depth_levels": 7,
+        "poly_evals": 6,
+        "rescales": 7,
+        "rotations": 53
+      },
+      "measured_totals": {},
+      "accuracy": {
+        "float": 0.95,
+        "quantized": 0.9
+      },
+      "bit_plan": {
+        "act_bits": 2,
+        "input_bits": 4,
+        "max_mult_bits": 5,
+        "weight_bits": [
+          6,
+          6
+        ]
+      },
+      "ir_bytes": 28311,
+      "ir_load_secs": 0.000577042
+    }
+  ]
+}

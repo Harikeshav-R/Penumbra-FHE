@@ -450,17 +450,20 @@ is reducing and parallelizing PBS, plus tuning crypto params.
       noise/security/speed; keep security fixed, optimize speed for your bit-widths. Record a
       tuned default profile.
       *Note:* five 128-bit secure profiles evaluated; `classic` confirmed as the tuned default profile (`docs/results/phase10-parallel-tuned-sweep.json`), outperforming multi-bit sets under outer rayon parallelism while keeping server keys at 114.84 MB.
-- [ ] **Bit-width minimization:** revisit models to use the smallest viable precision per
+- [x] **Bit-width minimization:** revisit models to use the smallest viable precision per
       layer (you own this since there's no optimizer — `PROJECT.md` §3).
-- [ ] **Binary IR format (optional):** replace JSON with a compact binary format if
+      *Note:* deterministic coordinate descent search implemented in `penumbra.quantization.minimize` with 1% accuracy tolerance; `phase2_logreg` reduced from 8 to 6 blocks (3.82x speedup, PBS 555→137), `phase5_digits` and `phase6_onnx` from 11 to 9 blocks (1.42x speedup, PBS 109,045→75,153), and `phase5_qat` from 11 to 8 blocks (1.88x speedup, PBS 119,096→56,470), yielding a 1.46x geometric-mean speedup across all 7 fixtures (`docs/BENCHMARKS.md`).
+- [x] **Binary IR format (optional):** replace JSON with a compact binary format if
       load/serialization shows up in profiles.
-- [ ] **Benchmark suite:** standardized latency/accuracy numbers for MNIST, the CNN, faces,
+      *Note:* declined based on profiling evidence: IR load times across all models are 0.38–0.58 ms (< 0.084% of evaluation time) on 5–28 KB payloads (`docs/BENCHMARKS.md`); JSON IR format retained without binary complexity.
+- [x] **Benchmark suite:** standardized latency/accuracy numbers for MNIST, the CNN, faces,
       and a tree model. Track regressions in CI. If Phase 12 has landed, this is
       `penumbra-bench` and it covers **both backends** — don't build a second one.
-- [ ] Document tuning guidance in `docs/PERFORMANCE.md` (what knobs exist, their tradeoffs) —
+      *Note:* `penumbra-bench` covers all seven committed fixtures with latency, accuracy, wire sizes, and cost proxies across both backends (`docs/results/phase10-final-sweep.json`); machine-independent regression baseline gated in CI (`bench-regression` job in `.github/workflows/ci.yml`). Tree model benchmarking explicitly deferred to Phase 8, which owns tree-to-IR lowering and ciphertext comparison ops.
+- [x] Document tuning guidance in `docs/PERFORMANCE.md` (what knobs exist, their tradeoffs) —
       per backend, since the knobs differ: PBS count and radix width for TFHE, polynomial
       degree and slot packing for CKKS.
-
+      *Note:* documented in `docs/PERFORMANCE.md`: cost models per backend, parameter profile selection, radix width levers, CKKS polynomial and packing knobs, bit-width minimization workflow, and CI regression gating.
 ### Exit Criteria
 
 - Measurable, documented latency improvement over the Phase 4/7 baselines.
