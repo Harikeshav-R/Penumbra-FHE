@@ -44,9 +44,9 @@ pub fn fit_requant(
 ) -> Result<PolyMap, String> {
     let t_sat = (((1usize << out_bits) * (1usize << shift)) / (mult as usize).max(1))
         .next_power_of_two()
-        .max(256);
+        .max(512);
     let cap = (1i64 << (input_bits.saturating_sub(1).max(1))) as f64;
-    let x_max = (t_sat as f64).min(cap).max(256.0);
+    let x_max = (t_sat as f64).min(cap).max(512.0);
     let lo = -x_max;
     let hi = x_max;
     let divisor = (1u64 << shift) as f64;

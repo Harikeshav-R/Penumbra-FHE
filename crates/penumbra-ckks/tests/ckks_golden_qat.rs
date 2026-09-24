@@ -69,13 +69,11 @@ fn ckks_fhe_matches_quantized_cleartext_qat() {
         let outputs = evaluate_graph(&ctx, &graph, inputs_map).expect("eval failed");
         let out_cts = &outputs[&graph.outputs[0]];
         let raw_floats = decrypt_raw_vec(&ck, out_cts);
-
         let max_err = raw_floats
             .iter()
             .zip(&want_logits)
             .map(|(&g, &w)| (g - w as f64).abs())
             .fold(0.0f64, f64::max);
-
         println!(
             "[ckks:{}] phase5_qat sample {s}: max |err| = {max_err:.6e} (declared bound {:.3e})",
             penumbra_ckks::hal_backend_name(),
