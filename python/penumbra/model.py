@@ -40,13 +40,13 @@ terminal ``Linear`` head is left wide — its logits are decrypted and argmaxed 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 
 import numpy as np
 
 from penumbra.bitwidth import (
     MESSAGE_BITS,
-    internal_bits,
-    propagate_bit_widths,
+    minimal_num_blocks,
 )
 from penumbra.client import CryptoProfile, KeySet, run_encrypted
 from penumbra.compile import RequantChannelParams, insert_requants
@@ -114,6 +114,8 @@ class Model:
         # Populated by quantize(): the input scale and per-layer scales, for accuracy reporting
         # and for callers that want to dequantize results.
         self.input_scale: float | None = None
+        # Populated by quantize(): per-accumulator-layer weight bit-widths in evaluation order.
+        self.weight_bits: list[int] = []
 
     # -- calibration -----------------------------------------------------------------------
 
@@ -157,7 +159,7 @@ class Model:
         self,
         calibration_data: np.ndarray,
         *,
-        n_bits: int = 4,
+        n_bits: int | Sequence[int] = 4,
         act_bits: int = MESSAGE_BITS,
         per_channel: bool = False,
         max_mult_bits: int = 5,
@@ -167,12 +169,15 @@ class Model:
         """Quantize the float model to an IR graph using ``calibration_data`` (no manual scales).
 
         ``calibration_data`` is a float batch ``(N, ...)`` of representative inputs (flattened to
-        ``(N, feature_len)`` per the input tensor's layout). ``calibration`` selects the
-        activation-range strategy: ``"minmax"`` (the peak, no clipping — the default, reproducible
-        and safe), ``"percentile"`` (clip the extreme tail — outlier-robust), or ``"mse"`` (the
-        clip minimizing round-trip quantization MSE at ``act_bits``). Percentile/MSE can help
-        accuracy when activations are heavy-tailed (``PROJECT.md`` §8). Returns the IR
-        :class:`Graph` and stores it on :attr:`graph`. See the module docstring for the pipeline.
+        ``(N, feature_len)`` per the input tensor's layout). ``n_bits`` accepts either a single int
+        for all accumulator layers or one entry per accumulator layer (Conv2d/Linear) in evaluation
+        order; per-layer widths are the Phase-10 bit-width minimization lever. ``calibration``
+        selects the activation-range strategy: ``"minmax"`` (the peak, no clipping — the default,
+        reproducible and safe), ``"percentile"`` (clip the extreme tail — outlier-robust), or
+        ``"mse"`` (the clip minimizing round-trip quantization MSE at ``act_bits``).
+        Percentile/MSE can help accuracy when activations are heavy-tailed (``PROJECT.md`` §8).
+        Returns the IR :class:`Graph` and stores it on :attr:`graph`. See the module docstring for
+        the pipeline.
         """
         # A Requant output (post-activation value) must fit a SINGLE radix block, so act_bits
         # cannot exceed MESSAGE_BITS — the Rust runtime rejects a wider Requant at load, and the
@@ -184,13 +189,34 @@ class Model:
                 "post-Requant activation must fit one shortint block — wider activations are not "
                 "representable (raise n_bits for weights/inputs instead, which is independent)."
             )
+        acc_indices = [i for i, ly in enumerate(self.layers) if isinstance(ly, _ACCUMULATOR_LAYERS)]
+        if isinstance(n_bits, int):
+            layer_bits = [int(n_bits)] * len(acc_indices)
+        else:
+            layer_bits = [int(b) for b in n_bits]
+            if len(layer_bits) != len(acc_indices):
+                raise ValueError(
+                    f"n_bits has {len(layer_bits)} entries but the model has "
+                    f"{len(acc_indices)} accumulator layer(s) (Conv2d/Linear) at indices "
+                    f"{acc_indices}; pass one bit-width per accumulator layer in evaluation "
+                    "order, or a single int for all of them"
+                )
+        if any(b < 1 for b in layer_bits):
+            raise ValueError(f"every n_bits entry must be >= 1, got {layer_bits}")
+        # Per-accumulator-layer weight width. `weight_bits` is already a per-node IR field
+        # (ir.py LinearSpec/Conv2dSpec), so this needs no schema change.
+        self.weight_bits = list(layer_bits)
+
         if calibration not in _OBSERVERS:
             raise ValueError(
                 f"calibration must be one of {sorted(_OBSERVERS)}; got {calibration!r}"
             )
         observer_cls = _OBSERVERS[calibration]
         cfg = QuantConfig(
-            n_bits=n_bits, act_bits=act_bits, per_channel=per_channel, max_mult_bits=max_mult_bits
+            n_bits=layer_bits[0] if layer_bits else 4,
+            act_bits=act_bits,
+            per_channel=per_channel,
+            max_mult_bits=max_mult_bits,
         )
         x = np.asarray(calibration_data, dtype=np.float64)
         if x.ndim == 1:
@@ -227,6 +253,8 @@ class Model:
                     f"Activation at layer {i} does not follow an accumulator (Conv2d/Linear); "
                     "a standalone post-Requant Activation LUT is not yet supported by Model"
                 )
+            if isinstance(layer, _ACCUMULATOR_LAYERS):
+                ctx.config = replace(cfg, n_bits=layer_bits[acc_indices.index(i)])
 
             layer_nodes, out_scale, _out_len, ch_scales = layer.quantize(ctx)
             nodes.extend(layer_nodes)
@@ -359,15 +387,7 @@ class Model:
         transient multiply peak (``max(x,0)*mult + round_bias``) — the internal-peak budget. We
         take the max of both over the graph and round up to whole ``MESSAGE_BITS`` blocks.
         """
-        widths = propagate_bit_widths(graph)
-        peak_bits = max(widths.values())
-        for node in graph.nodes:
-            # internal_bits is a no-op (== output width) for non-Requant ops and returns the
-            # transient multiply peak for a Requant — aggregating over channels for a per-channel
-            # Requant, so a large per-channel multiplier is not silently under-budgeted here.
-            in_bits = [widths[name] for name in node.inputs]
-            peak_bits = max(peak_bits, internal_bits(node.op, in_bits))
-        return max(2, (peak_bits + MESSAGE_BITS - 1) // MESSAGE_BITS)
+        return minimal_num_blocks(graph)
 
     def _self_verify(self, graph: Graph, x: np.ndarray) -> None:
         """Run the integer oracle on the calibration inputs to confirm the graph evaluates.

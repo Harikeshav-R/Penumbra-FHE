@@ -32,6 +32,7 @@ build on the same ``Model`` / IR objects.
 from penumbra import layers
 from penumbra.bitwidth import (
     check_bit_width_budget,
+    minimal_num_blocks,
     output_bits,
     propagate_bit_widths,
     radix_capacity_bits,
@@ -77,6 +78,7 @@ __all__ = [
     # Bit-width tracking + compile pass (Phase 4, PROJECT.md §9)
     "output_bits",
     "propagate_bit_widths",
+    "minimal_num_blocks",
     "check_bit_width_budget",
     "radix_capacity_bits",
     "insert_requants",

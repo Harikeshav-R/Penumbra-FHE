@@ -234,3 +234,18 @@ def check_bit_width_budget(graph: Graph) -> None:
                 f"the radix holds only {capacity} ({graph.num_blocks} blocks x {MESSAGE_BITS} "
                 "bits). Reduce the requant multiplier, reduce input precision, or widen num_blocks."
             )
+
+
+def minimal_num_blocks(graph: Graph) -> int:
+    """Smallest ``num_blocks`` whose radix holds every tensor width and every Requant peak.
+
+    The radix must fit not just each tensor's propagated width but each ``Requant``'s transient
+    multiply peak (``max(x,0)*mult + round_bias``) — the internal-peak budget. Floor of 2 blocks
+    matches the runtime's minimum radix.
+    """
+    widths = propagate_bit_widths(graph)
+    peak_bits = max(widths.values(), default=0)
+    for node in graph.nodes:
+        in_bits = [widths[name] for name in node.inputs]
+        peak_bits = max(peak_bits, internal_bits(node.op, in_bits))
+    return max(2, (peak_bits + MESSAGE_BITS - 1) // MESSAGE_BITS)
