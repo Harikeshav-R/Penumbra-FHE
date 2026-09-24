@@ -444,11 +444,12 @@ is reducing and parallelizing PBS, plus tuning crypto params.
 - [x] **Reduce bootstraps:** fuse adjacent requant/activation where possible; skip
       unnecessary requant; choose op orderings that minimize PBS.
       *Note:* the requant/activation fusion rules are implemented in `penumbra-core::optimize` but currently match no committed fixture; the measured reduction came from the `Linear`/`Conv2d`/`Pool(avg)` MAC loop.
-- [ ] **Parallelism:** evaluate independent ciphertexts/channels in parallel (rayon). PBS over
+- [x] **Parallelism:** evaluate independent ciphertexts/channels in parallel (rayon). PBS over
       a layer's outputs is embarrassingly parallel.
-- [ ] **Parameter tuning:** experiment with `tfhe-rs` `shortint` parameter sets to trade
+- [x] **Parameter tuning:** experiment with `tfhe-rs` `shortint` parameter sets to trade
       noise/security/speed; keep security fixed, optimize speed for your bit-widths. Record a
       tuned default profile.
+      *Note:* five 128-bit secure profiles evaluated; `classic` confirmed as the tuned default profile (`docs/results/phase10-parallel-tuned-sweep.json`), outperforming multi-bit sets under outer rayon parallelism while keeping server keys at 114.84 MB.
 - [ ] **Bit-width minimization:** revisit models to use the smallest viable precision per
       layer (you own this since there's no optimizer — `PROJECT.md` §3).
 - [ ] **Binary IR format (optional):** replace JSON with a compact binary format if

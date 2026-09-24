@@ -6,9 +6,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use penumbra_bench::available_backends;
 use penumbra_bench::models::{find, load, ModelFixture, MODELS};
 use penumbra_bench::report::{run_model, to_json, to_markdown, ModelRun, Report, ReportMeta};
-use penumbra_bench::available_backends;
 
 #[cfg(feature = "ckks")]
 use penumbra_bench::ckks_backend;
@@ -195,7 +195,11 @@ fn run() -> Result<(), String> {
             );
             match backend_name.as_str() {
                 "tfhe" => {
-                    let mut run = run_model(penumbra_tfhe::TfheBackend::new(args.tfhe_profile), &loaded, args.samples)?;
+                    let mut run = run_model(
+                        penumbra_tfhe::TfheBackend::new(args.tfhe_profile),
+                        &loaded,
+                        args.samples,
+                    )?;
                     run.profile = Some(args.tfhe_profile.name().to_string());
                     runs.push(run);
                 }

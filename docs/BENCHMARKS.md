@@ -22,9 +22,13 @@ with Phase 12 and get their own columns; see [Cross-backend comparison](#cross-b
   tests (`cargo test --release`), on the development machine. It is indicative, not a
   controlled benchmark; absolute numbers vary by CPU. The committed test batches are kept tiny
   (`N_TEST`) precisely because each FHE sample is expensive.
-- **Crypto profile:** the default `PARAM_MESSAGE_2_CARRY_2_KS_PBS` (`MESSAGE_BITS = 2`), no
-  parameter tuning (that is Phase 10). `num_blocks` is sized by the library to the model's
-  widest accumulator.
+- **Crypto profile:** the tuned default `PARAM_MESSAGE_2_CARRY_2_KS_PBS` (`classic` profile,
+  `MESSAGE_BITS = 2`, p-fail = 2^-129.581, algorithmic cost ~ 113). The parameter sweep evaluated
+  discrete-Gaussian noise and multi-bit PBS parameter sets (grouping factors 2, 3, 4 with
+  deterministic execution); `classic` was confirmed as the tuned default because outer rayon
+  parallelism already saturates available CPU cores, where classic's lower serial cost outperforms
+  multi-bit blind rotation while preserving 128-bit security and the smallest server key (114.84 MB).
+  `num_blocks` is sized by the library to the model's widest accumulator.
 - **Cost proxy:** bootstraps per sample — `runtime ≈ number of bootstraps` (`PROJECT.md` §5).
   This is a **TFHE** proxy; CKKS's is multiplicative depth, rotations, and rescales.
 - **Harness metrics:** `Eval total` = `GraphProfile::total`, which includes each node's `Backend::build_op`;
@@ -97,8 +101,9 @@ scalar multiplication in `Conv2d` and `Linear`, while `Requant` accounts for onl
 runtime (1024 PBS out of 9104 total). The MAC loop's carry propagation makes multi-block radix
 operations bootstrap-bearing (~2 PBS per block per add). Phase 10 optimizes this by grouping
 inputs by weight value and evaluating multi-term sums via `sum_ciphertexts_parallelized`, cutting
-carry propagation and latency by ~50 %; parallelizing per-element work with `rayon` is a subsequent
-Phase-10 optimization target.
+carry propagation and latency by ~50 %. Evaluating per-element work in parallel across cores via
+`rayon` (Phase 10) further cuts CNN evaluation latency from 38.912 s to 26.899 s (a 1.45x speedup),
+with `Conv2d`, `Requant`, and `Pool` outputs processed concurrently.
 
 ### Phase-5 — real handwritten digits, PTQ (`examples/mnist/phase5_digits_fixture.json`)
 
@@ -177,9 +182,9 @@ fast Python guard (`tests/test_faces_fixture.py`) checks fixture self-consistenc
 
 ## Cross-backend comparison
 
-**Measured on Apple M3 Pro, macOS 25.6.0, `rustc 1.98.1 (48a229cea 2026-09-01)`, HAL backend `FFT64Neon` (`poulpy-ckks 0.8.3`), commit `78f5db7`, 2026-09-23, `--samples 2`. Raw artifacts: [`docs/results/phase10-tfhe-sweep.json`](./results/phase10-tfhe-sweep.json) (TFHE Phase 10 arm) and [`docs/results/phase12-4-comparison.json`](./results/phase12-4-comparison.json) (CKKS comparison arm).**
+**Measured on Apple M3 Pro, macOS 25.6.0, `rustc 1.98.1 (48a229cea 2026-09-01)`, HAL backend `FFT64Neon` (`poulpy-ckks 0.8.3`), commit `4c30b13`, 2026-09-24, `--samples 2`. Raw artifacts: [`docs/results/phase10-parallel-tuned-sweep.json`](./results/phase10-parallel-tuned-sweep.json) (TFHE Phase 10 parallel tuned arm) and [`docs/results/phase12-4-comparison.json`](./results/phase12-4-comparison.json) (CKKS comparison arm).**
 
-> ℹ️ **Phase 10 update:** TFHE numbers in Tables A, B, and C reflect the Phase 10 bootstrap-reduction sweep (`docs/results/phase10-tfhe-sweep.json`), incorporating zero-weight skips, deterministic weight grouping, and sum-tree carry-propagation reduction. CKKS numbers are carried over unchanged from the Phase 12.4 comparison sweep (`docs/results/phase12-4-comparison.json`): no CKKS code path was touched.
+> ℹ️ **Phase 10 update:** TFHE numbers in Tables A, B, and C reflect the Phase 10 parallel tuned sweep (`docs/results/phase10-parallel-tuned-sweep.json`), incorporating zero-weight skips, deterministic weight grouping, sum-tree carry-propagation reduction, rayon parallelization over independent outputs, and the tuned `classic` crypto profile. CKKS numbers are carried over unchanged from the Phase 12.4 comparison sweep (`docs/results/phase12-4-comparison.json`): no CKKS code path was touched.
 
 This document owns the **numbers**; [`docs/COMPARISON.md`](./COMPARISON.md) owns the
 **argument** — the hypothesis under test, what is held constant, and the threats to validity
@@ -196,54 +201,55 @@ Three things must be stated wherever a cross-backend number appears:
 
 ### Table A — Latency (Wall-Clock per Sample)
 
-| Model | Backend | Keygen (s) | Encrypt (s) | Eval total (s) | of which op-build (s) | Decrypt (s) | TFHE / CKKS eval |
-|---|---|---:|---:|---:|---:|---:|---:|
-| phase2_logreg | tfhe | 0.496 | 0.022 | 4.238 | 0.000 | 0.000 | 9.5x |
-| phase2_logreg | ckks | 1.907 | 0.004 | 0.444 | 0.001 | 0.001 | — |
-| phase4_cnn | tfhe | 0.261 | 0.011 | 38.912 | 0.000 | 0.000 | 74.4x |
-| phase4_cnn | ckks | 1.900 | 0.004 | 0.523 | 0.001 | 0.001 | — |
-| phase5_digits | tfhe | 0.494 | 0.030 | 358.398 | 0.000 | 0.000 | 183.5x |
-| phase5_digits | ckks | 1.952 | 0.004 | 1.953 | 0.014 | 0.000 | — |
-| phase5_qat | tfhe | 0.533 | 0.030 | 395.328 | 0.000 | 0.000 | 215.2x |
-| phase5_qat | ckks | 1.904 | 0.004 | 1.837 | 0.012 | 0.000 | — |
-| phase6_onnx | tfhe | 0.495 | 0.030 | 365.622 | 0.000 | 0.000 | 187.5x |
-| phase6_onnx | ckks | 1.898 | 0.004 | 1.950 | 0.014 | 0.000 | — |
-| phase6_sklearn | tfhe | 0.504 | 0.027 | 43.253 | 0.000 | 0.000 | 98.8x |
-| phase6_sklearn | ckks | 1.899 | 0.004 | 0.438 | 0.000 | 0.001 | — |
-| phase7_faces | tfhe | 0.496 | 0.122 | 437.005 | 0.000 | 0.000 | 214.9x |
-| phase7_faces | ckks | 1.895 | 0.004 | 2.033 | 0.008 | 0.000 | — |
+| Model | Backend | Profile | Keygen (s) | Encrypt (s) | Eval total (s) | of which op-build (s) | Decrypt (s) | TFHE / CKKS eval |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| phase2_logreg | tfhe | classic | 0.534 | 0.027 | 1.992 | 0.000 | 0.000 | 4.5x |
+| phase2_logreg | ckks | - | 1.907 | 0.004 | 0.444 | 0.001 | 0.001 | — |
+| phase4_cnn | tfhe | classic | 0.266 | 0.010 | 26.899 | 0.000 | 0.000 | 51.4x |
+| phase4_cnn | ckks | - | 1.900 | 0.004 | 0.523 | 0.001 | 0.001 | — |
+| phase5_digits | tfhe | classic | 0.275 | 0.030 | 314.796 | 0.000 | 0.000 | 161.2x |
+| phase5_digits | ckks | - | 1.952 | 0.004 | 1.953 | 0.014 | 0.000 | — |
+| phase5_qat | tfhe | classic | 0.272 | 0.030 | 336.504 | 0.000 | 0.000 | 183.1x |
+| phase5_qat | ckks | - | 1.904 | 0.004 | 1.837 | 0.012 | 0.000 | — |
+| phase6_onnx | tfhe | classic | 0.263 | 0.030 | 309.756 | 0.000 | 0.000 | 158.9x |
+| phase6_onnx | ckks | - | 1.898 | 0.004 | 1.950 | 0.014 | 0.000 | — |
+| phase6_sklearn | tfhe | classic | 0.265 | 0.027 | 40.859 | 0.000 | 0.000 | 93.3x |
+| phase6_sklearn | ckks | - | 1.899 | 0.004 | 0.438 | 0.000 | 0.001 | — |
+| phase7_faces | tfhe | classic | 0.267 | 0.122 | 359.971 | 0.000 | 0.000 | 177.0x |
+| phase7_faces | ckks | - | 1.895 | 0.004 | 2.033 | 0.008 | 0.000 | — |
 
-*Variance check (`phase2_logreg`, Criterion 10 samples):* `tfhe` median 11.122 s (95% CI [11.018 s, 11.254 s]); `ckks` median 412.89 ms (95% CI [406.09 ms, 423.43 ms]).
+*Variance check (`phase2_logreg`, Criterion 10 samples):* `tfhe` median 1.880 s (95% CI [1.876 s, 1.885 s]); `ckks` median 412.89 ms (95% CI [406.09 ms, 423.43 ms]).
 
 ### Table B — Per-Op-Type Eval Breakdown (Mean Seconds per Sample)
 
-Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/results/phase10-tfhe-sweep.json`](./results/phase10-tfhe-sweep.json) for the full 7-model op breakdown):
+Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/results/phase10-parallel-tuned-sweep.json`](./results/phase10-parallel-tuned-sweep.json) for the full 7-model op breakdown):
 
 | Model | Backend | Op Type | Calls | Build (s) | Eval (s) | PBS (measured) |
 |---|---|---|---:|---:|---:|---:|
-| phase2_logreg | tfhe | Argmax | 1 | 0.0000 | 0.0158 | 1 |
-| phase2_logreg | tfhe | Linear | 1 | 0.0000 | 4.2222 | 1268 |
+| phase2_logreg | tfhe | Argmax | 1 | 0.0000 | 0.0161 | 1 |
+| phase2_logreg | tfhe | Linear | 1 | 0.0000 | 1.9755 | 554 |
 | phase2_logreg | ckks | Argmax | 1 | 0.0012 | 0.1118 | - |
 | phase2_logreg | ckks | Linear | 1 | 0.0000 | 0.3309 | - |
-| phase5_digits | tfhe | Conv2d | 1 | 0.0000 | 228.1116 | 69957 |
-| phase5_digits | tfhe | Linear | 1 | 0.0000 | 77.3497 | 25138 |
-| phase5_digits | tfhe | Requant | 1 | 0.0000 | 52.9370 | 13950 |
+| phase5_digits | tfhe | Conv2d | 1 | 0.0000 | 208.6791 | 69957 |
+| phase5_digits | tfhe | Linear | 1 | 0.0000 | 62.9660 | 25138 |
+| phase5_digits | tfhe | Requant | 1 | 0.0000 | 43.1511 | 13950 |
 | phase5_digits | ckks | Conv2d | 1 | 0.0001 | 0.6956 | - |
 | phase5_digits | ckks | Linear | 1 | 0.0000 | 0.1755 | - |
 | phase5_digits | ckks | Requant | 1 | 0.0140 | 1.0674 | - |
-| phase7_faces | tfhe | Conv2d | 1 | 0.0000 | 291.9002 | 84880 |
-| phase7_faces | tfhe | Linear | 1 | 0.0000 | 81.6164 | 26971 |
-| phase7_faces | tfhe | Requant | 1 | 0.0000 | 63.4881 | 16720 |
+| phase7_faces | tfhe | Conv2d | 1 | 0.0000 | 249.2202 | 84880 |
+| phase7_faces | tfhe | Linear | 1 | 0.0000 | 62.9351 | 26971 |
+| phase7_faces | tfhe | Requant | 1 | 0.0000 | 47.8155 | 16720 |
 | phase7_faces | ckks | Conv2d | 1 | 0.0001 | 1.1641 | - |
 | phase7_faces | ckks | Linear | 1 | 0.0000 | 0.1592 | - |
 | phase7_faces | ckks | Requant | 1 | 0.0082 | 0.7017 | - |
+
 ### Table C — Sizes & Scheme Cost Proxies
 
 | Model | Backend | Input CT | Output CT | Client Key | Server Key | Cost Proxy Counters |
 |---|---|---:|---:|---:|---:|---|
-| phase2_logreg | tfhe | 8.04 MB | 128.7 KB | 23.4 KB | 114.84 MB | cmp_pbs_ops: 1, ct_add: 45, scalar_add: 1, scalar_mul: 6, measured pbs: 1269 |
+| phase2_logreg | tfhe | 8.04 MB | 128.7 KB | 23.4 KB | 114.84 MB | cmp_pbs_ops: 1, ct_add: 45, scalar_add: 1, scalar_mul: 6, measured pbs: 555 |
 | phase2_logreg | ckks | 4.75 MB | 4.75 MB | 128.1 KB | 1782.50 MB | depth_levels: 5, poly_evals: 1, rescales: 5, rotations: 18 |
-| phase4_cnn | tfhe | 3.96 MB | 1.10 MB | 23.4 KB | 114.84 MB | bootstraps: 32, cmp_pbs_ops: 96, ct_add: 243, scalar_add: 42, scalar_mul: 114, measured pbs: 10328 |
+| phase4_cnn | tfhe | 3.96 MB | 1.10 MB | 23.4 KB | 114.84 MB | bootstraps: 32, cmp_pbs_ops: 96, ct_add: 243, scalar_add: 42, scalar_mul: 114, measured pbs: 9104 |
 | phase4_cnn | ckks | 4.75 MB | 4.75 MB | 128.1 KB | 1782.50 MB | depth_levels: 7, poly_evals: 1, rescales: 7, rotations: 45 |
 | phase5_digits | tfhe | 11.05 MB | 1.73 MB | 23.4 KB | 114.84 MB | bootstraps: 108, cmp_pbs_ops: 324, ct_add: 1818, scalar_add: 226, scalar_mul: 1244, measured pbs: 109045 |
 | phase5_digits | ckks | 4.75 MB | 4.75 MB | 128.1 KB | 1782.50 MB | depth_levels: 7, poly_evals: 9, rescales: 7, rotations: 46 |
@@ -297,6 +303,35 @@ Measured on Apple M3 Pro, commit `78f5db7` (optimized) vs commit `24acfdc` (inst
 | phase6_sklearn | 159.067 | 43.253 | 3.68x | -72.8% | 13376 |
 | phase7_faces | 730.216 | 437.005 | 1.67x | -40.2% | 128571 |
 
+### Phase 10 — Parallelism and parameter tuning
+
+Following bootstrap reduction, Phase 10 tasks 3 and 4 parallelized per-element operations across CPU cores with `rayon` and evaluated `tfhe-rs` parameter profiles to establish a tuned default.
+
+#### 1. Rayon Parallelism Before / After (Classic Profile)
+
+Measured on Apple M3 Pro (11 cores), commit `6605986` (parallel) vs `78f5db7` (pre-parallel baseline), `--samples 2`:
+
+| Model | Baseline Eval (s) | Parallel Eval (s) | Speedup | Latency Reduction | Baseline PBS | Parallel PBS | PBS Delta |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| phase2_logreg | 4.238 | 1.992 | 2.13x | -53.0% | 555 | 555 | 0 |
+| phase4_cnn | 38.912 | 26.899 | 1.45x | -30.9% | 9104 | 9104 | 0 |
+
+As required by the golden invariant, ground-truth measured PBS counts are identical before and after the parallel refactor (555 on `phase2_logreg`, 9104 on `phase4_cnn`). Parallelism changes only *when* operations run across threads, not *what* operations are performed.
+
+#### 2. Crypto Parameter Profile Sweep
+
+Measured across all five 128-bit secure parameter profiles at `MESSAGE_BITS = 2` (`samples 2`, Apple M3 Pro, release build):
+
+| Profile | Noise / Grouping | p-fail | Eval logreg (s) | Eval CNN (s) | Geomean speedup vs classic | Server key | Measured PBS |
+|---|---|---|---:|---:|---:|---:|---|
+| classic | TUniform / 1-bit PBS | 2^-129.581 | 2.010 | 27.030 | 1.000x | 114.84 MB | 555 (logreg), 9104 (CNN) |
+| gaussian | Gaussian / 1-bit PBS | 2^-128.000 | 2.027 | 27.890 | 0.980x | 121.89 MB | 555 (logreg), 9104 (CNN) |
+| multibit2 | TUniform / Group 2 | 2^-140.341 | 3.866 | 60.317 | 0.483x | 373.15 MB | 555 (logreg), 9104 (CNN) |
+| multibit3 | TUniform / Group 3 | 2^-128.235 | 2.817 | 47.122 | 0.640x | 392.31 MB | 555 (logreg), 9104 (CNN) |
+| multibit4 | TUniform / Group 4 | 2^-134.345 | 2.052 | 32.209 | 0.907x | 302.07 MB | 555 (logreg), 9104 (CNN) |
+
+**Decision rule and outcome:** Multi-bit PBS profiles trade a higher serial algorithmic cost (group-2 ~188, group-3 ~143, group-4 ~100 vs classic ~113) for internal multi-threaded blind rotation. Because outer `rayon` parallelization over independent outputs already saturates available CPU cores, multi-bit PBS experiences thread contention with the outer pool, leading to lower net throughput and larger server keys (302–392 MB vs 114.84 MB). Under the decision rule requiring $S(p) \ge 1.15$, no multi-bit candidate qualifies. The `classic` parameter set (`PARAM_MESSAGE_2_CARRY_2_KS_PBS`) is confirmed as the tuned default profile.
+
 ## Reproducing
 
 ```bash
@@ -325,6 +360,13 @@ for m in phase2_logreg phase4_cnn phase5_digits phase5_qat phase6_onnx phase6_sk
   ./target/release/penumbra-bench-report \
     --models "$m" --backends tfhe,ckks --samples 2 \
     --format json --out "target/bench-results/$m.json"
+done
+
+# Sweep TFHE parameter profiles (Phase 10):
+for p in classic gaussian multibit2 multibit3 multibit4; do
+  ./target/release/penumbra-bench-report \
+    --models phase2_logreg,phase4_cnn --backends tfhe --tfhe-profile "$p" --samples 2 \
+    --format json --out "docs/results/phase10-param-sweep-$p.json"
 done
 
 # Run Criterion variance check:

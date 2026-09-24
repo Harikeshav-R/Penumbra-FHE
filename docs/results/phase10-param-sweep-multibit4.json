@@ -1,0 +1,361 @@
+{
+  "meta": {
+    "os": "macos",
+    "arch": "aarch64",
+    "release": true,
+    "backends_compiled": [
+      "tfhe"
+    ],
+    "ckks_hal": null,
+    "samples_requested": 2
+  },
+  "runs": [
+    {
+      "backend": "tfhe",
+      "profile": "multibit4",
+      "model": "phase2_logreg",
+      "fixture": "../../examples/mnist/phase2_fixture.json",
+      "num_blocks": 8,
+      "keygen_secs": 0.901840875,
+      "client_key_bytes": 23963,
+      "server_key_bytes": 316738786,
+      "input_ct_bytes": 8430100,
+      "output_ct_bytes": 131740,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.0224525,
+          "eval_secs": 2.048666208,
+          "decrypt_secs": 7.084e-6,
+          "nodes": [
+            {
+              "name": "fc",
+              "op_type": "Linear",
+              "build_secs": 7.5e-7,
+              "eval_secs": 2.041811125,
+              "input_lens": [
+                64
+              ],
+              "output_len": 1,
+              "counters": {
+                "ct_add": 45,
+                "scalar_add": 1,
+                "scalar_mul": 6
+              },
+              "measured": {
+                "pbs": 554
+              }
+            },
+            {
+              "name": "head",
+              "op_type": "Argmax",
+              "build_secs": 4.16e-7,
+              "eval_secs": 0.006847792,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "cmp_pbs_ops": 1
+              },
+              "measured": {
+                "pbs": 1
+              }
+            }
+          ],
+          "decrypted": [
+            1
+          ],
+          "max_abs_err": null,
+          "mean_abs_err": null,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.022099125,
+          "eval_secs": 2.055985959,
+          "decrypt_secs": 6e-6,
+          "nodes": [
+            {
+              "name": "fc",
+              "op_type": "Linear",
+              "build_secs": 1.125e-6,
+              "eval_secs": 2.049458834,
+              "input_lens": [
+                64
+              ],
+              "output_len": 1,
+              "counters": {
+                "ct_add": 45,
+                "scalar_add": 1,
+                "scalar_mul": 6
+              },
+              "measured": {
+                "pbs": 554
+              }
+            },
+            {
+              "name": "head",
+              "op_type": "Argmax",
+              "build_secs": 2.09e-7,
+              "eval_secs": 0.006518875,
+              "input_lens": [
+                1
+              ],
+              "output_len": 1,
+              "counters": {
+                "cmp_pbs_ops": 1
+              },
+              "measured": {
+                "pbs": 1
+              }
+            }
+          ],
+          "decrypted": [
+            0
+          ],
+          "max_abs_err": null,
+          "mean_abs_err": null,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Argmax": 0.0066833335,
+        "Linear": 2.0456349795
+      },
+      "op_type_build_secs": {
+        "Argmax": 3.125e-7,
+        "Linear": 9.375e-7
+      },
+      "cost_proxy": {
+        "cmp_pbs_ops": 1,
+        "ct_add": 45,
+        "scalar_add": 1,
+        "scalar_mul": 6
+      },
+      "measured_totals": {
+        "pbs": 555
+      }
+    },
+    {
+      "backend": "tfhe",
+      "profile": "multibit4",
+      "model": "phase4_cnn",
+      "fixture": "../../examples/mnist/phase4_cnn_fixture.json",
+      "num_blocks": 7,
+      "keygen_secs": 0.733318792,
+      "client_key_bytes": 23963,
+      "server_key_bytes": 316738786,
+      "input_ct_bytes": 4149236,
+      "output_ct_bytes": 1152580,
+      "samples": [
+        {
+          "index": 0,
+          "encrypt_secs": 0.010894083,
+          "eval_secs": 32.554437084,
+          "decrypt_secs": 0.000044875,
+          "nodes": [
+            {
+              "name": "conv",
+              "op_type": "Conv2d",
+              "build_secs": 1.25e-6,
+              "eval_secs": 21.05305,
+              "input_lens": [
+                36
+              ],
+              "output_len": 32,
+              "counters": {
+                "ct_add": 160,
+                "scalar_add": 32,
+                "scalar_mul": 64
+              },
+              "measured": {
+                "pbs": 5824
+              }
+            },
+            {
+              "name": "conv__requant",
+              "op_type": "Requant",
+              "build_secs": 9.16e-7,
+              "eval_secs": 4.132785333,
+              "input_lens": [
+                32
+              ],
+              "output_len": 32,
+              "counters": {
+                "bootstraps": 32,
+                "cmp_pbs_ops": 96
+              },
+              "measured": {
+                "pbs": 1024
+              }
+            },
+            {
+              "name": "pool",
+              "op_type": "Pool",
+              "build_secs": 1.25e-7,
+              "eval_secs": 0.175242625,
+              "input_lens": [
+                32
+              ],
+              "output_len": 8,
+              "counters": {
+                "ct_add": 24
+              },
+              "measured": {
+                "pbs": 48
+              }
+            },
+            {
+              "name": "head",
+              "op_type": "Linear",
+              "build_secs": 1.416e-6,
+              "eval_secs": 7.193328625,
+              "input_lens": [
+                8
+              ],
+              "output_len": 10,
+              "counters": {
+                "ct_add": 59,
+                "scalar_add": 10,
+                "scalar_mul": 50
+              },
+              "measured": {
+                "pbs": 2208
+              }
+            }
+          ],
+          "decrypted": [
+            -5,
+            1,
+            -4,
+            2,
+            12,
+            -1,
+            -14,
+            0,
+            4,
+            0
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        },
+        {
+          "index": 1,
+          "encrypt_secs": 0.011240792,
+          "eval_secs": 31.864234291,
+          "decrypt_secs": 0.000056042,
+          "nodes": [
+            {
+              "name": "conv",
+              "op_type": "Conv2d",
+              "build_secs": 7.08e-7,
+              "eval_secs": 20.79586525,
+              "input_lens": [
+                36
+              ],
+              "output_len": 32,
+              "counters": {
+                "ct_add": 160,
+                "scalar_add": 32,
+                "scalar_mul": 64
+              },
+              "measured": {
+                "pbs": 5824
+              }
+            },
+            {
+              "name": "conv__requant",
+              "op_type": "Requant",
+              "build_secs": 1.083e-6,
+              "eval_secs": 3.65372175,
+              "input_lens": [
+                32
+              ],
+              "output_len": 32,
+              "counters": {
+                "bootstraps": 32,
+                "cmp_pbs_ops": 96
+              },
+              "measured": {
+                "pbs": 1024
+              }
+            },
+            {
+              "name": "pool",
+              "op_type": "Pool",
+              "build_secs": 3.34e-7,
+              "eval_secs": 0.1704005,
+              "input_lens": [
+                32
+              ],
+              "output_len": 8,
+              "counters": {
+                "ct_add": 24
+              },
+              "measured": {
+                "pbs": 48
+              }
+            },
+            {
+              "name": "head",
+              "op_type": "Linear",
+              "build_secs": 1.125e-6,
+              "eval_secs": 7.244216791,
+              "input_lens": [
+                8
+              ],
+              "output_len": 10,
+              "counters": {
+                "ct_add": 59,
+                "scalar_add": 10,
+                "scalar_mul": 50
+              },
+              "measured": {
+                "pbs": 2208
+              }
+            }
+          ],
+          "decrypted": [
+            14,
+            -9,
+            -4,
+            -2,
+            -4,
+            -2,
+            -3,
+            0,
+            -9,
+            16
+          ],
+          "max_abs_err": 0.0,
+          "mean_abs_err": 0.0,
+          "label_matches": true
+        }
+      ],
+      "op_type_secs": {
+        "Conv2d": 20.924457625,
+        "Linear": 7.218772708,
+        "Pool": 0.17282156250000003,
+        "Requant": 3.8932535415
+      },
+      "op_type_build_secs": {
+        "Conv2d": 9.79e-7,
+        "Linear": 1.2705e-6,
+        "Pool": 2.2949999999999998e-7,
+        "Requant": 9.995e-7
+      },
+      "cost_proxy": {
+        "bootstraps": 32,
+        "cmp_pbs_ops": 96,
+        "ct_add": 243,
+        "scalar_add": 42,
+        "scalar_mul": 114
+      },
+      "measured_totals": {
+        "pbs": 9104
+      }
+    }
+  ]
+}

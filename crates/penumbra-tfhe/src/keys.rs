@@ -28,7 +28,7 @@ use penumbra_core::wire::SchemeHeader;
 pub const SCHEME_TFHE: &str = "tfhe";
 
 /// The single secure default parameter profile (`PROJECT.md` §12, `AGENTS.md` §7).
-pub const DEFAULT_PARAMS: PBSParameters = TfheProfile::MultiBit3.params();
+pub const DEFAULT_PARAMS: PBSParameters = TfheProfile::Classic.params();
 
 /// Named crypto-parameter profiles — the single TFHE override knob (`PROJECT.md` §12).
 ///
@@ -40,13 +40,13 @@ pub const DEFAULT_PARAMS: PBSParameters = TfheProfile::MultiBit3.params();
 pub enum TfheProfile {
     /// Classic PBS, TUniform noise — `tfhe-rs`'s own `PARAM_MESSAGE_2_CARRY_2_KS_PBS`.
     /// p-fail = 2^-129.581, algorithmic cost ~ 113.
+    #[default]
     Classic,
     /// Classic PBS, discrete-Gaussian noise at the same message/carry width.
     Gaussian,
     /// Multi-bit PBS, grouping factor 2. p-fail = 2^-140.341, algorithmic cost ~ 188.
     MultiBit2,
     /// Multi-bit PBS, grouping factor 3. p-fail = 2^-128.235, algorithmic cost ~ 143.
-    #[default]
     MultiBit3,
     /// Multi-bit PBS, grouping factor 4. p-fail = 2^-134.345, algorithmic cost ~ 100.
     MultiBit4,

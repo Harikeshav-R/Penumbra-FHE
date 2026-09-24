@@ -374,7 +374,15 @@ pub fn to_markdown(report: &Report) -> String {
         let prof_str = run.profile.as_deref().unwrap_or("-");
         out.push_str(&format!(
             "| {} | {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {} |\n",
-            run.model, run.backend, prof_str, run.keygen_secs, avg_enc, avg_eval, avg_build, avg_dec, acc_str
+            run.model,
+            run.backend,
+            prof_str,
+            run.keygen_secs,
+            avg_enc,
+            avg_eval,
+            avg_build,
+            avg_dec,
+            acc_str
         ));
     }
     out.push('\n');
