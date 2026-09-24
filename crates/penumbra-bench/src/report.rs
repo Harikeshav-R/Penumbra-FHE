@@ -42,6 +42,9 @@ pub struct SampleReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelRun {
     pub backend: String,
+    /// The backend parameter profile this run used; `None` when the backend has no named profile.
+    #[serde(default)]
+    pub profile: Option<String>,
     pub model: String,
     pub fixture: String,
     pub num_blocks: usize,
@@ -248,6 +251,7 @@ pub fn run_model<B: Backend>(
 
     Ok(ModelRun {
         backend: session.backend.name().to_string(),
+        profile: None,
         model: model.fixture.key.to_string(),
         fixture: model.fixture.path.to_string(),
         num_blocks: session.num_blocks,
@@ -316,8 +320,8 @@ pub fn to_markdown(report: &Report) -> String {
 
     // Table 1: Latency
     out.push_str("### 1. Latency (Wall-Clock)\n\n");
-    out.push_str("| Model | Backend | Keygen (s) | Encrypt (s) | Eval total (s) | of which op-build (s) | Decrypt (s) | Accuracy / Error |\n");
-    out.push_str("|---|---|---:|---:|---:|---:|---:|---|\n");
+    out.push_str("| Model | Backend | Profile | Keygen (s) | Encrypt (s) | Eval total (s) | of which op-build (s) | Decrypt (s) | Accuracy / Error |\n");
+    out.push_str("|---|---|---|---:|---:|---:|---:|---:|---|\n");
     for run in &report.runs {
         let n = run.samples.len() as f64;
         let avg_enc = run.samples.iter().map(|s| s.encrypt_secs).sum::<f64>() / n;
@@ -367,9 +371,10 @@ pub fn to_markdown(report: &Report) -> String {
             acc_parts.join("; ")
         };
 
+        let prof_str = run.profile.as_deref().unwrap_or("-");
         out.push_str(&format!(
-            "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {} |\n",
-            run.model, run.backend, run.keygen_secs, avg_enc, avg_eval, avg_build, avg_dec, acc_str
+            "| {} | {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {} |\n",
+            run.model, run.backend, prof_str, run.keygen_secs, avg_enc, avg_eval, avg_build, avg_dec, acc_str
         ));
     }
     out.push('\n');

@@ -8,7 +8,7 @@ use std::process::ExitCode;
 
 use penumbra_bench::models::{find, load, ModelFixture, MODELS};
 use penumbra_bench::report::{run_model, to_json, to_markdown, ModelRun, Report, ReportMeta};
-use penumbra_bench::{available_backends, tfhe_backend};
+use penumbra_bench::available_backends;
 
 #[cfg(feature = "ckks")]
 use penumbra_bench::ckks_backend;
@@ -31,6 +31,7 @@ enum OutputFormat {
 struct CliArgs {
     models: Vec<&'static ModelFixture>,
     backends: Vec<String>,
+    tfhe_profile: penumbra_tfhe::keys::TfheProfile,
     samples: usize,
     format: OutputFormat,
     out_path: Option<PathBuf>,
@@ -43,6 +44,7 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut samples: usize = 1;
     let mut format = OutputFormat::Markdown;
     let mut out_path: Option<PathBuf> = None;
+    let mut tfhe_profile = penumbra_tfhe::keys::TfheProfile::default();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -87,9 +89,17 @@ fn parse_args() -> Result<CliArgs, String> {
                         "--out requires a file path argument".to_string()
                     })?));
             }
+            "--tfhe-profile" => {
+                let p = args.next().ok_or_else(|| {
+                    "--tfhe-profile requires an argument (e.g. 'classic')".to_string()
+                })?;
+                tfhe_profile = penumbra_tfhe::keys::TfheProfile::from_name(&p)?;
+            }
             "-h" | "--help" => {
                 let avail = available_backends().join(", ");
                 let valid_models = MODELS.iter().map(|m| m.key).collect::<Vec<_>>().join(", ");
+                let default_prof = penumbra_tfhe::keys::TfheProfile::default().name();
+                let valid_profiles = penumbra_tfhe::keys::TfheProfile::NAMES.join(", ");
                 println!(
                     "usage: penumbra-bench-report [OPTIONS]\n\n\
                      Options:\n  \
@@ -97,6 +107,8 @@ fn parse_args() -> Result<CliArgs, String> {
                                                 Valid keys: {valid_models}\n  \
                        --backends <name,...>    Backends to run (default: {avail})\n                           \
                                                 Available: {avail}\n  \
+                       --tfhe-profile <name>    TFHE crypto profile (default: {default_prof})\n                           \
+                                                Valid names: {valid_profiles}\n  \
                        --samples <N>            Number of samples to evaluate per model (default: 1)\n  \
                        --format <markdown|json> Output format (default: markdown)\n  \
                        --out <PATH>             Write output to PATH instead of stdout\n  \
@@ -163,6 +175,7 @@ fn parse_args() -> Result<CliArgs, String> {
     Ok(CliArgs {
         models,
         backends,
+        tfhe_profile,
         samples,
         format,
         out_path,
@@ -182,7 +195,8 @@ fn run() -> Result<(), String> {
             );
             match backend_name.as_str() {
                 "tfhe" => {
-                    let run = run_model(tfhe_backend(), &loaded, args.samples)?;
+                    let mut run = run_model(penumbra_tfhe::TfheBackend::new(args.tfhe_profile), &loaded, args.samples)?;
+                    run.profile = Some(args.tfhe_profile.name().to_string());
                     runs.push(run);
                 }
                 #[cfg(feature = "ckks")]
