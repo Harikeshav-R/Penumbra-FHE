@@ -3,6 +3,8 @@
 pub use penumbra_core::ir::PoolMode;
 
 use penumbra_core::ops::Op;
+use rayon::prelude::*;
+use tfhe::integer::SignedRadixCiphertext;
 
 use super::{CtVec, EvalCtx};
 use crate::backend::TfheBackend;
@@ -33,6 +35,44 @@ impl Pool {
             usize::BITS as usize - (k - 1).leading_zeros() as usize
         }
     }
+
+    fn eval_window(
+        &self,
+        ctx: &EvalCtx,
+        inputs: &CtVec,
+        c: usize,
+        oy: usize,
+        ox: usize,
+    ) -> SignedRadixCiphertext {
+        let sk = ctx.sk;
+        let base = c * self.in_h * self.in_w;
+        let mut window = Vec::with_capacity(self.pool_h * self.pool_w);
+        for ky in 0..self.pool_h {
+            for kx in 0..self.pool_w {
+                let y = oy * self.stride + ky;
+                let x = ox * self.stride + kx;
+                window.push(&inputs[base + y * self.in_w + x]);
+            }
+        }
+
+        match self.mode {
+            PoolMode::Avg => {
+                if window.len() == 1 {
+                    window[0].clone()
+                } else {
+                    sk.sum_ciphertexts_parallelized(window.iter().copied())
+                        .unwrap_or_else(|| window[0].clone())
+                }
+            }
+            PoolMode::Max => {
+                let mut acc = window[0].clone();
+                for &ct in &window[1..] {
+                    acc = sk.max_parallelized(&acc, ct);
+                }
+                acc
+            }
+        }
+    }
 }
 
 impl Op<TfheBackend> for Pool {
@@ -59,45 +99,17 @@ impl Op<TfheBackend> for Pool {
             self.in_w
         );
 
-        let sk = ctx.sk;
         let (out_h, out_w) = self.out_dims();
-        let mut out = Vec::with_capacity(self.channels * out_h * out_w);
-
-        for c in 0..self.channels {
-            let base = c * self.in_h * self.in_w;
-            for oy in 0..out_h {
-                for ox in 0..out_w {
-                    let mut window = Vec::with_capacity(self.pool_h * self.pool_w);
-                    for ky in 0..self.pool_h {
-                        for kx in 0..self.pool_w {
-                            let y = oy * self.stride + ky;
-                            let x = ox * self.stride + kx;
-                            window.push(&inputs[base + y * self.in_w + x]);
-                        }
-                    }
-
-                    let pooled = match self.mode {
-                        PoolMode::Avg => {
-                            if window.len() == 1 {
-                                window[0].clone()
-                            } else {
-                                sk.sum_ciphertexts_parallelized(window.iter().copied())
-                                    .unwrap_or_else(|| window[0].clone())
-                            }
-                        }
-                        PoolMode::Max => {
-                            let mut acc = window[0].clone();
-                            for &ct in &window[1..] {
-                                acc = sk.max_parallelized(&acc, ct);
-                            }
-                            acc
-                        }
-                    };
-                    out.push(pooled);
-                }
-            }
-        }
-        out
+        let plane = out_h * out_w;
+        (0..self.channels * plane)
+            .into_par_iter()
+            .map(|idx| {
+                let c = idx / plane;
+                let oy = (idx % plane) / out_w;
+                let ox = idx % out_w;
+                self.eval_window(ctx, inputs, c, oy, ox)
+            })
+            .collect()
     }
 
     fn output_bits(&self, input_bits: usize) -> usize {

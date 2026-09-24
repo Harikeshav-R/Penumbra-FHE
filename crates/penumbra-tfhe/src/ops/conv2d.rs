@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use rayon::prelude::*;
 use tfhe::integer::SignedRadixCiphertext;
 
 use penumbra_core::ops::Op;
@@ -115,6 +116,68 @@ impl Conv2d {
         }
         (total_scalar_mul, total_ct_add)
     }
+
+    fn eval_point(
+        &self,
+        ctx: &EvalCtx,
+        inputs: &CtVec,
+        kernel: &[i64],
+        bias: i64,
+        oy: usize,
+        ox: usize,
+    ) -> SignedRadixCiphertext {
+        let sk = ctx.sk;
+        let in_hw = self.in_h * self.in_w;
+        let mut groups: BTreeMap<i64, Vec<&SignedRadixCiphertext>> = BTreeMap::new();
+
+        for ic in 0..self.in_channels {
+            let in_base = ic * in_hw;
+            for ky in 0..self.kernel_h {
+                let iy = (oy * self.stride + ky) as isize - self.padding as isize;
+                for kx in 0..self.kernel_w {
+                    let ix = (ox * self.stride + kx) as isize - self.padding as isize;
+                    let w = kernel[(ic * self.kernel_h + ky) * self.kernel_w + kx];
+                    if w == 0
+                        || iy < 0
+                        || ix < 0
+                        || iy as usize >= self.in_h
+                        || ix as usize >= self.in_w
+                    {
+                        continue;
+                    }
+                    let idx = in_base + iy as usize * self.in_w + ix as usize;
+                    groups.entry(w).or_default().push(&inputs[idx]);
+                }
+            }
+        }
+
+        let mut group_terms: Vec<SignedRadixCiphertext> = Vec::with_capacity(groups.len());
+        for (w, cts) in groups {
+            let s = if cts.len() == 1 {
+                cts[0].clone()
+            } else {
+                sk.sum_ciphertexts_parallelized(cts.iter().copied())
+                    .expect("non-empty cts group")
+            };
+            let term = if w == 1 {
+                s
+            } else {
+                sk.scalar_mul_parallelized(&s, w)
+            };
+            group_terms.push(term);
+        }
+
+        let acc = if group_terms.is_empty() {
+            sk.create_trivial_zero_radix(ctx.num_blocks)
+        } else if group_terms.len() == 1 {
+            group_terms.pop().unwrap()
+        } else {
+            sk.sum_ciphertexts_parallelized(group_terms.iter())
+                .expect("non-empty group_terms")
+        };
+
+        sk.scalar_add_parallelized(&acc, bias)
+    }
 }
 
 impl Op<TfheBackend> for Conv2d {
@@ -137,13 +200,9 @@ impl Op<TfheBackend> for Conv2d {
         );
         let fan_in = self.fan_in();
 
-        let sk = ctx.sk;
         let (out_h, out_w) = self.out_dims();
-        let in_hw = self.in_h * self.in_w;
         let out_channels = self.weights.len();
-        let mut out = Vec::with_capacity(out_channels * out_h * out_w);
-
-        for (oc, (kernel, &b)) in self.weights.iter().zip(&self.bias).enumerate() {
+        for (oc, kernel) in self.weights.iter().enumerate() {
             assert_eq!(
                 kernel.len(),
                 fan_in,
@@ -151,62 +210,18 @@ impl Op<TfheBackend> for Conv2d {
                 kernel.len(),
                 fan_in
             );
-            for oy in 0..out_h {
-                for ox in 0..out_w {
-                    let mut groups: BTreeMap<i64, Vec<&SignedRadixCiphertext>> = BTreeMap::new();
-
-                    for ic in 0..self.in_channels {
-                        let in_base = ic * in_hw;
-                        for ky in 0..self.kernel_h {
-                            let iy = (oy * self.stride + ky) as isize - self.padding as isize;
-                            for kx in 0..self.kernel_w {
-                                let ix = (ox * self.stride + kx) as isize - self.padding as isize;
-                                let w = kernel[(ic * self.kernel_h + ky) * self.kernel_w + kx];
-                                if w == 0
-                                    || iy < 0
-                                    || ix < 0
-                                    || iy as usize >= self.in_h
-                                    || ix as usize >= self.in_w
-                                {
-                                    continue;
-                                }
-                                let idx = in_base + iy as usize * self.in_w + ix as usize;
-                                groups.entry(w).or_default().push(&inputs[idx]);
-                            }
-                        }
-                    }
-
-                    let mut group_terms: Vec<SignedRadixCiphertext> =
-                        Vec::with_capacity(groups.len());
-                    for (w, cts) in groups {
-                        let s = if cts.len() == 1 {
-                            cts[0].clone()
-                        } else {
-                            sk.sum_ciphertexts_parallelized(cts.iter().copied())
-                                .expect("non-empty cts group")
-                        };
-                        let term = if w == 1 {
-                            s
-                        } else {
-                            sk.scalar_mul_parallelized(&s, w)
-                        };
-                        group_terms.push(term);
-                    }
-
-                    let acc = if group_terms.is_empty() {
-                        sk.create_trivial_zero_radix(ctx.num_blocks)
-                    } else if group_terms.len() == 1 {
-                        group_terms.pop().unwrap()
-                    } else {
-                        sk.sum_ciphertexts_parallelized(group_terms.iter())
-                            .expect("non-empty group_terms")
-                    };
-
-                    out.push(sk.scalar_add_parallelized(&acc, b));
-                }
-            }
         }
-        out
+
+        let plane = out_h * out_w;
+        (0..out_channels * plane)
+            .into_par_iter()
+            .map(|idx| {
+                let oc = idx / plane;
+                let oy = (idx % plane) / out_w;
+                let ox = idx % out_w;
+                self.eval_point(ctx, inputs, &self.weights[oc], self.bias[oc], oy, ox)
+            })
+            .collect()
     }
 
     fn output_bits(&self, input_bits: usize) -> usize {

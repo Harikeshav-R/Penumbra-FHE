@@ -1,6 +1,7 @@
 //! `Add` — element-wise ciphertext addition of two tensors (residuals / skip connections).
 
 use penumbra_core::ops::Op;
+use rayon::prelude::*;
 
 use super::{CtVec, EvalCtx};
 use crate::backend::TfheBackend;
@@ -34,8 +35,8 @@ impl Op<TfheBackend> for Add {
         );
 
         let sk = ctx.sk;
-        lhs.iter()
-            .zip(rhs.iter())
+        lhs.par_iter()
+            .zip(rhs.par_iter())
             .map(|(a, b)| sk.add_parallelized(a, b))
             .collect()
     }

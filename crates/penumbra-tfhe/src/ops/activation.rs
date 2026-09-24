@@ -4,6 +4,7 @@ use tfhe::integer::{IntegerCiphertext, SignedRadixCiphertext};
 use tfhe::shortint::Ciphertext;
 
 use penumbra_core::ops::Op;
+use rayon::prelude::*;
 
 use super::{CtVec, EvalCtx};
 use crate::backend::TfheBackend;
@@ -63,7 +64,7 @@ impl Op<TfheBackend> for Activation {
         let lut = shortint_sk.generate_lookup_table(move |v| *table.get(v as usize).unwrap_or(&0));
 
         inputs
-            .iter()
+            .par_iter()
             .map(|ct| {
                 let mapped: Ciphertext = shortint_sk.apply_lookup_table(&ct.blocks()[0], &lut);
                 let mut blocks = Vec::with_capacity(ctx.num_blocks);

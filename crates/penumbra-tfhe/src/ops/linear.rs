@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use rayon::prelude::*;
 use tfhe::integer::SignedRadixCiphertext;
 
 use penumbra_core::ops::Op;
@@ -37,8 +38,8 @@ impl Op<TfheBackend> for Linear {
         );
 
         self.weights
-            .iter()
-            .zip(&self.bias)
+            .par_iter()
+            .zip(self.bias.par_iter())
             .map(|(row, &b)| {
                 assert_eq!(
                     row.len(),
