@@ -263,7 +263,7 @@ knob per backend.
 
 **Decision (settled in Phase 9 / 12.2):** Each backend exposes exactly one parameter profile knob
 via `CryptoProfile`:
-- **TFHE:** `TfheProfile` — named profiles `"default"` (TUniform noise) and `"gaussian"` (discrete-Gaussian noise).
+- **TFHE:** `TfheProfile` — named profiles `"classic"`, `"gaussian"`, `"multibit2"`, `"multibit3"`, `"multibit4"` (all 128-bit secure at message=2/carry=2).
 - **CKKS:** `max_poly_degree` (`CkksParams::max_poly_degree`) — the maximum polynomial degree any op may fit.
 
 The per-backend profile exposes this single lever while quantization remains an automated library

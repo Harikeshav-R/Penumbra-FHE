@@ -106,7 +106,7 @@ fn profile_survives_save_load_roundtrip() {
         std::env::temp_dir().join(format!("penumbra_wire_test_profile_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
 
-    for profile in [TfheProfile::Default, TfheProfile::Gaussian] {
+    for profile in [TfheProfile::Classic, TfheProfile::Gaussian] {
         let num_blocks = 2;
         let (ck, sk) = keygen_with_profile(num_blocks, profile);
         let ck_path = dir.join(format!("{profile}_client.key"));

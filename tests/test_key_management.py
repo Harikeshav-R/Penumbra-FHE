@@ -33,7 +33,7 @@ def test_keyset_save_and_load_roundtrip(tmp_path):
     loaded = KeySet.load(tmp_path / "durable")
     assert loaded.backend == "tfhe"
     assert loaded.num_blocks == 2
-    assert loaded.profile == "default"
+    assert loaded.profile == ks.profile
     assert loaded.client_key.read_bytes() == ks.client_key.read_bytes()
     assert loaded.server_key.read_bytes() == ks.server_key.read_bytes()
 
@@ -57,7 +57,7 @@ def test_run_encrypted_mismatched_keys_raises(tmp_path):
         directory=tmp_path / "wrong",
         backend="tfhe",
         num_blocks=model.graph.num_blocks + 1,
-        profile="default",
+        profile="classic",
     )
     with pytest.raises(ValueError, match="key/model mismatch"):
         run_encrypted(model.graph, [[1] * 8], keys=wrong)
@@ -115,7 +115,7 @@ def test_predict_forwards_keys_to_runtime(tmp_path, monkeypatch):
         directory=tmp_path / "ks",
         backend="tfhe",
         num_blocks=model.graph.num_blocks,
-        profile="default",
+        profile="classic",
     )
 
     seen = {}

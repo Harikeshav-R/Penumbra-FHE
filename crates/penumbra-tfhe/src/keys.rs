@@ -12,10 +12,14 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use tfhe::integer::{gen_keys_radix, RadixClientKey, ServerKey};
-use tfhe::shortint::parameters::{
-    PARAM_MESSAGE_2_CARRY_2_KS_PBS, PARAM_MESSAGE_2_CARRY_2_KS_PBS_GAUSSIAN_2M128,
+use tfhe::shortint::parameters::current_params::{
+    V1_8_PARAM_MULTI_BIT_GROUP_2_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
+    V1_8_PARAM_MULTI_BIT_GROUP_3_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
+    V1_8_PARAM_MULTI_BIT_GROUP_4_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
 };
-use tfhe::shortint::ClassicPBSParameters;
+use tfhe::shortint::parameters::{
+    PBSParameters, PARAM_MESSAGE_2_CARRY_2_KS_PBS, PARAM_MESSAGE_2_CARRY_2_KS_PBS_GAUSSIAN_2M128,
+};
 
 pub use penumbra_core::bitwidth::{magnitude_bits, radix_capacity_bits, MESSAGE_BITS};
 use penumbra_core::wire::SchemeHeader;
@@ -24,47 +28,74 @@ use penumbra_core::wire::SchemeHeader;
 pub const SCHEME_TFHE: &str = "tfhe";
 
 /// The single secure default parameter profile (`PROJECT.md` §12, `AGENTS.md` §7).
-pub const DEFAULT_PARAMS: ClassicPBSParameters = PARAM_MESSAGE_2_CARRY_2_KS_PBS;
+pub const DEFAULT_PARAMS: PBSParameters = TfheProfile::MultiBit3.params();
 
 /// Named crypto-parameter profiles — the single TFHE override knob (`PROJECT.md` §12).
 ///
-/// Both are `tfhe-rs`'s own vetted 128-bit sets at message=2/carry=2, so `MESSAGE_BITS`
+/// All five are 128-bit-secure `tfhe-rs` parameter sets at message=2/carry=2, so `MESSAGE_BITS`
 /// (`penumbra_core::bitwidth::MESSAGE_BITS` = 2) and every model's `num_blocks` are identical
-/// across profiles — only the LWE noise distribution differs. Tuning message precision is
-/// Phase-10 work (`ROADMAP.md` Phase 10, "Parameter tuning").
+/// across profiles. Multi-bit PBS sets use deterministic execution to ensure reproducible
+/// ciphertext representations across threads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum TfheProfile {
-    /// TUniform noise — `tfhe-rs`'s own default (`PARAM_MESSAGE_2_CARRY_2_KS_PBS`).
-    #[default]
-    Default,
-    /// Discrete-Gaussian noise at the same message/carry width.
+    /// Classic PBS, TUniform noise — `tfhe-rs`'s own `PARAM_MESSAGE_2_CARRY_2_KS_PBS`.
+    /// p-fail = 2^-129.581, algorithmic cost ~ 113.
+    Classic,
+    /// Classic PBS, discrete-Gaussian noise at the same message/carry width.
     Gaussian,
+    /// Multi-bit PBS, grouping factor 2. p-fail = 2^-140.341, algorithmic cost ~ 188.
+    MultiBit2,
+    /// Multi-bit PBS, grouping factor 3. p-fail = 2^-128.235, algorithmic cost ~ 143.
+    #[default]
+    MultiBit3,
+    /// Multi-bit PBS, grouping factor 4. p-fail = 2^-134.345, algorithmic cost ~ 100.
+    MultiBit4,
 }
 
 impl TfheProfile {
-    pub const NAMES: [&'static str; 2] = ["default", "gaussian"];
+    pub const NAMES: [&'static str; 5] =
+        ["classic", "gaussian", "multibit2", "multibit3", "multibit4"];
 
     pub fn from_name(name: &str) -> Result<Self, String> {
         match name {
-            "default" => Ok(Self::Default),
+            "classic" => Ok(Self::Classic),
             "gaussian" => Ok(Self::Gaussian),
+            "multibit2" => Ok(Self::MultiBit2),
+            "multibit3" => Ok(Self::MultiBit3),
+            "multibit4" => Ok(Self::MultiBit4),
             other => Err(format!(
-                "unknown TFHE crypto profile '{other}'; available profiles: default, gaussian"
+                "unknown TFHE crypto profile '{other}'; available profiles: classic, gaussian, \
+                 multibit2, multibit3, multibit4"
             )),
         }
     }
 
     pub fn name(self) -> &'static str {
         match self {
-            Self::Default => "default",
+            Self::Classic => "classic",
             Self::Gaussian => "gaussian",
+            Self::MultiBit2 => "multibit2",
+            Self::MultiBit3 => "multibit3",
+            Self::MultiBit4 => "multibit4",
         }
     }
 
-    pub fn params(self) -> ClassicPBSParameters {
+    pub const fn params(self) -> PBSParameters {
         match self {
-            Self::Default => PARAM_MESSAGE_2_CARRY_2_KS_PBS,
-            Self::Gaussian => PARAM_MESSAGE_2_CARRY_2_KS_PBS_GAUSSIAN_2M128,
+            Self::Classic => PBSParameters::PBS(PARAM_MESSAGE_2_CARRY_2_KS_PBS),
+            Self::Gaussian => PBSParameters::PBS(PARAM_MESSAGE_2_CARRY_2_KS_PBS_GAUSSIAN_2M128),
+            Self::MultiBit2 => PBSParameters::MultiBitPBS(
+                V1_8_PARAM_MULTI_BIT_GROUP_2_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128
+                    .with_deterministic_execution(),
+            ),
+            Self::MultiBit3 => PBSParameters::MultiBitPBS(
+                V1_8_PARAM_MULTI_BIT_GROUP_3_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128
+                    .with_deterministic_execution(),
+            ),
+            Self::MultiBit4 => PBSParameters::MultiBitPBS(
+                V1_8_PARAM_MULTI_BIT_GROUP_4_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128
+                    .with_deterministic_execution(),
+            ),
         }
     }
 }
@@ -297,8 +328,8 @@ mod tests {
         let (_sk2, sk_nb, sk_profile) = load_server_key(&sk_path).expect("load server key");
         assert_eq!(ck_nb, num_blocks, "client key num_blocks tag must survive");
         assert_eq!(sk_nb, num_blocks, "server key num_blocks tag must survive");
-        assert_eq!(profile, TfheProfile::Default);
-        assert_eq!(sk_profile, TfheProfile::Default);
+        assert_eq!(profile, TfheProfile::default());
+        assert_eq!(sk_profile, TfheProfile::default());
 
         let ct = ck.encrypt_signed(7i64);
         let got: i64 = ck2.decrypt_signed(&ct);
@@ -318,6 +349,19 @@ mod tests {
         assert!(
             err.contains("num_blocks=7"),
             "message names the model width: {err}"
+        );
+    }
+
+    #[test]
+    fn default_params_tracks_default_profile() {
+        assert_eq!(DEFAULT_PARAMS, TfheProfile::default().params());
+    }
+
+    #[test]
+    fn retired_default_profile_name_fails_loudly() {
+        let err = TfheProfile::from_name("default").unwrap_err();
+        assert!(
+            err.contains("available profiles: classic, gaussian, multibit2, multibit3, multibit4")
         );
     }
 }

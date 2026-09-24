@@ -37,7 +37,10 @@ def _dummy_graph() -> Graph:
 
 
 def test_invalid_tfhe_profile_raises():
-    with pytest.raises(ValueError, match="available profiles: default, gaussian"):
+    with pytest.raises(
+        ValueError,
+        match="available profiles: classic, gaussian, multibit2, multibit3, multibit4",
+    ):
         CryptoProfile.tfhe("nope")
 
 
@@ -72,6 +75,6 @@ def test_profile_backend_crossing_raises():
 def test_keys_and_profile_together_raises(tmp_path):
     graph = _dummy_graph()
     ks = KeySet.generate(graph.num_blocks, directory=tmp_path / "keys")
-    profile = CryptoProfile.tfhe("default")
+    profile = CryptoProfile.tfhe()
     with pytest.raises(ValueError, match="cannot specify both 'keys' and 'profile'"):
         run_encrypted(graph, [[1, 2]], keys=ks, profile=profile)
