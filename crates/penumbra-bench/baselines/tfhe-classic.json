@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "note": "Phase-10 committed regression baseline (tfhe-classic profile)",
+  "entries": [
+    {
+      "model": "phase2_logreg",
+      "backend": "tfhe",
+      "profile": "classic",
+      "num_blocks": 6,
+      "client_key_bytes": 23940,
+      "server_key_bytes": 120419227,
+      "input_ct_bytes": 6322708,
+      "output_ct_bytes": 98812,
+      "cost_proxy": {
+        "cmp_pbs_ops": 1,
+        "ct_add": 31,
+        "scalar_add": 1,
+        "scalar_mul": 1
+      },
+      "measured_totals": {
+        "pbs": 137
+      },
+      "labels_matched": 1,
+      "labels_checked": 1
+    },
+    {
+      "model": "phase4_cnn",
+      "backend": "tfhe",
+      "profile": "classic",
+      "num_blocks": 7,
+      "client_key_bytes": 23940,
+      "server_key_bytes": 120419227,
+      "input_ct_bytes": 4149236,
+      "output_ct_bytes": 1152580,
+      "cost_proxy": {
+        "bootstraps": 32,
+        "cmp_pbs_ops": 96,
+        "ct_add": 243,
+        "scalar_add": 42,
+        "scalar_mul": 114
+      },
+      "measured_totals": {
+        "pbs": 9104
+      },
+      "labels_matched": 1,
+      "labels_checked": 1
+    },
+    {
+      "model": "phase6_sklearn",
+      "backend": "tfhe",
+      "profile": "classic",
+      "num_blocks": 10,
+      "client_key_bytes": 23940,
+      "server_key_bytes": 120419227,
+      "input_ct_bytes": 10537492,
+      "output_ct_bytes": 1646500,
+      "cost_proxy": {
+        "ct_add": 457,
+        "scalar_add": 10,
+        "scalar_mul": 140
+      },
+      "measured_totals": {
+        "pbs": 13376
+      },
+      "labels_matched": 1,
+      "labels_checked": 1
+    }
+  ]
+}

@@ -35,6 +35,8 @@ struct CliArgs {
     samples: usize,
     format: OutputFormat,
     out_path: Option<PathBuf>,
+    baseline_path: Option<PathBuf>,
+    write_baseline_path: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -44,8 +46,9 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut samples: usize = 1;
     let mut format = OutputFormat::Markdown;
     let mut out_path: Option<PathBuf> = None;
+    let mut baseline_path: Option<PathBuf> = None;
+    let mut write_baseline_path: Option<PathBuf> = None;
     let mut tfhe_profile = penumbra_tfhe::keys::TfheProfile::default();
-
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--models" => {
@@ -95,6 +98,17 @@ fn parse_args() -> Result<CliArgs, String> {
                 })?;
                 tfhe_profile = penumbra_tfhe::keys::TfheProfile::from_name(&p)?;
             }
+            "--baseline" => {
+                baseline_path =
+                    Some(PathBuf::from(args.next().ok_or_else(|| {
+                        "--baseline requires a file path argument".to_string()
+                    })?));
+            }
+            "--write-baseline" => {
+                write_baseline_path = Some(PathBuf::from(args.next().ok_or_else(|| {
+                    "--write-baseline requires a file path argument".to_string()
+                })?));
+            }
             "-h" | "--help" => {
                 let avail = available_backends().join(", ");
                 let valid_models = MODELS.iter().map(|m| m.key).collect::<Vec<_>>().join(", ");
@@ -112,6 +126,8 @@ fn parse_args() -> Result<CliArgs, String> {
                        --samples <N>            Number of samples to evaluate per model (default: 1)\n  \
                        --format <markdown|json> Output format (default: markdown)\n  \
                        --out <PATH>             Write output to PATH instead of stdout\n  \
+                       --baseline <PATH>        Check run against a committed regression baseline\n  \
+                       --write-baseline <PATH>  Write machine-independent run baseline to PATH\n  \
                        -h, --help               Show this help message"
                 );
                 std::process::exit(0);
@@ -172,6 +188,10 @@ fn parse_args() -> Result<CliArgs, String> {
         }
     };
 
+    if baseline_path.is_some() && write_baseline_path.is_some() {
+        return Err("cannot specify both --baseline and --write-baseline".to_string());
+    }
+
     Ok(CliArgs {
         models,
         backends,
@@ -179,6 +199,8 @@ fn parse_args() -> Result<CliArgs, String> {
         samples,
         format,
         out_path,
+        baseline_path,
+        write_baseline_path,
     })
 }
 
@@ -211,6 +233,42 @@ fn run() -> Result<(), String> {
                 _ => unreachable!(),
             }
         }
+    }
+    if let Some(path) = &args.write_baseline_path {
+        let baseline = penumbra_bench::baseline_from_runs(&runs);
+        let json = serde_json::to_string_pretty(&baseline)
+            .map_err(|e| format!("cannot serialize baseline: {e}"))?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                format!("cannot create baseline directory {}: {e}", parent.display())
+            })?;
+        }
+        fs::write(path, json + "\n")
+            .map_err(|e| format!("cannot write baseline to {}: {e}", path.display()))?;
+        eprintln!("Baseline written to {}", path.display());
+    }
+
+    if let Some(path) = &args.baseline_path {
+        let text = fs::read_to_string(path)
+            .map_err(|e| format!("cannot read baseline file {}: {e}", path.display()))?;
+        let baseline: penumbra_bench::Baseline = serde_json::from_str(&text)
+            .map_err(|e| format!("cannot parse baseline {}: {e}", path.display()))?;
+        let warnings = penumbra_bench::check_against(&baseline, &runs).map_err(|violations| {
+            for v in &violations {
+                eprintln!("REGRESSION: {v}");
+            }
+            format!(
+                "baseline check failed with {} violation(s)",
+                violations.len()
+            )
+        })?;
+        for w in warnings {
+            eprintln!("WARNING: {w}");
+        }
+        eprintln!(
+            "Baseline check passed successfully against {}",
+            path.display()
+        );
     }
 
     let report = Report {

@@ -3,9 +3,12 @@
 //! Provides the generic evaluation session, model fixtures, reporting, and criterion
 //! benchmarks parameterized over backend x model (ROADMAP Phase 12.3).
 
+pub mod baseline;
 pub mod models;
 pub mod report;
 pub mod session;
+
+pub use baseline::{baseline_from_runs, check_against, Baseline, BaselineEntry};
 
 pub use models::{find, load, selection_from_env, LoadedModel, ModelFixture, MODELS};
 pub use report::{

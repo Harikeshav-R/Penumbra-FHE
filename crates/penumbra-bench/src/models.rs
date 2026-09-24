@@ -1,8 +1,10 @@
 //! Model fixture registry and loaders.
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use penumbra_core::ir::Graph;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Definition of a committed model fixture in the repository.
@@ -63,6 +65,13 @@ pub const MODELS: &[ModelFixture] = &[
     },
 ];
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct FixtureAccuracy {
+    #[serde(rename = "float")]
+    pub float_accuracy: f64,
+    pub quantized: f64,
+}
+
 /// A loaded model fixture ready for session evaluation.
 pub struct LoadedModel {
     pub fixture: &'static ModelFixture,
@@ -70,6 +79,10 @@ pub struct LoadedModel {
     pub inputs: Vec<Vec<i64>>,
     pub expected_logits: Option<Vec<Vec<i64>>>,
     pub expected_labels: Option<Vec<i64>>,
+    pub accuracy: Option<FixtureAccuracy>,
+    pub bit_plan: Option<serde_json::Value>,
+    pub ir_bytes: usize,
+    pub ir_load_secs: f64,
 }
 
 /// Look up a model fixture by its unique key.
@@ -84,6 +97,7 @@ pub fn find(key: &str) -> Result<&'static ModelFixture, String> {
 pub fn load(fixture: &'static ModelFixture) -> Result<LoadedModel, String> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = manifest_dir.join(fixture.path);
+    let start = Instant::now();
     let text = std::fs::read_to_string(&path)
         .map_err(|e| format!("cannot read fixture file {}: {e}", path.display()))?;
     let value: Value = serde_json::from_str(&text)
@@ -94,6 +108,8 @@ pub fn load(fixture: &'static ModelFixture) -> Result<LoadedModel, String> {
         .ok_or_else(|| format!("fixture {} missing 'graph' field", path.display()))?;
     let graph = Graph::from_json(&graph_json.to_string())
         .map_err(|e| format!("failed to load graph from {}: {e}", path.display()))?;
+    let ir_load_secs = start.elapsed().as_secs_f64();
+    let ir_bytes = text.len();
 
     let inputs_val = value
         .get("test_inputs")
@@ -109,12 +125,24 @@ pub fn load(fixture: &'static ModelFixture) -> Result<LoadedModel, String> {
         .get("expected_labels")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
 
+    let accuracy: Option<FixtureAccuracy> = value
+        .get("accuracy")
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+
+    let bit_plan: Option<serde_json::Value> = value
+        .get("bit_plan")
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+
     Ok(LoadedModel {
         fixture,
         graph,
         inputs,
         expected_logits,
         expected_labels,
+        accuracy,
+        bit_plan,
+        ir_bytes,
+        ir_load_secs,
     })
 }
 

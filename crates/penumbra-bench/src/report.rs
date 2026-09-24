@@ -63,6 +63,14 @@ pub struct ModelRun {
     /// Measured counters for one sample — ground truth, unlike `cost_proxy`.
     #[serde(default)]
     pub measured_totals: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub accuracy: Option<crate::models::FixtureAccuracy>,
+    #[serde(default)]
+    pub bit_plan: Option<serde_json::Value>,
+    #[serde(default)]
+    pub ir_bytes: usize,
+    #[serde(default)]
+    pub ir_load_secs: f64,
 }
 
 /// Where a report came from. A committed result file that cannot be attributed to a machine,
@@ -265,6 +273,10 @@ pub fn run_model<B: Backend>(
         op_type_build_secs,
         cost_proxy: first_cost_proxy,
         measured_totals: first_measured_totals,
+        accuracy: model.accuracy,
+        bit_plan: model.bit_plan.clone(),
+        ir_bytes: model.ir_bytes,
+        ir_load_secs: model.ir_load_secs,
     })
 }
 
@@ -426,8 +438,8 @@ pub fn to_markdown(report: &Report) -> String {
 
     // Table 3: Sizes & Scheme Cost Proxies
     out.push_str("### 3. Sizes & Scheme Cost Proxies\n\n");
-    out.push_str("| Model | Backend | Input CT | Output CT | Client Key | Server Key | Cost Proxy Counters |\n");
-    out.push_str("|---|---|---:|---:|---:|---:|---|\n");
+    out.push_str("| Model | Backend | Input CT | Output CT | Client Key | Server Key | Float acc | Quantized acc | Cost Proxy Counters |\n");
+    out.push_str("|---|---|---:|---:|---:|---:|---:|---:|---|\n");
     for run in &report.runs {
         let in_ct = format_bytes(run.input_ct_bytes);
         let out_ct = format_bytes(run.output_ct_bytes);
@@ -457,9 +469,52 @@ pub fn to_markdown(report: &Report) -> String {
             }
         }
 
+        let (float_acc_str, quant_acc_str) = match run.accuracy {
+            Some(acc) => (
+                format!("{:.4}", acc.float_accuracy),
+                format!("{:.4}", acc.quantized),
+            ),
+            None => ("-".to_string(), "-".to_string()),
+        };
+
         out.push_str(&format!(
-            "| {} | {} | {} | {} | {} | {} | {} |\n",
-            run.model, run.backend, in_ct, out_ct, ck_sz, sk_sz, proxy_str
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+            run.model,
+            run.backend,
+            in_ct,
+            out_ct,
+            ck_sz,
+            sk_sz,
+            float_acc_str,
+            quant_acc_str,
+            proxy_str
+        ));
+    }
+    out.push('\n');
+
+    // Table 4: IR Load Cost & Binary-Format Evidence
+    out.push_str("### 4. IR Load Cost & Binary-Format Evidence\n\n");
+    out.push_str(
+        "| Model | Backend | IR bytes | IR load (ms) | Eval total (s) | IR load as % of eval |\n",
+    );
+    out.push_str("|---|---|---:|---:|---:|---:|\n");
+    for run in &report.runs {
+        let n = run.samples.len() as f64;
+        let avg_eval = run.samples.iter().map(|s| s.eval_secs).sum::<f64>() / n;
+        let ir_load_ms = run.ir_load_secs * 1000.0;
+        let pct = if avg_eval > 0.0 {
+            (run.ir_load_secs / avg_eval) * 100.0
+        } else {
+            0.0
+        };
+        out.push_str(&format!(
+            "| {} | {} | {} | {:.2} | {:.4} | {:.4}% |\n",
+            run.model,
+            run.backend,
+            format_bytes(run.ir_bytes),
+            ir_load_ms,
+            avg_eval,
+            pct
         ));
     }
     out.push('\n');
