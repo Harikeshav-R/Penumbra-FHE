@@ -45,6 +45,11 @@ ml = [
     # frameworks) by exporting a real sklearn model to ONNX and loading it through the same front
     # door as the torch CNN. Only the example generator needs it; CI reads the committed fixture.
     "skl2onnx>=1.16",
+    # XGBoost -> IR adapter example generator (examples/tabular/xgb_export.py) and
+    # `from_xgboost` adapter (python/penumbra/adapters/trees.py). Second-framework proof for tree
+    # ensembles (ROADMAP Phase 8). Only the example generator and tests need it; CI reads the
+    # committed fixture.
+    "xgboost>=2.0",
 ]
 
 [project.urls]
