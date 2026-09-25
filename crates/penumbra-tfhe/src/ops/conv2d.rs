@@ -126,7 +126,6 @@ impl Conv2d {
         oy: usize,
         ox: usize,
     ) -> SignedRadixCiphertext {
-        let sk = ctx.sk;
         let in_hw = self.in_h * self.in_w;
         let mut groups: BTreeMap<i64, Vec<&SignedRadixCiphertext>> = BTreeMap::new();
 
@@ -151,32 +150,7 @@ impl Conv2d {
             }
         }
 
-        let mut group_terms: Vec<SignedRadixCiphertext> = Vec::with_capacity(groups.len());
-        for (w, cts) in groups {
-            let s = if cts.len() == 1 {
-                cts[0].clone()
-            } else {
-                sk.sum_ciphertexts_parallelized(cts.iter().copied())
-                    .expect("non-empty cts group")
-            };
-            let term = if w == 1 {
-                s
-            } else {
-                sk.scalar_mul_parallelized(&s, w)
-            };
-            group_terms.push(term);
-        }
-
-        let acc = if group_terms.is_empty() {
-            sk.create_trivial_zero_radix(ctx.num_blocks)
-        } else if group_terms.len() == 1 {
-            group_terms.pop().unwrap()
-        } else {
-            sk.sum_ciphertexts_parallelized(group_terms.iter())
-                .expect("non-empty group_terms")
-        };
-
-        sk.scalar_add_parallelized(&acc, bias)
+        super::evaluate_weighted_mac(ctx, groups, bias)
     }
 }
 

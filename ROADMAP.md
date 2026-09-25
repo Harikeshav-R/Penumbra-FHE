@@ -456,10 +456,10 @@ is reducing and parallelizing PBS, plus tuning crypto params.
 - [x] **Binary IR format (optional):** replace JSON with a compact binary format if
       load/serialization shows up in profiles.
       *Note:* declined based on profiling evidence: IR load times across all models are 0.38–0.58 ms (< 0.084% of evaluation time) on 5–28 KB payloads (`docs/BENCHMARKS.md`); JSON IR format retained without binary complexity.
-- [x] **Benchmark suite:** standardized latency/accuracy numbers for MNIST, the CNN, faces,
-      and a tree model. Track regressions in CI. If Phase 12 has landed, this is
+- [x] **Benchmark suite:** standardized latency/accuracy numbers for MNIST, the CNN, and faces
+      (tree model benchmarking is scoped to Phase 8). Track regressions in CI. If Phase 12 has landed, this is
       `penumbra-bench` and it covers **both backends** — don't build a second one.
-      *Note:* `penumbra-bench` covers all seven committed fixtures with latency, accuracy, wire sizes, and cost proxies across both backends (`docs/results/phase10-final-sweep.json`); machine-independent regression baseline gated in CI (`bench-regression` job in `.github/workflows/ci.yml`). Tree model benchmarking explicitly deferred to Phase 8, which owns tree-to-IR lowering and ciphertext comparison ops.
+      *Note:* `penumbra-bench` covers all seven committed fixtures with latency, accuracy, wire sizes, and cost proxies across both backends (`docs/results/phase10-final-sweep.json`); machine-independent regression baselines gated in CI for both backends (`bench-regression` for TFHE and `ckks-backend` for CKKS in `.github/workflows/ci.yml`). Tree model benchmarking is explicitly deferred to Phase 8, which owns tree-to-IR lowering and ciphertext comparison ops.
 - [x] Document tuning guidance in `docs/PERFORMANCE.md` (what knobs exist, their tradeoffs) —
       per backend, since the knobs differ: PBS count and radix width for TFHE, polynomial
       degree and slot packing for CKKS.

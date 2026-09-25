@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "note": "Phase-10 committed regression baseline (ckks backend)",
+  "entries": [
+    {
+      "model": "phase2_logreg",
+      "backend": "ckks",
+      "profile": null,
+      "num_blocks": 6,
+      "client_key_bytes": 131196,
+      "server_key_bytes": 1869089408,
+      "input_ct_bytes": 4980843,
+      "output_ct_bytes": 4980843,
+      "cost_proxy": {
+        "depth_levels": 5,
+        "poly_evals": 1,
+        "rescales": 5,
+        "rotations": 16
+      },
+      "measured_totals": {},
+      "labels_matched": 1,
+      "labels_checked": 1
+    },
+    {
+      "model": "phase4_cnn",
+      "backend": "ckks",
+      "profile": null,
+      "num_blocks": 7,
+      "client_key_bytes": 131196,
+      "server_key_bytes": 1869089408,
+      "input_ct_bytes": 4980843,
+      "output_ct_bytes": 4980843,
+      "cost_proxy": {
+        "depth_levels": 7,
+        "poly_evals": 1,
+        "rescales": 7,
+        "rotations": 45
+      },
+      "measured_totals": {},
+      "labels_matched": 1,
+      "labels_checked": 1
+    },
+    {
+      "model": "phase6_sklearn",
+      "backend": "ckks",
+      "profile": null,
+      "num_blocks": 10,
+      "client_key_bytes": 131196,
+      "server_key_bytes": 1869089408,
+      "input_ct_bytes": 4980843,
+      "output_ct_bytes": 4980843,
+      "cost_proxy": {
+        "depth_levels": 1,
+        "rescales": 1,
+        "rotations": 19
+      },
+      "measured_totals": {},
+      "labels_matched": 1,
+      "labels_checked": 1
+    }
+  ]
+}

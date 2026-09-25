@@ -95,6 +95,11 @@ jobs:
         run: |
           cargo test -p penumbra-ckks --features ckks --release
           cargo test -p penumbra-bench --features ckks --release
+      - name: Benchmark regression gate (CKKS)
+        run: |
+          cargo run -p penumbra-bench --features ckks --release --bin penumbra-bench-report -- \
+            --models phase2_logreg,phase4_cnn,phase6_sklearn --backends ckks --samples 1 \
+            --baseline crates/penumbra-bench/baselines/ckks-baseline.json
   python:
     name: Python front end (ruff, black, pytest)
     runs-on: ubuntu-latest

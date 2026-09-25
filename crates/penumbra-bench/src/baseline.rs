@@ -6,11 +6,13 @@
 //! plus wire sizes and label correctness, all of which are fixed by the crypto params and the
 //! graph, not by the CPU.
 //!
-//! Note on CKKS: The gate is TFHE-only. CKKS's `max_abs_err` is a floating-point value that
-//! depends on the HAL backend (`FFT64Neon` on AArch64 vs `FFT64Avx` on x86-64,
-//! `docs/BENCHMARKS.md:185`), so it is not machine-independent and cannot be exact-gated from
-//! one committed file. CKKS correctness is gated on the nightly job by its seven golden tests
-//! against the declared bounds (`crates/penumbra-ckks/src/bounds.rs`).
+//! Note on CKKS: CKKS deterministic metrics (cost proxies: depth levels, rescales, rotations,
+//! and polynomial evaluations; wire sizes; and label correctness) are gated via
+//! `baselines/ckks-baseline.json`. CKKS's `max_abs_err` is a floating-point value that depends on
+//! the HAL backend (`FFT64Neon` on AArch64 vs `FFT64Avx` on x86-64, `docs/BENCHMARKS.md:185`),
+//! so exact floating-point error is not exact-gated in the baseline file; continuous float
+//! accuracy is gated on the nightly job by its seven golden tests against declared bounds
+//! (`crates/penumbra-ckks/src/bounds.rs`).
 
 use std::collections::{BTreeMap, HashSet};
 

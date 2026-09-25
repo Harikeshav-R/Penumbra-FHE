@@ -27,8 +27,6 @@ pub struct Linear {
 
 impl Op<TfheBackend> for Linear {
     fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
-        let sk = ctx.sk;
-
         assert_eq!(
             self.weights.len(),
             self.bias.len(),
@@ -58,32 +56,7 @@ impl Op<TfheBackend> for Linear {
                     groups.entry(w).or_default().push(ct);
                 }
 
-                let mut group_terms: Vec<SignedRadixCiphertext> = Vec::with_capacity(groups.len());
-                for (w, cts) in groups {
-                    let s = if cts.len() == 1 {
-                        cts[0].clone()
-                    } else {
-                        sk.sum_ciphertexts_parallelized(cts.iter().copied())
-                            .expect("non-empty cts group")
-                    };
-                    let term = if w == 1 {
-                        s
-                    } else {
-                        sk.scalar_mul_parallelized(&s, w)
-                    };
-                    group_terms.push(term);
-                }
-
-                let acc = if group_terms.is_empty() {
-                    sk.create_trivial_zero_radix(ctx.num_blocks)
-                } else if group_terms.len() == 1 {
-                    group_terms.pop().unwrap()
-                } else {
-                    sk.sum_ciphertexts_parallelized(group_terms.iter())
-                        .expect("non-empty group_terms")
-                };
-
-                sk.scalar_add_parallelized(&acc, b)
+                super::evaluate_weighted_mac(ctx, groups, b)
             })
             .collect()
     }

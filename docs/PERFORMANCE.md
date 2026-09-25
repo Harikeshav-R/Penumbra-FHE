@@ -193,11 +193,15 @@ Penumbra enforces deterministic performance gates in CI via `penumbra-bench`.
 cargo run -p penumbra-bench --release --bin penumbra-bench-report -- \
   --models phase2_logreg --backends tfhe --samples 1
 
-# Check against the committed regression baseline:
+# Check against the committed regression baselines:
 cargo run -p penumbra-bench --release --bin penumbra-bench-report -- \
   --models phase2_logreg,phase4_cnn,phase6_sklearn --backends tfhe --samples 1 \
   --baseline crates/penumbra-bench/baselines/tfhe-classic.json
-```
+
+# Check against the committed CKKS regression baseline (nightly):
+cargo +nightly run -p penumbra-bench --features ckks --release --bin penumbra-bench-report -- \
+  --models phase2_logreg,phase4_cnn,phase6_sklearn --backends ckks --samples 1 \
+  --baseline crates/penumbra-bench/baselines/ckks-baseline.json
 
 ### What the Gate Checks (and What It Does Not)
 
@@ -217,10 +221,15 @@ cargo run -p penumbra-bench --release --bin penumbra-bench-report -- \
 When an architectural change intentionally alters operator implementations or precision:
 
 ```bash
+# Regenerate TFHE baseline:
 cargo run -p penumbra-bench --release --bin penumbra-bench-report -- \
   --models phase2_logreg,phase4_cnn,phase6_sklearn --backends tfhe --samples 1 \
   --write-baseline crates/penumbra-bench/baselines/tfhe-classic.json
-```
+
+# Regenerate CKKS baseline:
+cargo +nightly run -p penumbra-bench --features ckks --release --bin penumbra-bench-report -- \
+  --models phase2_logreg,phase4_cnn,phase6_sklearn --backends ckks --samples 1 \
+  --write-baseline crates/penumbra-bench/baselines/ckks-baseline.json
 
 ---
 
