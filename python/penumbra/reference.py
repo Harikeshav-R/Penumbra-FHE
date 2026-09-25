@@ -26,6 +26,7 @@ from penumbra.ir import (
     ActivationSpec,
     AddSpec,
     ArgmaxSpec,
+    CompareSpec,
     Conv2dSpec,
     Graph,
     LinearSpec,
@@ -138,6 +139,19 @@ def _activation(op: ActivationSpec, x: list[int]) -> list[int]:
     return out
 
 
+def _compare(op: CompareSpec, x: list[int]) -> list[int]:
+    """Integer threshold comparison with a fused gather (``compare.rs``)."""
+    out = []
+    for i, (idx, t) in enumerate(zip(op.indices, op.thresholds, strict=True)):
+        if idx >= len(x):
+            raise ValueError(
+                f"Compare indices[{i}] = {idx} is out of range for an input tensor of "
+                f"length {len(x)}; check the graph wiring feeding this Compare"
+            )
+        out.append(1 if x[idx] >= t else 0)
+    return out
+
+
 def evaluate_graph_int(graph: Graph, inputs: dict[str, list[int]]) -> dict[str, list[int]]:
     """Evaluate ``graph`` in plain integers, returning every graph-output tensor.
 
@@ -175,6 +189,8 @@ def evaluate_graph_int(graph: Graph, inputs: dict[str, list[int]]) -> dict[str, 
                         "threshold reads one value — check the graph wiring feeding this Argmax"
                     )
                 out = [1 if x[0] >= op.threshold else 0]
+            elif isinstance(op, CompareSpec):
+                out = _compare(op, x)
             else:  # pragma: no cover - every OpSpec variant is handled above
                 raise ValueError(f"reference evaluator: unsupported op {op.op_type!r}")
         env[node.outputs[0]] = out

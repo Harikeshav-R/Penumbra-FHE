@@ -7,7 +7,16 @@ a graph here, never editing the Rust backend (``AGENTS.md`` §1.2).
 
 Most users will go through ``onnx_loader.load_onnx()`` instead; adapters are optional
 sugar for framework-native models that skip the ONNX round trip.
-
-TODO(phase-8): tree-ensemble (XGBoost/decision-tree) -> IR adapter; optional torch/
-sklearn convenience builders.
 """
+
+from penumbra.adapters.trees import (
+    TreeEnsembleModel,
+    from_sklearn,
+    from_xgboost,
+)
+
+__all__ = [
+    "TreeEnsembleModel",
+    "from_sklearn",
+    "from_xgboost",
+]

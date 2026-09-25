@@ -20,6 +20,7 @@ from penumbra.ir import (
     SCHEMA_VERSION,
     ActivationSpec,
     ArgmaxSpec,
+    CompareSpec,
     Graph,
     LinearSpec,
     Node,
@@ -194,3 +195,33 @@ def test_activation_out_of_domain_fails_loudly():
     assert evaluate_graph_int(g, {"x": [0, 3]})["y"] == [0, 3]
     with pytest.raises(ValueError, match="outside the LUT domain"):
         evaluate_graph_int(g, {"x": [4]})  # 4 is past the 4-entry table
+
+
+def test_compare_reference_oracle():
+    """Compare: >= threshold evaluation, gather indexing, and out-of-range check."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=4,
+        input_bits=4,
+        inputs=["x"],
+        outputs=["bits"],
+        nodes=[
+            Node(
+                name="cmp",
+                inputs=["x"],
+                outputs=["bits"],
+                op=CompareSpec(indices=[2, 0, 1, 0], thresholds=[5, 3, 10, 4]),
+            )
+        ],
+    )
+    # x = [3, 9, 5]
+    # indices[0] = 2 -> x[2]=5 >= 5 -> 1 (exact equality)
+    # indices[1] = 0 -> x[0]=3 >= 3 -> 1 (exact equality)
+    # indices[2] = 1 -> x[1]=9 >= 10 -> 0
+    # indices[3] = 0 -> x[0]=3 >= 4 -> 0
+    out = evaluate_graph_int(g, {"x": [3, 9, 5]})
+    assert out["bits"] == [1, 1, 0, 0]
+
+    # Out-of-range index raises ValueError
+    with pytest.raises(ValueError, match="out of range"):
+        evaluate_graph_int(g, {"x": [3, 9]})  # length 2, but indices[0]=2 needs index 2
