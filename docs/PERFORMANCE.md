@@ -244,13 +244,17 @@ demonstrated that:
 - Fixture files are compact (5 KB – 28 KB).
 
 Introducing a binary IR format would add schema complexity without measurable performance gain.
-Penumbra retains its backend-neutral, human-readable JSON IR format (`SCHEMA_VERSION = 0.6.0`).
+Penumbra retains its backend-neutral, human-readable JSON IR format (`SCHEMA_VERSION = 0.7.0`).
 
-### 2. Tree Models: Deferred to Phase 8
+### 2. Tree Models: Delivered in Phase 8
 
-Decision tree evaluation requires ciphertext-ciphertext comparisons (`CmpGte`) and conditional
-selection (`Select`), which are not part of the current op vocabulary. Benchmarking tree models is
-deferred to Phase 8 (`ROADMAP.md` §P8), which owns the Tree-to-IR compiler.
+Phase 8 delivered tree ensemble evaluation via the 4-stage sum-of-comparisons lowering (`Compare` -> `Linear` -> `Compare` -> `Linear`).
+
+Because trees evaluate as threshold comparisons (`Compare`) and sparse indicator maps (`Linear`) rather than deep neural networks:
+- **Zero bootstraps:** No Requant or LUT PBS operations are required.
+- **Cost is bounded:** Total comparison PBS count is exactly $n_{\text{splits}} + n_{\text{leaves}}$ (e.g. 67 PBS for the 5-tree Random Forest on Wisconsin Breast Cancer).
+- **Latency:** ~10.4 s per sample on TFHE (`classic` profile) with 100% bit-for-bit accuracy against the quantized-integer reference.
+- **Sparse path matrix:** `Linear::eval` skips zero weights and groups by distinct weight value, so the sparse $\pm 1$ path matrix in stage 2 evaluates with minimal ciphertext additions.
 
 ---
 

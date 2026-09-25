@@ -186,6 +186,22 @@ with zero crypto-backend edits, exactly like `load_onnx` promised. The FHE golde
 (`golden_faces.rs`) is `#[ignore]`d because at 128 bootstraps/sample it is minutes per sample; the
 fast Python guard (`tests/test_faces_fixture.py`) checks fixture self-consistency on every CI run.
 
+### Phase-8 — tree ensemble, Breast Cancer (`examples/tabular/phase8_trees_fixture.json`)
+
+RandomForestClassifier (5 trees, max depth 3) trained on Wisconsin Breast Cancer (30 features, 2 classes), lowered to 4 IR nodes via `from_sklearn`: `Compare (split_cmp) -> Linear (leaf_score) -> Compare (leaf_sel) -> Linear (logits)`.
+
+| Metric | Value |
+|---|---|
+| Float accuracy | 0.9561 |
+| Quantized accuracy | 0.9561 (gap +0.0000) |
+| Weight / leaf bits | 8-bit inputs, 4-bit leaf scales |
+| Radix | 7 blocks (14-bit signed) |
+| Bootstraps / sample | 0 bootstraps (no Requant/LUT PBS; 67 comparison PBSs total) |
+| Latency / sample (encrypted) | ~10.4 s (TFHE, classic profile) |
+| Backend support | TFHE exact (bit-for-bit); CKKS op implemented, but chained sharp steps exceed level budget for 4-node tree graph |
+
+Unlike neural networks where accumulator growth forces Requant (bootstraps) and MAC operations cause carry propagation, tree ensembles evaluate as pure threshold comparisons (`Compare`) and sparse indicator linear maps (`Linear`). Total comparison PBS count is `n_splits + n_leaves` (67 PBS), running in ~10.4 s per sample with zero bootstraps.
+
 ## Cross-backend comparison
 
 **Measured on Apple M3 Pro, macOS 25.6.0, `rustc 1.100.0-nightly (bba531001 2026-09-20)`, HAL backend `FFT64Neon` (`poulpy-ckks 0.8.3`), commit `9b38c1b`, 2026-09-24, `--samples 2`. Raw artifact: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json).**

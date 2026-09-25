@@ -83,6 +83,29 @@ and bit-width columns in the tables below describe this backend specifically.
   node's inputs in declared order and dispatches `Op::eval_n`; single-input ops keep working
   through the default `eval_n` (`AGENTS.md` §1.2 — the loop never special-cases an op).
 
+## Phase 8 — tree ensembles (`Compare`)
+
+| Op | Covers | TFHE realization | Bit-width rule (`output_bits`) |
+|---|---|---|---|
+| `Compare` | decision trees, random forests, XGBoost | `out[i] = (x[indices[i]] >= thresholds[i]) ? 1 : 0` via `scalar_ge_parallelized` | `1` bit regardless of input width |
+
+### 4-stage tree ensemble lowering
+
+Tree ensembles lower through `penumbra.adapters.from_sklearn` and `from_xgboost` without ciphertext × ciphertext multiplies:
+
+| Stage | Node | Op | Semantics |
+|---|---|---|---|
+| 1 | `split_cmp` | `Compare` | $b_g = [x[\text{feature}_g] \ge T_g]$ — split evaluations across all trees |
+| 2 | `leaf_score` | `Linear` | $\text{score}_l = \sum_{g \in \text{path}(l)} (\pm 1) \cdot b_g + \|\text{left}(l)\|$ — attains max $\text{depth}_l$ iff every condition on path holds |
+| 3 | `leaf_sel` | `Compare` | $[\text{score}_l \ge \text{depth}_l]$ — one-hot leaf indicator |
+| 4 | `logits` | `Linear` | $\sum_l V[c][l] \cdot \text{leaf\_sel}[l] + \text{bias}_c$ — class logits |
+
+### Integer threshold formulas
+
+Given per-feature scale $s_j$ and client-side $x_{\text{int}} = \text{clip}(\text{round}(x / s_j), 0, 2^{\text{input\_bits}} - 1)$, continuous thresholds are converted and clamped into $[0, 2^{\text{input\_bits}}]$:
+- scikit-learn ($x > t$): $T = \lfloor t / s_j \rfloor + 1$
+- XGBoost ($x \ge c$): $T = \lceil c / s_j \rceil$
+
 ## ONNX front door (Phase 6)
 
 `penumbra.load_onnx("model.onnx")` is the front door: it parses an ONNX graph, **validates every
@@ -164,6 +187,7 @@ approximated, and the vocabulary never forks per backend (`AGENTS.md` §1.2).
 | `Activation` | ✅ exact, one PBS | ✅ approximate within declared bound | exact Chebyshev interpolating polynomial over LUT domain; zero fit error on integer inputs |
 | `Requant` | ✅ exact, one PBS | ✅ approximate within declared bound | continuous ReLU polynomial approximation + scale/shift; per-channel via 0/1 mask multiply |
 | `Argmax` | ✅ exact, comparison PBS | ✅ approximate within declared bound | continuous piecewise-linear step approximation evaluated over normalized logit |
+| `Compare` | ✅ exact, comparison PBS | ⚠️ op implemented; chained sharp steps exceed level budget for tree graph (needs 360 bits vs 330 budget capacity) | plaintext linear map (gather - threshold) + continuous smoothed step polynomial approximation |
 Two notes that explain the whole column:
 
 - **CKKS has no lookup table and no programmable bootstrap.** Every op marked *approximate*

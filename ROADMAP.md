@@ -370,8 +370,9 @@ that unlock new model classes, each via the same add-an-op discipline.
 
 ### Tasks
 
-- [ ] **Tree ensembles (decision trees / XGBoost):** trees are often *easier* in FHE than NNs
+- [x] **Tree ensembles (decision trees / XGBoost):** trees are often *easier* in FHE than NNs
       — comparisons are LUTs. Add a tree-to-IR adapter and the compare/select ops needed.
+      *Note:* Delivered in Phase 8 Step 1 via `Compare` op (IR schema 0.7.0), `penumbra.adapters.from_sklearn` and `from_xgboost`, and committed fixtures `phase8_trees_fixture.json` and `phase8_xgb_fixture.json`.
 - [ ] **More activations:** tanh, GELU, leaky ReLU, hardswish — all are single-input LUTs, so
       mostly LUT-generation work in the quantization service.
 - [ ] **Concat / split / multi-input graphs:** support branching graphs (not just linear

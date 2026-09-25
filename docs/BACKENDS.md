@@ -72,7 +72,7 @@ what a general FHE API might look like. Every row below is a real call site.
 | ct + ct | `linear.rs:69`, `conv2d.rs:129`, `pool.rs:115`, `add.rs:56` | `add_parallelized` | native homomorphic add |
 | ct × plaintext scalar | `linear.rs:68`, `conv2d.rs:128`, `requant.rs:215` | `scalar_mul_parallelized` | plaintext multiply (consumes one level) |
 | ct + plaintext scalar | `linear.rs:73`, `conv2d.rs:135`, `requant.rs:221` | `scalar_add_parallelized` | plaintext add |
-| ct ≥ plaintext scalar | `argmax.rs:33` | `scalar_ge_parallelized` | **no exact analogue** — polynomial sign/step |
+| ct ≥ plaintext scalar | `argmax.rs:33`, `compare.rs:33` | `scalar_ge_parallelized` | **no exact analogue** — polynomial sign/step |
 | max(ct, ct) | `pool.rs:123` | `max_parallelized` | polynomial max |
 | max(ct, 0) — ReLU | `requant.rs:209` | `scalar_max_parallelized` | polynomial ReLU |
 | min(ct, k) — saturate | `requant.rs:228` | `scalar_min_parallelized` | polynomial clamp |
@@ -102,10 +102,10 @@ The exceptions are the interesting ones:
    (`poulpy-ckks` provides an `approximation` module for the fitting). This is the single
    largest semantic difference between the backends and the most interesting thing the
    comparison measures.
-2. **`ct ≥ scalar`** (`Argmax`) is a LUT under the hood. Under CKKS it is a polynomial step
-   function, and a poor one at low degree. Note that Penumbra's multi-class models already
-   decrypt logits and argmax **client-side** (`docs/BENCHMARKS.md`, Phase-4 onward), so this
-   only affects the 2-class `Argmax` head.
+2. **`ct ≥ scalar`** (`Argmax`, `Compare`) is a comparison PBS under TFHE. Under CKKS it is a polynomial step
+   function. For a single comparison (`ckks_golden_ops.rs`), continuous step approximation works; for
+   chained sharp steps in a tree graph (4-node lowering), the required depth exceeds CKKS's depth budget
+   (needs 360 bits vs 330 budget capacity with default params).
 
 > A backend that cannot implement an op must say so **at load time, naming the op and the
 > node** (`AGENTS.md` §1.4) — never approximate it silently, and never fall back to another
