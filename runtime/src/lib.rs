@@ -22,7 +22,9 @@ pub use penumbra_tfhe::keys::{
     save_client_key, save_server_key, server_key_bytes, server_key_from_bytes, TfheProfile,
     DEFAULT_PARAMS, MESSAGE_BITS, SCHEME_TFHE,
 };
-pub use penumbra_tfhe::ops::{Activation, Add, Argmax, Conv2d, EvalCtx, Linear, Op, Pool, Requant};
+pub use penumbra_tfhe::ops::{
+    Activation, Add, Argmax, Compare, Conv2d, EvalCtx, Linear, Op, Pool, Requant,
+};
 pub use penumbra_tfhe::{evaluate, evaluate_graph};
 
 pub mod encrypt {
