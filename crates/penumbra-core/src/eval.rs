@@ -51,6 +51,10 @@ pub fn evaluate_graph<B: Backend>(
 ///
 /// Instrumented **once**, here, so every backend is measured by the same code
 /// (`ROADMAP.md` Phase 12.3, `docs/COMPARISON.md`).
+///
+/// Note: backend-measured counters (such as TFHE's PBS count) may use process-global atomics,
+/// so per-node deltas are exact only while one graph is evaluated at a time in the process —
+/// which every entry point does today.
 pub fn evaluate_graph_profiled<B: Backend>(
     backend: &B,
     ctx: &EvalCtx<B::ServerKey>,
@@ -77,6 +81,9 @@ fn evaluate_graph_inner<B: Backend>(
             inputs.keys().collect::<Vec<_>>()
         ));
     }
+
+    let graph = crate::optimize::optimize_graph(graph)?;
+    let graph = graph.as_ref();
 
     if let Some(prof) = &mut profile {
         prof.backend = backend.name();
@@ -121,11 +128,36 @@ fn evaluate_graph_inner<B: Backend>(
             Vec::new()
         };
 
+        let measured_before = profile
+            .as_ref()
+            .map(|_| backend.measured_counters())
+            .unwrap_or_default();
         let t_eval = profile.as_ref().map(|_| Instant::now());
         let result = op.eval_n(ctx, &input_cts);
         let eval = t_eval.map(|t| t.elapsed()).unwrap_or_default();
 
         if let Some(prof) = &mut profile {
+            let measured_after = backend.measured_counters();
+            if measured_after.len() != measured_before.len() {
+                return Err(format!(
+                    "backend '{}' violated the stable-order contract for measured_counters: \
+                     before had {} counters, after had {}",
+                    backend.name(),
+                    measured_before.len(),
+                    measured_after.len()
+                ));
+            }
+            let mut measured = Vec::with_capacity(measured_before.len());
+            for ((name_b, b), (name_a, a)) in measured_before.iter().zip(&measured_after) {
+                if name_b != name_a {
+                    return Err(format!(
+                        "backend '{}' violated the stable-order contract for measured_counters: \
+                         counter name mismatch ('{name_b}' vs '{name_a}')",
+                        backend.name()
+                    ));
+                }
+                measured.push((*name_b, a.saturating_sub(*b)));
+            }
             let counters = op.cost(&input_lens);
             prof.nodes.push(NodeProfile {
                 name: node.name.clone(),
@@ -135,6 +167,7 @@ fn evaluate_graph_inner<B: Backend>(
                 input_lens,
                 output_len: result.len(),
                 counters,
+                measured,
             });
         }
 

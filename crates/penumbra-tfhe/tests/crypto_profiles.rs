@@ -1,8 +1,8 @@
 //! Tests for TFHE named crypto-parameter profiles (ROADMAP Phase 9).
 //!
 //! Asserts that:
-//! 1. Encrypted evaluation produces bit-for-bit identical results under both "default"
-//!    and "gaussian" profiles (TFHE is exact under either noise distribution; `AGENTS.md` §1.1).
+//! 1. Encrypted evaluation produces bit-for-bit identical results under every named profile
+//!    (TFHE is exact under all profiles; `AGENTS.md` §1.1).
 //! 2. Mismatched profile pairing produces the actionable `ensure_profile_match` error.
 
 use std::collections::HashMap;
@@ -35,7 +35,13 @@ fn test_tfhe_crypto_profiles_exact_agreement() {
     let input_vals = vec![2i64, -1i64];
     let expected = vec![2 * 2 - 3 + 1]; // [2]
 
-    for profile in [TfheProfile::Default, TfheProfile::Gaussian] {
+    for profile in [
+        TfheProfile::Classic,
+        TfheProfile::Gaussian,
+        TfheProfile::MultiBit2,
+        TfheProfile::MultiBit3,
+        TfheProfile::MultiBit4,
+    ] {
         let backend = TfheBackend::new(profile);
         let (ck, sk) = backend.keygen(graph.num_blocks);
         let ctx = EvalCtx {
@@ -59,13 +65,13 @@ fn test_tfhe_crypto_profiles_exact_agreement() {
 
 #[test]
 fn test_tfhe_profile_mismatch_fails_loudly() {
-    let err = ensure_profile_match(TfheProfile::Default, TfheProfile::Gaussian).unwrap_err();
+    let err = ensure_profile_match(TfheProfile::Classic, TfheProfile::Gaussian).unwrap_err();
     assert!(
         err.contains("key/profile mismatch"),
         "error should state mismatch: {err}"
     );
     assert!(
-        err.contains("this key was generated under crypto profile 'default'"),
+        err.contains("this key was generated under crypto profile 'classic'"),
         "error should name key profile: {err}"
     );
     assert!(

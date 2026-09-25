@@ -33,10 +33,10 @@ fn committed_ir_deserializes_to_expected_graph() {
         "committed IR must match this runtime's schema version"
     );
     assert_eq!(
-        graph.num_blocks, 8,
-        "Phase-2 fixture uses an 8-block (16-bit) radix"
+        graph.num_blocks, 6,
+        "Phase-2 fixture uses a 6-block (12-bit) radix"
     );
-    assert_eq!(graph.input_bits, 4);
+    assert_eq!(graph.input_bits, 2);
     assert_eq!(graph.inputs, vec!["x".to_string()]);
     assert_eq!(graph.outputs, vec!["label".to_string()]);
 
@@ -53,7 +53,7 @@ fn committed_ir_deserializes_to_expected_graph() {
             bias,
             weight_bits,
         } => {
-            assert_eq!(*weight_bits, 4);
+            assert_eq!(*weight_bits, 2);
             assert_eq!(weights.len(), 1, "one logit row");
             assert_eq!(weights[0].len(), 64, "64 features");
             assert_eq!(bias.len(), 1);

@@ -5,6 +5,9 @@
 //! so each output is `sum_i (ciphertext_i * plaintext_weight) + plaintext_bias` —
 //! scalar-multiplies and additions only, **no programmable bootstrap**.
 
+use std::collections::{BTreeMap, BTreeSet};
+
+use rayon::prelude::*;
 use tfhe::integer::SignedRadixCiphertext;
 
 use penumbra_core::ops::Op;
@@ -24,8 +27,6 @@ pub struct Linear {
 
 impl Op<TfheBackend> for Linear {
     fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
-        let sk = ctx.sk;
-
         assert_eq!(
             self.weights.len(),
             self.bias.len(),
@@ -35,8 +36,8 @@ impl Op<TfheBackend> for Linear {
         );
 
         self.weights
-            .iter()
-            .zip(&self.bias)
+            .par_iter()
+            .zip(self.bias.par_iter())
             .map(|(row, &b)| {
                 assert_eq!(
                     row.len(),
@@ -46,13 +47,16 @@ impl Op<TfheBackend> for Linear {
                     inputs.len()
                 );
 
-                let mut acc: SignedRadixCiphertext = sk.create_trivial_zero_radix(ctx.num_blocks);
+                // Group inputs by non-zero weight into a BTreeMap for deterministic order.
+                let mut groups: BTreeMap<i64, Vec<&SignedRadixCiphertext>> = BTreeMap::new();
                 for (ct, &w) in inputs.iter().zip(row) {
-                    let term = sk.scalar_mul_parallelized(ct, w);
-                    acc = sk.add_parallelized(&acc, &term);
+                    if w == 0 {
+                        continue;
+                    }
+                    groups.entry(w).or_default().push(ct);
                 }
 
-                sk.scalar_add_parallelized(&acc, b)
+                super::evaluate_weighted_mac(ctx, groups, b)
             })
             .collect()
     }
@@ -77,14 +81,32 @@ impl Op<TfheBackend> for Linear {
         sum_bits.max(bias_bits) + 2
     }
 
-    fn cost(&self, input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let mut scalar_mul = 0u64;
+        let mut ct_add = 0u64;
         let rows = self.weights.len() as u64;
-        let cols = input_lens.first().copied().unwrap_or(0) as u64;
+
+        for row in &self.weights {
+            let mut distinct = BTreeSet::new();
+            let mut nonzero_count = 0u64;
+            for &w in row {
+                if w != 0 {
+                    distinct.insert(w);
+                    nonzero_count += 1;
+                }
+            }
+            scalar_mul += distinct.len() as u64;
+            if nonzero_count > 0 {
+                ct_add += nonzero_count - 1;
+            }
+        }
+
         let mut counters = Vec::new();
-        let scalar_mul = rows * cols;
         if scalar_mul > 0 {
             counters.push(("scalar_mul", scalar_mul));
-            counters.push(("ct_add", scalar_mul));
+        }
+        if ct_add > 0 {
+            counters.push(("ct_add", ct_add));
         }
         if rows > 0 {
             counters.push(("scalar_add", rows));

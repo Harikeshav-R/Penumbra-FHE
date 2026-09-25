@@ -345,3 +345,39 @@ def test_per_channel_beats_per_tensor_on_imbalanced_channels():
         f"per-channel ({per_channel_acc:.3f}) regressed vs per-tensor ({per_tensor_acc:.3f}) on "
         "imbalanced channels — the per-channel Requant should rescale each channel correctly"
     )
+
+
+def test_quantize_per_layer_weight_bits():
+    """Model.quantize accepts per-accumulator-layer weight bit widths."""
+    rng = np.random.default_rng(42)
+    conv_w = rng.normal(size=(2, 1, 3, 3))
+    head_w = rng.normal(size=(3, 2 * 3 * 3))
+    head_b = rng.normal(size=3)
+    cal = rng.uniform(0.0, 16.0, size=(16, 64))
+
+    model = Model(
+        [
+            Conv2d(weight=conv_w, in_h=8, in_w=8, in_channels=1, stride=2),
+            Activation(_relu),
+            Linear(weight=head_w, bias=head_b),
+        ],
+        input_bits=4,
+    )
+    graph = model.quantize(cal, n_bits=[6, 3], act_bits=2)
+    assert model.weight_bits == [6, 3]
+
+    conv_node = [n for n in graph.nodes if n.op.op_type == "Conv2d"][0]
+    linear_node = [n for n in graph.nodes if n.op.op_type == "Linear"][0]
+    assert conv_node.op.weight_bits == 6
+    assert linear_node.op.weight_bits == 3
+
+    # Wrong length list raises naming the accumulator count
+    with pytest.raises(ValueError, match="2 accumulator layer"):
+        model.quantize(cal, n_bits=[6])
+
+    with pytest.raises(ValueError, match="2 accumulator layer"):
+        model.quantize(cal, n_bits=[6, 4, 3])
+
+    # < 1 bit raises
+    with pytest.raises(ValueError, match="must be >= 1"):
+        model.quantize(cal, n_bits=[6, 0])

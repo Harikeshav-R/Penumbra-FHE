@@ -30,8 +30,8 @@ ONNX_MODEL = EXAMPLES / "digit_cnn.onnx"
 FIXTURE = EXAMPLES / "phase6_onnx_fixture.json"
 
 # Regeneration knobs must match examples/mnist/onnx_export.py so the reload reproduces the fixture.
-INPUT_BITS = 4
-WEIGHT_BITS = 6
+INPUT_BITS = 3
+WEIGHT_BITS = (5, 6)
 ACT_BITS = 2
 
 

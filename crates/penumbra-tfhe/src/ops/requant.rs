@@ -4,6 +4,7 @@ use tfhe::integer::{IntegerCiphertext, SignedRadixCiphertext};
 use tfhe::shortint::Ciphertext;
 
 use penumbra_core::ops::Op;
+use rayon::prelude::*;
 
 use super::{CtVec, EvalCtx};
 use crate::backend::TfheBackend;
@@ -103,7 +104,7 @@ impl Op<TfheBackend> for Requant {
         let lut = shortint_sk.generate_lookup_table(move |v| *table.get(v as usize).unwrap_or(&0));
 
         inputs
-            .iter()
+            .par_iter()
             .enumerate()
             .map(|(idx, ct)| {
                 let (mult, shift, round_bias) = if per_channel {

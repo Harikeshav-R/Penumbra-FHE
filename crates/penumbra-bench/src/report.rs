@@ -19,6 +19,8 @@ pub struct NodeReport {
     pub input_lens: Vec<usize>,
     pub output_len: usize,
     pub counters: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub measured: BTreeMap<String, u64>,
 }
 
 /// Timing and verification report for a single input sample.
@@ -40,6 +42,9 @@ pub struct SampleReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelRun {
     pub backend: String,
+    /// The backend parameter profile this run used; `None` when the backend has no named profile.
+    #[serde(default)]
+    pub profile: Option<String>,
     pub model: String,
     pub fixture: String,
     pub num_blocks: usize,
@@ -55,6 +60,17 @@ pub struct ModelRun {
     pub op_type_build_secs: BTreeMap<String, f64>,
     /// Summed counters for one sample — this backend's cost proxy.
     pub cost_proxy: BTreeMap<String, u64>,
+    /// Measured counters for one sample — ground truth, unlike `cost_proxy`.
+    #[serde(default)]
+    pub measured_totals: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub accuracy: Option<crate::models::FixtureAccuracy>,
+    #[serde(default)]
+    pub bit_plan: Option<serde_json::Value>,
+    #[serde(default)]
+    pub ir_bytes: usize,
+    #[serde(default)]
+    pub ir_load_secs: f64,
 }
 
 /// Where a report came from. A committed result file that cannot be attributed to a machine,
@@ -108,6 +124,7 @@ pub fn run_model<B: Backend>(
 
     let num_samples = samples.min(model.inputs.len()).max(1);
     let mut sample_reports = Vec::with_capacity(num_samples);
+    let mut first_measured_totals: BTreeMap<String, u64> = BTreeMap::new();
 
     let mut input_ct_bytes = 0;
     let mut output_ct_bytes = 0;
@@ -131,6 +148,11 @@ pub fn run_model<B: Backend>(
             output_ct_bytes = session.ct_bytes(&output_cts)?;
             first_cost_proxy = profile
                 .counter_totals()
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect();
+            first_measured_totals = profile
+                .measured_totals()
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v))
                 .collect();
@@ -193,6 +215,11 @@ pub fn run_model<B: Backend>(
                     .into_iter()
                     .map(|(k, v)| (k.to_string(), v))
                     .collect(),
+                measured: n
+                    .measured
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect(),
             })
             .collect();
 
@@ -232,6 +259,7 @@ pub fn run_model<B: Backend>(
 
     Ok(ModelRun {
         backend: session.backend.name().to_string(),
+        profile: None,
         model: model.fixture.key.to_string(),
         fixture: model.fixture.path.to_string(),
         num_blocks: session.num_blocks,
@@ -244,6 +272,11 @@ pub fn run_model<B: Backend>(
         op_type_secs,
         op_type_build_secs,
         cost_proxy: first_cost_proxy,
+        measured_totals: first_measured_totals,
+        accuracy: model.accuracy,
+        bit_plan: model.bit_plan.clone(),
+        ir_bytes: model.ir_bytes,
+        ir_load_secs: model.ir_load_secs,
     })
 }
 
@@ -299,8 +332,8 @@ pub fn to_markdown(report: &Report) -> String {
 
     // Table 1: Latency
     out.push_str("### 1. Latency (Wall-Clock)\n\n");
-    out.push_str("| Model | Backend | Keygen (s) | Encrypt (s) | Eval total (s) | of which op-build (s) | Decrypt (s) | Accuracy / Error |\n");
-    out.push_str("|---|---|---:|---:|---:|---:|---:|---|\n");
+    out.push_str("| Model | Backend | Profile | Keygen (s) | Encrypt (s) | Eval total (s) | of which op-build (s) | Decrypt (s) | Accuracy / Error |\n");
+    out.push_str("|---|---|---|---:|---:|---:|---:|---:|---|\n");
     for run in &report.runs {
         let n = run.samples.len() as f64;
         let avg_enc = run.samples.iter().map(|s| s.encrypt_secs).sum::<f64>() / n;
@@ -350,17 +383,26 @@ pub fn to_markdown(report: &Report) -> String {
             acc_parts.join("; ")
         };
 
+        let prof_str = run.profile.as_deref().unwrap_or("-");
         out.push_str(&format!(
-            "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {} |\n",
-            run.model, run.backend, run.keygen_secs, avg_enc, avg_eval, avg_build, avg_dec, acc_str
+            "| {} | {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {} |\n",
+            run.model,
+            run.backend,
+            prof_str,
+            run.keygen_secs,
+            avg_enc,
+            avg_eval,
+            avg_build,
+            avg_dec,
+            acc_str
         ));
     }
     out.push('\n');
 
     // Table 2: Per-Op-Type Eval Breakdown
     out.push_str("### 2. Per-Op-Type Eval Breakdown (Mean Seconds per Sample)\n\n");
-    out.push_str("| Model | Backend | Op Type | Calls | Build (s) | Eval (s) |\n");
-    out.push_str("|---|---|---|---:|---:|---:|\n");
+    out.push_str("| Model | Backend | Op Type | Calls | Build (s) | Eval (s) | PBS (measured) |\n");
+    out.push_str("|---|---|---|---:|---:|---:|---:|\n");
     for run in &report.runs {
         for (op, &eval_secs) in &run.op_type_secs {
             let calls = run
@@ -369,9 +411,26 @@ pub fn to_markdown(report: &Report) -> String {
                 .map(|s| s.nodes.iter().filter(|n| &n.op_type == op).count())
                 .unwrap_or(0);
             let build_secs = run.op_type_build_secs.get(op).copied().unwrap_or(0.0);
+            let pbs_str = run
+                .samples
+                .first()
+                .and_then(|s| {
+                    let nodes: Vec<_> = s.nodes.iter().filter(|n| &n.op_type == op).collect();
+                    let has_pbs = nodes.iter().any(|n| n.measured.contains_key("pbs"));
+                    if has_pbs {
+                        let sum: u64 = nodes
+                            .iter()
+                            .map(|n| n.measured.get("pbs").copied().unwrap_or(0))
+                            .sum();
+                        Some(sum.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| "-".to_string());
             out.push_str(&format!(
-                "| {} | {} | {} | {} | {:.4} | {:.4} |\n",
-                run.model, run.backend, op, calls, build_secs, eval_secs
+                "| {} | {} | {} | {} | {:.4} | {:.4} | {} |\n",
+                run.model, run.backend, op, calls, build_secs, eval_secs, pbs_str
             ));
         }
     }
@@ -379,15 +438,15 @@ pub fn to_markdown(report: &Report) -> String {
 
     // Table 3: Sizes & Scheme Cost Proxies
     out.push_str("### 3. Sizes & Scheme Cost Proxies\n\n");
-    out.push_str("| Model | Backend | Input CT | Output CT | Client Key | Server Key | Cost Proxy Counters |\n");
-    out.push_str("|---|---|---:|---:|---:|---:|---|\n");
+    out.push_str("| Model | Backend | Input CT | Output CT | Client Key | Server Key | Float acc | Quantized acc | Cost Proxy Counters |\n");
+    out.push_str("|---|---|---:|---:|---:|---:|---:|---:|---|\n");
     for run in &report.runs {
         let in_ct = format_bytes(run.input_ct_bytes);
         let out_ct = format_bytes(run.output_ct_bytes);
         let ck_sz = format_bytes(run.client_key_bytes);
         let sk_sz = format_bytes(run.server_key_bytes);
 
-        let proxy_str = if run.cost_proxy.is_empty() {
+        let mut proxy_str = if run.cost_proxy.is_empty() {
             "none".to_string()
         } else {
             run.cost_proxy
@@ -396,13 +455,104 @@ pub fn to_markdown(report: &Report) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
+        if !run.measured_totals.is_empty() {
+            let measured_parts = run
+                .measured_totals
+                .iter()
+                .map(|(k, v)| format!("measured {k}: {v}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            if proxy_str == "none" {
+                proxy_str = measured_parts;
+            } else {
+                proxy_str.push_str(&format!(", {measured_parts}"));
+            }
+        }
+
+        let (float_acc_str, quant_acc_str) = match run.accuracy {
+            Some(acc) => (
+                format!("{:.4}", acc.float_accuracy),
+                format!("{:.4}", acc.quantized),
+            ),
+            None => ("-".to_string(), "-".to_string()),
+        };
 
         out.push_str(&format!(
-            "| {} | {} | {} | {} | {} | {} | {} |\n",
-            run.model, run.backend, in_ct, out_ct, ck_sz, sk_sz, proxy_str
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+            run.model,
+            run.backend,
+            in_ct,
+            out_ct,
+            ck_sz,
+            sk_sz,
+            float_acc_str,
+            quant_acc_str,
+            proxy_str
+        ));
+    }
+    out.push('\n');
+
+    // Table 4: IR Load Cost & Binary-Format Evidence
+    out.push_str("### 4. IR Load Cost & Binary-Format Evidence\n\n");
+    out.push_str(
+        "| Model | Backend | IR bytes | IR load (ms) | Eval total (s) | IR load as % of eval |\n",
+    );
+    out.push_str("|---|---|---:|---:|---:|---:|\n");
+    for run in &report.runs {
+        let n = run.samples.len() as f64;
+        let avg_eval = run.samples.iter().map(|s| s.eval_secs).sum::<f64>() / n;
+        let ir_load_ms = run.ir_load_secs * 1000.0;
+        let pct = if avg_eval > 0.0 {
+            (run.ir_load_secs / avg_eval) * 100.0
+        } else {
+            0.0
+        };
+        out.push_str(&format!(
+            "| {} | {} | {} | {:.2} | {:.4} | {:.4}% |\n",
+            run.model,
+            run.backend,
+            format_bytes(run.ir_bytes),
+            ir_load_ms,
+            avg_eval,
+            pct
         ));
     }
     out.push('\n');
 
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_committed_comparison_json_deserialization() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let json_path = manifest_dir.join("../../docs/results/phase12-4-comparison.json");
+        if json_path.exists() {
+            let data = std::fs::read_to_string(&json_path).expect("read comparison json");
+            let report: Report = serde_json::from_str(&data).expect("deserialize Report");
+            assert!(!report.runs.is_empty());
+            let md = to_markdown(&report);
+            assert!(md.contains("Per-Op-Type Eval Breakdown"));
+            assert!(md.contains("PBS (measured)"));
+        }
+    }
+
+    #[test]
+    fn test_committed_phase10_sweep_json_deserialization() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let json_path = manifest_dir.join("../../docs/results/phase10-tfhe-sweep.json");
+        if json_path.exists() {
+            let data = std::fs::read_to_string(&json_path).expect("read phase10 sweep json");
+            let report: Report = serde_json::from_str(&data).expect("deserialize Report");
+            assert_eq!(report.runs.len(), 7);
+            let md = to_markdown(&report);
+            assert!(md.contains("Per-Op-Type Eval Breakdown"));
+            assert!(md.contains("PBS (measured)"));
+            assert!(md.contains("measured pbs:"));
+        }
+    }
 }

@@ -1254,6 +1254,15 @@
   "scales": {
     "input": 0.06007231473922729
   },
+  "bit_plan": {
+    "input_bits": 4,
+    "weight_bits": [
+      6,
+      6
+    ],
+    "act_bits": 2,
+    "max_mult_bits": 5
+  },
   "accuracy": {
     "float": 0.95,
     "quantized": 0.9

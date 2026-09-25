@@ -24,10 +24,14 @@ pub struct CryptoProfile {
 impl CryptoProfile {
     /// The TFHE knob: a named parameter profile.
     #[staticmethod]
-    #[pyo3(signature = (name="default"))]
-    fn tfhe(name: &str) -> PyResult<Self> {
-        let prof =
-            penumbra_tfhe::keys::TfheProfile::from_name(name).map_err(PyValueError::new_err)?;
+    #[pyo3(signature = (name=None))]
+    fn tfhe(name: Option<&str>) -> PyResult<Self> {
+        let prof = match name {
+            Some(n) => {
+                penumbra_tfhe::keys::TfheProfile::from_name(n).map_err(PyValueError::new_err)?
+            }
+            None => penumbra_tfhe::keys::TfheProfile::default(),
+        };
         Ok(Self {
             inner: ProfileInner::Tfhe(prof),
         })
@@ -259,7 +263,7 @@ fn keygen(
         "tfhe" => {
             let tfhe_prof = match profile {
                 Some(p) => p.as_tfhe()?,
-                None => penumbra_tfhe::keys::TfheProfile::Default,
+                None => penumbra_tfhe::keys::TfheProfile::default(),
             };
             let (ck_bytes, sk_bytes) = py
                 .detach(|| -> Result<(Vec<u8>, Vec<u8>), String> {
@@ -445,7 +449,7 @@ fn predict(
         "tfhe" => {
             let tfhe_prof = match profile {
                 Some(p) => p.as_tfhe()?,
-                None => penumbra_tfhe::keys::TfheProfile::Default,
+                None => penumbra_tfhe::keys::TfheProfile::default(),
             };
             let backend = penumbra_tfhe::TfheBackend::new(tfhe_prof);
             py.detach(|| session::run_predict(&backend, &graph, &rows))

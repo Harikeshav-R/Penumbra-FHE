@@ -146,9 +146,12 @@ so the measurement code in `penumbra-core` and `penumbra-bench` stays completely
 |---|---|
 | `bootstraps` | explicit programmable bootstraps issued (`apply_lookup_table`) |
 | `cmp_pbs_ops` | PBS-bearing comparison/shift primitives invoked (`scalar_max`, `scalar_min`, `scalar_right_shift`, `scalar_ge`, `max`); each costs >= 1 internal PBS |
-| `scalar_mul` | ciphertext x plaintext scalar (PBS-free) |
-| `scalar_add` | ciphertext + plaintext scalar (PBS-free) |
-| `ct_add` | ciphertext + ciphertext (PBS-free) |
+| `scalar_mul` | ciphertext x plaintext scalar primitive invocations |
+| `scalar_add` | ciphertext + plaintext scalar primitive invocations |
+| `ct_add` | ciphertext + ciphertext addition primitive invocations |
+| `pbs` | **measured** programmable bootstraps read from `tfhe`'s `pbs-stats` counter, including the carry-propagation bootstraps that radix `add`/`scalar_mul`/`scalar_add` issue internally (`tfhe-1.8.1` `integer/server_key/radix_parallel/add.rs:221`) |
+
+The analytic counters remain the *comparable* proxy across backends; `pbs` is TFHE-only ground truth.
 
 ### CKKS Cost Counters
 
@@ -260,7 +263,7 @@ knob per backend.
 
 **Decision (settled in Phase 9 / 12.2):** Each backend exposes exactly one parameter profile knob
 via `CryptoProfile`:
-- **TFHE:** `TfheProfile` — named profiles `"default"` (TUniform noise) and `"gaussian"` (discrete-Gaussian noise).
+- **TFHE:** `TfheProfile` — named profiles `"classic"`, `"gaussian"`, `"multibit2"`, `"multibit3"`, `"multibit4"` (all 128-bit secure at message=2/carry=2).
 - **CKKS:** `max_poly_degree` (`CkksParams::max_poly_degree`) — the maximum polynomial degree any op may fit.
 
 The per-backend profile exposes this single lever while quantization remains an automated library

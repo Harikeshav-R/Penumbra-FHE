@@ -232,8 +232,16 @@
   "scales": {
     "input": 1.0666666666666667,
     "conv_weight": 0.14285714285714285,
-    "head_weight": 0.6430788484732067,
+    "head_weight": 0.6430788484732066,
     "requant_shift": 6
+  },
+  "bit_plan": {
+    "input_bits": 4,
+    "weight_bits": [
+      4
+    ],
+    "act_bits": 2,
+    "max_mult_bits": 5
   },
   "accuracy": {
     "float": 0.98046875,

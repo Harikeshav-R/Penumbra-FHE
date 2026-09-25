@@ -4,7 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
-
+  workflow_dispatch:
+    inputs:
+      bench_models:
+        description: "Models to run in benchmark regression gate (comma-separated)"
+        required: false
+        default: "phase2_logreg,phase4_cnn,phase6_sklearn"
+        type: string
 # Cancel superseded runs on the same ref.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -89,6 +95,11 @@ jobs:
         run: |
           cargo test -p penumbra-ckks --features ckks --release
           cargo test -p penumbra-bench --features ckks --release
+      - name: Benchmark regression gate (CKKS)
+        run: |
+          cargo run -p penumbra-bench --features ckks --release --bin penumbra-bench-report -- \
+            --models phase2_logreg,phase4_cnn,phase6_sklearn --backends ckks --samples 1 \
+            --baseline crates/penumbra-bench/baselines/ckks-baseline.json
   python:
     name: Python front end (ruff, black, pytest)
     runs-on: ubuntu-latest
@@ -176,3 +187,22 @@ jobs:
         with:
           name: wheels-${{ matrix.os }}
           path: dist
+
+  bench-regression:
+    name: Benchmark regression gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Benchmark regression gate
+        run: |
+          cargo run -p penumbra-bench --release --bin penumbra-bench-report -- \
+            --models "${{ inputs.bench_models || 'phase2_logreg,phase4_cnn,phase6_sklearn' }}" \
+            --backends tfhe --samples 1 \
+            --baseline crates/penumbra-bench/baselines/tfhe-classic.json

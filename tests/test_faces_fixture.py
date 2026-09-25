@@ -37,7 +37,7 @@ FIXTURE = EXAMPLES / "phase7_faces_fixture.json"
 # Regeneration knobs must match examples/faces/olivetti_export.py so the reload reproduces the
 # fixture. Geometry: 64x64 Olivetti downsampled 4x4 -> 16x16, Conv(1->8,3x3,stride4) -> Linear.
 INPUT_BITS = 4
-WEIGHT_BITS = 6
+WEIGHT_BITS = (6, 6)
 ACT_BITS = 2
 N_IDENTITIES = 8
 IN_H = IN_W = 16

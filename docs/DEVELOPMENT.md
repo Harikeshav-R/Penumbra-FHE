@@ -76,7 +76,9 @@ for m in phase2_logreg phase4_cnn phase5_digits phase5_qat phase6_onnx phase6_sk
     --models "$m" --backends tfhe,ckks --samples 2 \
     --format json --out "target/bench-results/$m.json"
 done
+```
 
+For tuning knobs, bit-width minimization, and the CI regression gate, see [`docs/PERFORMANCE.md`](./PERFORMANCE.md).
 > ⚠️ **Build in `--release` for anything that runs FHE.** Debug builds are *extremely* slow
 > (orders of magnitude) — true of `poulpy` as much as of `tfhe-rs`. The first compile is slow
 > regardless; both libraries pull large dependency trees. The `hello_fhe` test proves the
@@ -120,7 +122,7 @@ ever sees the quantized integer input and the graph — never a float or a scale
 > **Choosing a backend & crypto profile.** `predict_encrypted` runs the `tfhe` backend by default;
 > the CKKS backend is selected by name (`backend="ckks"`). Both backends consume the exact same
 > IR graph. Each backend exposes a single override knob via `CryptoProfile`:
-> - TFHE: `profile=fhe.CryptoProfile.tfhe("gaussian")` (named profile: `"default"` or `"gaussian"`)
+> - TFHE: `profile=fhe.CryptoProfile.tfhe("gaussian")` (named profiles: `"classic"`, `"gaussian"`, `"multibit2"`, `"multibit3"`, `"multibit4"`; `multibit*` are multi-bit PBS sets that trade a larger server key for lower latency on multi-core machines)
 > - CKKS: `profile=fhe.CryptoProfile.ckks(15)` (maximum polynomial degree)
 >
 > Keys and ciphertext are **not** portable across backends or incompatible parameter profiles:
@@ -181,7 +183,7 @@ The encrypted path fails at the earliest point with an actionable message, never
 | Model not quantized | `predict_encrypted` | `call quantize() before predict_encrypted()` |
 | Unknown backend | `run_encrypted` / `predict_encrypted` | `unknown backend '<x>'; available backends: tfhe` |
 | CKKS backend not compiled in | `run_encrypted` / `predict_encrypted` | `backend 'ckks' is not available in this build of penumbra-fhe: the CKKS backend needs a nightly Rust toolchain…` |
-| Unknown TFHE profile | `CryptoProfile.tfhe` | `unknown TFHE crypto profile '<x>'; available profiles: default, gaussian` |
+| Unknown TFHE profile | `CryptoProfile.tfhe` | `unknown TFHE crypto profile '<x>'; available profiles: classic, gaussian, multibit2, multibit3, multibit4` |
 | Invalid CKKS degree | `CryptoProfile.ckks` | `max_poly_degree must be >= 1, got 0` |
 | Profile/backend mismatch | `run_encrypted` / `predict_encrypted` | `profile/backend mismatch: profile is for backend '…', but this run uses '…'` |
 | Both keys and profile passed | `run_encrypted` / `predict_encrypted` | `cannot specify both 'keys' and 'profile': keys already carry their parameter profile…` |

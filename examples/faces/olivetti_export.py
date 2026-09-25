@@ -45,6 +45,7 @@ CI never runs this (it reads only the committed JSON), so the one-time download 
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -55,7 +56,9 @@ from sklearn.model_selection import train_test_split
 from torch import nn
 
 import penumbra as fhe
+from penumbra.ir import Graph
 from penumbra.quantization import accuracy_report
+from penumbra.quantization.minimize import BitPlan, format_trace, minimize_bit_widths
 from penumbra.reference import evaluate_graph_int
 
 # --- Configuration (matches the digit examples so the two paths are directly comparable) ------
@@ -69,9 +72,9 @@ STRIDE = 4  # stride-4 conv shrinks the 16x16 map to 4x4, keeping the bootstrap 
 CONV_CH = 8
 
 INPUT_BITS = 4  # inputs quantized into [0, 15]
-WEIGHT_BITS = 6  # 6-bit signed weights
+WEIGHT_BITS: tuple[int, ...] | int = (6, 6)  # 6-bit signed weights
+MAX_MULT_BITS = 5  # Requant multiplier cap
 ACT_BITS = 2  # post-Requant activations land in a single 2-bit block (the hard backend cap)
-
 N_TEST = 2  # committed FHE test batch — tiny on purpose (each sample is minutes under FHE)
 EPOCHS = 300
 SEED = 0
@@ -161,20 +164,67 @@ def export_onnx(model: FaceCNN) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--minimize",
+        action="store_true",
+        help="Run bit-plan minimization search on train split without writing fixture",
+    )
+    args = parser.parse_args()
+
     model, x_tr, y_tr, x_te, y_te = train()
+    export_onnx(model)
+    cal = x_tr.reshape(len(x_tr), -1).astype(np.float64)
+
+    def build(plan: BitPlan) -> tuple[Graph, float]:
+        fm = fhe.load_onnx(str(ONNX_PATH), input_bits=plan.input_bits)
+        g = fm.quantize(
+            cal,
+            n_bits=list(plan.weight_bits),
+            act_bits=ACT_BITS,
+            per_channel=True,
+            max_mult_bits=plan.max_mult_bits,
+            calibration="mse",
+        )
+        s_in = fm.input_scale
+        q = np.clip(np.round(cal / s_in), 0, (1 << plan.input_bits) - 1).astype(np.int64)
+        preds = [int(np.argmax(evaluate_graph_int(g, {"x": r.tolist()})[g.outputs[0]])) for r in q]
+        acc_tr = float(np.mean(np.array(preds) == y_tr))
+        return g, acc_tr
+
+    if args.minimize:
+        start_wb = (
+            tuple(WEIGHT_BITS)
+            if isinstance(WEIGHT_BITS, (tuple, list))
+            else (WEIGHT_BITS, WEIGHT_BITS)
+        )
+        start = BitPlan(input_bits=INPUT_BITS, weight_bits=start_wb, max_mult_bits=MAX_MULT_BITS)
+        best, trace = minimize_bit_widths(
+            build=build,
+            start=start,
+        )
+        print("=== Bit-Width Minimization Trace (train split) ===")
+        print(format_trace(trace))
+        print(
+            f"\nChosen plan: {best.plan} -> num_blocks={best.num_blocks}, "
+            f"train_acc={best.accuracy:.4f}"
+        )
+        return
 
     # Export to ONNX, then lower it back through the front door — this is the whole point of the
     # example: the Model is produced by load_onnx, not hand-built from torch weights, exactly like
     # the digit CNN. No use-case-specific code touches the backend.
     export_onnx(model)
     fmodel = fhe.load_onnx(str(ONNX_PATH), input_bits=INPUT_BITS)
-
-    # Calibration data: the (downsampled) training images, flattened to the model's input layout.
-    cal = x_tr.reshape(len(x_tr), -1).astype(np.float64)
+    wb_list = list(WEIGHT_BITS) if isinstance(WEIGHT_BITS, (tuple, list)) else WEIGHT_BITS
     graph = fmodel.quantize(
-        cal, n_bits=WEIGHT_BITS, act_bits=ACT_BITS, per_channel=True, calibration="mse"
+        cal,
+        n_bits=wb_list,
+        act_bits=ACT_BITS,
+        per_channel=True,
+        max_mult_bits=MAX_MULT_BITS,
+        calibration="mse",
     )
-
     # --- Quantized-integer oracle = what FHE must match. Compute over the test set. --------
     in_scale = fmodel.input_scale
     x_te_flat = x_te.reshape(len(x_te), -1).astype(np.float64)
@@ -220,6 +270,16 @@ def main() -> None:
         ),
         "graph": graph.to_dict(),
         "scales": {"input": in_scale},
+        "bit_plan": {
+            "input_bits": INPUT_BITS,
+            "weight_bits": (
+                list(WEIGHT_BITS)
+                if isinstance(WEIGHT_BITS, (tuple, list))
+                else [WEIGHT_BITS, WEIGHT_BITS]
+            ),
+            "act_bits": ACT_BITS,
+            "max_mult_bits": MAX_MULT_BITS,
+        },
         "accuracy": {"float": report.float_accuracy, "quantized": report.quantized_accuracy},
         "test_inputs": x_batch_q.tolist(),
         "expected_labels": labels_batch.tolist(),
