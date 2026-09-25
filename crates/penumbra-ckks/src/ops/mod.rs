@@ -2,11 +2,13 @@
 
 pub mod add;
 pub mod argmax;
+pub mod compare;
 pub mod matvec;
 pub mod polymap;
 
 pub use add::eval_add;
 pub use argmax::{prepare_argmax, PreparedArgmax};
+pub use compare::{compare_matrix, eval_compare, prepare_compare, PreparedCompare};
 pub use matvec::{
     avg_pool_matrix, conv2d_matrix, eval_matvec, linear_matrix, prepare_linear_map, PlainMatrix,
     PreparedLinearMap,
@@ -297,6 +299,41 @@ impl CoreOp<CkksBackend> for Argmax {
             ("rescales", depth),
             ("depth_levels", depth),
         ]
+    }
+}
+
+// ─── Compare Op ─────────────────────────────────────────────────────────────
+
+pub struct Compare {
+    pub(crate) prepared: PreparedCompare,
+}
+
+impl CoreOp<CkksBackend> for Compare {
+    fn eval(
+        &self,
+        ctx: &EvalCtx<crate::keys::CkksServerKey>,
+        inputs: &CtVec<CkksBackend>,
+    ) -> CtVec<CkksBackend> {
+        let out = compare::eval_compare(ctx.sk, &inputs[0], &self.prepared)
+            .expect("eval_compare failed in Compare::eval");
+        vec![out]
+    }
+
+    fn output_bits(&self, _input_bits: usize) -> usize {
+        1
+    }
+
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let rot = self.prepared.rotation_count() as u64;
+        let depth = self.prepared.depth() as u64;
+        let mut counters = Vec::new();
+        if rot > 0 {
+            counters.push(("rotations", rot));
+        }
+        counters.push(("poly_evals", 1));
+        counters.push(("rescales", depth));
+        counters.push(("depth_levels", depth));
+        counters
     }
 }
 // ─── Add Op ─────────────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ use crate::ops::add::eval_add;
 use crate::ops::argmax::{self, prepare_argmax};
 use crate::ops::matvec::{avg_pool_matrix, conv2d_matrix, linear_matrix, prepare_linear_map};
 use crate::ops::polymap::{eval_polymap, fit_activation, fit_per_channel_requant, fit_requant};
-use crate::ops::{Activation, Add, Argmax, Conv2d, Linear, PoolAvg, Requant, RequantKind};
+use crate::ops::{Activation, Add, Argmax, Compare, Conv2d, Linear, PoolAvg, Requant, RequantKind};
 use crate::params::{CkksParams, DEFAULT_PARAMS};
 
 pub struct CkksBackend {
@@ -246,6 +246,27 @@ impl Backend for CkksBackend {
                 let prepared =
                     prepare_argmax(&self.host_module, &self.params, *threshold, 16, max_depth)?;
                 Ok(Box::new(Argmax { prepared }))
+            }
+            OpSpec::Compare {
+                indices,
+                thresholds,
+            } => {
+                let max_depth = (self.params.log_budget() / self.params.log_delta.max(1)).max(1);
+                let input_bits = 8;
+                let mut scratch_guard = self
+                    .scratch
+                    .lock()
+                    .map_err(|e| format!("mutex poisoned: {e}"))?;
+                let prepared = crate::ops::compare::prepare_compare(
+                    &self.params,
+                    &self.module,
+                    &mut scratch_guard.borrow(),
+                    indices,
+                    thresholds,
+                    input_bits,
+                    max_depth,
+                )?;
+                Ok(Box::new(Compare { prepared }))
             }
             OpSpec::Add {} => Ok(Box::new(Add)),
         }
@@ -493,12 +514,19 @@ pub fn check_graph_depth_budget(backend: &CkksBackend, graph: &Graph) -> Result<
                 );
                 poly_depth * backend.params.log_delta
             }
+            OpSpec::Compare { .. } => {
+                let poly_depth = poulpy_core::layouts::bsgs_eval_depth(
+                    backend.params.max_poly_degree,
+                    poulpy_ckks::polynomial::SplitStrategy::MinDepth,
+                );
+                (1 + poly_depth) * backend.params.log_delta
+            }
             OpSpec::Add {} => 0,
         };
         accumulated_bits += node_bits;
         if accumulated_bits > budget_capacity {
             return Err(format!(
-                "depth/scale budget exceeded at node '{}' ({}): the graph needs {} bits of \
+                "depth/scale budget exceeded on backend 'ckks' at node '{}' ({}): the graph needs {} bits of \
                  multiplicative budget by this node but the profile holds only {} (k={}, \
                  log_delta={}). Reduce max_poly_degree, or widen the parameter profile.",
                 node.name,
