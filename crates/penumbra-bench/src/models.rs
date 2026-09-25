@@ -63,6 +63,12 @@ pub const MODELS: &[ModelFixture] = &[
         label: "Phase-7 faces",
         default_bench: false,
     },
+    ModelFixture {
+        key: "phase8_trees",
+        path: "../../examples/tabular/phase8_trees_fixture.json",
+        label: "Phase-8 tree ensemble",
+        default_bench: false,
+    },
 ];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
