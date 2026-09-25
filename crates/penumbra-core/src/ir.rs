@@ -17,7 +17,7 @@ use crate::ops::OpSummary;
 
 /// IR wire-format version. Hardcoded identically in `python/penumbra/ir.py`; a mismatch is
 /// a breaking change caught loudly at load time (`AGENTS.md` §5, §8).
-pub const SCHEMA_VERSION: &str = "0.6.0";
+pub const SCHEMA_VERSION: &str = "0.7.0";
 
 /// Serde default for `Requant.mult`: `1` makes the rescale a pure power-of-two shift.
 fn default_requant_mult() -> u64 {
@@ -79,6 +79,10 @@ pub enum OpSpec {
     Argmax {
         threshold: i64,
     },
+    Compare {
+        indices: Vec<usize>,
+        thresholds: Vec<i64>,
+    },
     Requant {
         shift: u32,
         #[serde(default = "default_requant_mult")]
@@ -139,6 +143,7 @@ impl OpSpec {
             OpSpec::Requant { .. } => "Requant",
             OpSpec::Pool { .. } => "Pool",
             OpSpec::Add { .. } => "Add",
+            OpSpec::Compare { .. } => "Compare",
         }
     }
 
@@ -213,6 +218,24 @@ impl OpSpec {
             }
             OpSpec::Activation { .. } => {}
             OpSpec::Argmax { .. } => {}
+            OpSpec::Compare {
+                indices,
+                thresholds,
+            } => {
+                if thresholds.is_empty() {
+                    return Err(
+                        "Compare op has no thresholds; it must compare at least one value"
+                            .to_string(),
+                    );
+                }
+                if indices.len() != thresholds.len() {
+                    return Err(format!(
+                        "Compare has {} indices but {} thresholds; need one input index per threshold",
+                        indices.len(),
+                        thresholds.len()
+                    ));
+                }
+            }
             OpSpec::Requant {
                 mult,
                 out_bits,

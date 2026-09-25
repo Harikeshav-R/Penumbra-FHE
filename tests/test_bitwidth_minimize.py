@@ -44,7 +44,7 @@ def _make_synthetic_graph(plan: BitPlan) -> Graph:
         ),
     ]
     return Graph(
-        schema_version="0.6.0",
+        schema_version="0.7.0",
         num_blocks=8,
         input_bits=plan.input_bits,
         inputs=["x"],

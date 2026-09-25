@@ -42,7 +42,9 @@ from typing import Any
 # per-channel weight quantization rescales each channel by its true ratio. The fields are omitted
 # from the JSON when unused, so a per-tensor ``Requant`` (and every legacy fixture) serializes
 # byte-identically — but the version still bumps (a 0.6.0 reader is required to interpret them).
-SCHEMA_VERSION = "0.6.0"
+# 0.7.0 added the Compare op (element-wise threshold comparison with a fused gather,
+# used by tree-ensemble lowering) — a breaking schema change.
+SCHEMA_VERSION = "0.7.0"
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,11 @@ class OpSpec:
             )
         if op_type == "Argmax":
             return ArgmaxSpec(threshold=int(d["threshold"]))
+        if op_type == "Compare":
+            return CompareSpec(
+                indices=[int(i) for i in d["indices"]],
+                thresholds=[int(t) for t in d["thresholds"]],
+            )
         if op_type == "Requant":
             cs = d.get("channel_size")
             return RequantSpec(
@@ -118,7 +125,7 @@ class OpSpec:
             return AddSpec()
         raise ValueError(
             f"unknown op_type {op_type!r}; expected one of 'Linear', 'Conv2d', 'Activation', "
-            "'Argmax', 'Requant', 'Pool', 'Add'"
+            "'Argmax', 'Compare', 'Requant', 'Pool', 'Add'"
         )
 
 
@@ -252,6 +259,40 @@ class ArgmaxSpec(OpSpec):
 
     def to_dict(self) -> dict[str, Any]:
         return {"op_type": self.op_type, "threshold": self.threshold}
+
+
+@dataclass(frozen=True)
+class CompareSpec(OpSpec):
+    """Element-wise threshold comparison with a fused gather (tree split evaluation).
+
+    ``out[i] = 1 if x[indices[i]] >= thresholds[i] else 0``. The gather lets one node read a
+    different input element per comparison — a decision tree's internal nodes each test their
+    own feature — with no bit-width growth and no extra cost under TFHE (indexing the input
+    ``CtVec``). Output is a single bit, independent of input width.
+    """
+
+    indices: list[int]
+    thresholds: list[int]
+
+    op_type: str = field(init=False, default="Compare")
+
+    def __post_init__(self) -> None:
+        if not self.thresholds:
+            raise ValueError("Compare needs at least one threshold")
+        if len(self.indices) != len(self.thresholds):
+            raise ValueError(
+                f"Compare has {len(self.indices)} indices but {len(self.thresholds)} "
+                "thresholds; need one input index per threshold"
+            )
+        if any(i < 0 for i in self.indices):
+            raise ValueError(f"Compare indices must be non-negative, got {self.indices}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "op_type": self.op_type,
+            "indices": self.indices,
+            "thresholds": self.thresholds,
+        }
 
 
 @dataclass(frozen=True)

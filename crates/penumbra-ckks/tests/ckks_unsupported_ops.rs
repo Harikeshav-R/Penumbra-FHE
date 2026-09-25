@@ -11,7 +11,7 @@ use penumbra_core::ir::{Graph, Node, OpSpec};
 #[test]
 fn pool_max_rejected_loudly_at_load_time() {
     let graph = Graph {
-        schema_version: "0.6.0".to_string(),
+        schema_version: "0.7.0".to_string(),
         num_blocks: 4,
         input_bits: 4,
         inputs: vec!["x".to_string()],
@@ -45,4 +45,24 @@ fn pool_max_rejected_loudly_at_load_time() {
         "error must name unsupported op: {err}"
     );
     assert!(err.contains("ckks"), "error must name the backend: {err}");
+}
+
+#[test]
+fn tree_ensemble_chained_compares_rejected_by_depth_budget() {
+    let text = include_str!("../../../examples/tabular/phase8_trees_fixture.json");
+    let fx: serde_json::Value = serde_json::from_str(text).expect("valid fixture");
+    let graph = Graph::from_json(&fx["graph"].to_string()).expect("valid graph");
+
+    let backend = CkksBackend::new(DEFAULT_PARAMS);
+    let err = check_graph_depth_budget(&backend, &graph)
+        .expect_err("chained sharp steps in tree graph must exceed CKKS depth budget");
+    assert!(
+        err.contains("logits"),
+        "error must name node where budget was exceeded: {err}"
+    );
+    assert!(err.contains("ckks"), "error must name backend: {err}");
+    assert!(
+        err.contains("budget exceeded"),
+        "error must name budget exceeded: {err}"
+    );
 }

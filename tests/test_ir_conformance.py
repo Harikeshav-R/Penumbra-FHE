@@ -27,6 +27,7 @@ from penumbra.ir import (
     SCHEMA_VERSION,
     AddSpec,
     ArgmaxSpec,
+    CompareSpec,
     Conv2dSpec,
     Graph,
     LinearSpec,
@@ -277,6 +278,50 @@ def test_requant_spec_per_channel_rejects_inconsistent():
             round_biases=[0, 16],
             channel_size=2,
         )
+
+
+def test_compare_spec_round_trips():
+    """The ``Compare`` op (indices + thresholds) round-trips through ir.py."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=6,
+        input_bits=8,
+        inputs=["x"],
+        outputs=["y2"],
+        nodes=[
+            Node(
+                name="cmp1",
+                inputs=["x"],
+                outputs=["y1"],
+                op=CompareSpec(indices=[0, 2], thresholds=[5, 10]),
+            ),
+            Node(
+                name="cmp2",
+                inputs=["y1"],
+                outputs=["y2"],
+                op=CompareSpec(indices=[0], thresholds=[1]),
+            ),
+        ],
+    )
+    restored = Graph.from_json(g.to_json())
+    assert restored == g
+    assert restored.nodes[0].op.to_dict() == {
+        "op_type": "Compare",
+        "indices": [0, 2],
+        "thresholds": [5, 10],
+    }
+
+
+def test_compare_spec_rejects_invalid():
+    """CompareSpec fails loudly at construction on empty thresholds or bad indices."""
+    with pytest.raises(ValueError, match="needs at least one threshold"):
+        CompareSpec(indices=[], thresholds=[])
+    with pytest.raises(ValueError, match="threshold"):
+        CompareSpec(indices=[0], thresholds=[])
+    with pytest.raises(ValueError, match="need one input index per threshold"):
+        CompareSpec(indices=[0, 1], thresholds=[5])
+    with pytest.raises(ValueError, match="non-negative"):
+        CompareSpec(indices=[-1], thresholds=[5])
 
 
 def test_pool_spec_round_trips():

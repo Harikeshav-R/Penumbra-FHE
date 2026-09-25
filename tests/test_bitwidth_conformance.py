@@ -61,5 +61,5 @@ def test_python_internal_bits_matches_committed_table():
 def test_table_covers_every_op_type():
     """Guard against silently dropping an op from the conformance table as ops are added."""
     covered = {case["op"]["op_type"] for case in _load_cases()}
-    expected = {"Linear", "Conv2d", "Pool", "Requant", "Add", "Activation", "Argmax"}
+    expected = {"Linear", "Conv2d", "Pool", "Requant", "Add", "Activation", "Argmax", "Compare"}
     assert expected <= covered, f"bit-width table is missing op types: {expected - covered}"

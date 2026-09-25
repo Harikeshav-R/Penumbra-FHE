@@ -24,6 +24,7 @@ from penumbra.ir import (
     ActivationSpec,
     AddSpec,
     ArgmaxSpec,
+    CompareSpec,
     Conv2dSpec,
     Graph,
     LinearSpec,
@@ -117,6 +118,10 @@ def output_bits(op: OpSpec, input_bits: list[int]) -> int:
     if isinstance(op, ArgmaxSpec):
         _expect_arity(op, input_bits, 1)
         return 1  # a single class bit
+
+    if isinstance(op, CompareSpec):
+        _expect_arity(op, input_bits, 1)
+        return 1  # a single comparison bit, independent of input width
 
     if isinstance(op, AddSpec):
         _expect_arity(op, input_bits, 2)

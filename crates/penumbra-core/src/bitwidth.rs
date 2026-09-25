@@ -109,6 +109,10 @@ pub fn op_spec_output_bits_n(spec: &OpSpec, input_bits: &[usize]) -> usize {
             assert_eq!(input_bits.len(), 1, "Argmax is a single-input op");
             1
         }
+        OpSpec::Compare { .. } => {
+            assert_eq!(input_bits.len(), 1, "Compare is a single-input op");
+            1
+        }
     }
 }
 

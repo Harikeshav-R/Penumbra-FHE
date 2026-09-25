@@ -102,6 +102,18 @@
       "op": {"op_type": "Argmax", "threshold": 0},
       "input_bits": [16],
       "expected": 1
+    },
+    {
+      "name": "compare_gathered_splits",
+      "op": {"op_type": "Compare", "indices": [0, 3, 7], "thresholds": [5, 2, 9]},
+      "input_bits": [8],
+      "expected": 1
+    },
+    {
+      "name": "compare_elementwise_leaf_select",
+      "op": {"op_type": "Compare", "indices": [0, 1], "thresholds": [3, 4]},
+      "input_bits": [11],
+      "expected": 1
     }
   ]
 }
