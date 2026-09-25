@@ -4,8 +4,10 @@
 //! suite but never gated, because CI runners are too noisy for a wall-clock gate. What is gated
 //! is the deterministic cost model — `runtime ~= number of bootstraps` (`PROJECT.md` §5) —
 //! plus wire sizes and label correctness, all of which are fixed by the crypto params and the
-//! graph, not by the CPU.
-//!
+//! graph, not by the CPU. Operational cost proxies (`cost_proxy`) are exact-gated, while
+//! runtime-measured PBS counters (`measured_totals`) are ceiling-gated so optimizations or
+//! reduced thread concurrency (e.g. 2-vCPU CI runners) that decrease PBS do not trip false
+//! regressions.
 //! Note on CKKS: CKKS deterministic metrics (cost proxies: depth levels, rescales, rotations,
 //! and polynomial evaluations; wire sizes; and label correctness) are gated via
 //! `baselines/ckks-baseline.json`. CKKS's `max_abs_err` is a floating-point value that depends on
@@ -155,7 +157,7 @@ pub fn check_against(baseline: &Baseline, runs: &[ModelRun]) -> Result<Vec<Strin
             &run.cost_proxy,
             &mut violations,
         );
-        check_map_exact(
+        check_map_upper_bound(
             &tag,
             "measured_totals",
             &entry.measured_totals,
@@ -228,6 +230,39 @@ fn check_map_exact(
     }
     for k in actual.keys() {
         if !expected.contains_key(k) {
+            let v = actual[k];
+            violations.push(format!(
+                "{tag}: {field}.{k} extra key in measured run (value {v}, not in baseline)"
+            ));
+        }
+    }
+}
+
+fn check_map_upper_bound(
+    tag: &str,
+    field: &str,
+    expected_ceiling: &BTreeMap<String, u64>,
+    actual: &BTreeMap<String, u64>,
+    violations: &mut Vec<String>,
+) {
+    for (k, &ceiling) in expected_ceiling {
+        match actual.get(k) {
+            Some(&v_act) => {
+                if v_act > ceiling {
+                    violations.push(format!(
+                        "{tag}: {field}.{k} regressed: baseline ceiling {ceiling}, measured {v_act}"
+                    ));
+                }
+            }
+            None => {
+                violations.push(format!(
+                    "{tag}: {field}.{k} missing from measured run (baseline {ceiling})"
+                ));
+            }
+        }
+    }
+    for k in actual.keys() {
+        if !expected_ceiling.contains_key(k) {
             let v = actual[k];
             violations.push(format!(
                 "{tag}: {field}.{k} extra key in measured run (value {v}, not in baseline)"
@@ -340,5 +375,29 @@ mod tests {
         let warnings = res.unwrap();
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("not exercised"));
+    }
+
+    #[test]
+    fn test_baseline_measured_totals_within_ceiling_passes() {
+        let baseline_run = dummy_run("m1", "tfhe", 6);
+        let baseline = baseline_from_runs(std::slice::from_ref(&baseline_run));
+        let mut lower_run = baseline_run;
+        lower_run.measured_totals.insert("pbs".to_string(), 15);
+        let res = check_against(&baseline, &[lower_run]);
+        assert!(res.is_ok(), "fewer PBS than baseline ceiling must pass");
+    }
+
+    #[test]
+    fn test_baseline_measured_totals_exceeding_ceiling_fails() {
+        let baseline_run = dummy_run("m1", "tfhe", 6);
+        let baseline = baseline_from_runs(std::slice::from_ref(&baseline_run));
+        let mut higher_run = baseline_run;
+        higher_run.measured_totals.insert("pbs".to_string(), 25);
+        let res = check_against(&baseline, &[higher_run]);
+        assert!(res.is_err(), "more PBS than baseline ceiling must fail");
+        let violations = res.unwrap_err();
+        assert!(violations
+            .iter()
+            .any(|v| v.contains("regressed: baseline ceiling 20, measured 25")));
     }
 }
