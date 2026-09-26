@@ -126,6 +126,13 @@ def main() -> None:
 
     # Load through the ONNX front door (folds BatchNorm!)
     fmodel = fhe.load_onnx(str(ONNX_PATH), input_bits=INPUT_BITS)
+
+    acts = x_te.astype(np.float64)
+    for layer in fmodel.layers:
+        acts = layer.forward(acts)
+    with torch.no_grad():
+        ref = model(torch.from_numpy(x_te.reshape(-1, 1, IN_H, IN_W).astype(np.float32))).numpy()
+    assert np.allclose(acts, ref, rtol=1e-4, atol=1e-3), "lowered float model diverges from torch"
     graph = fmodel.quantize(
         cal,
         n_bits=list(WEIGHT_BITS),
