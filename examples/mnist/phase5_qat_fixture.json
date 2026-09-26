@@ -1,7 +1,7 @@
 {
   "_comment": "Phase-5 QAT example: a Brevitas quantization-aware-trained CNN on real 8x8 handwritten digits (sklearn load_digits), exported through penumbra.Model.quantize. Same architecture as phase5_digits_fixture (PTQ); QAT recovers accuracy lost to the 2-bit activation cap. The model is the serialized IR graph under 'graph'; the 10 logits are the graph output and the client argmaxes them. FHE output must equal these quantized-cleartext logits/labels bit-for-bit (see qat_export.py).",
   "graph": {
-    "schema_version": "0.7.0",
+    "schema_version": "0.8.0",
     "num_blocks": 8,
     "input_bits": 3,
     "inputs": [

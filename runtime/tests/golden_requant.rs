@@ -58,6 +58,8 @@ fn requant_graph(num_blocks: usize, input_bits: usize, shift: u32, out_bits: usi
                 // round_bias=0 makes the generalized op reduce to clamp(max(x>>shift,0),…).
                 mult: 1,
                 round_bias: 0,
+                clamp_lo: 0,
+                zero_point: 0,
                 out_bits,
                 clamp_lut: clamp_lut(out_bits),
                 // Per-tensor: the 0.6.0 per-channel overlay is unused (omitted from the JSON).

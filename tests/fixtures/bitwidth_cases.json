@@ -114,6 +114,20 @@
       "op": {"op_type": "Compare", "indices": [0, 1], "thresholds": [3, 4]},
       "input_bits": [11],
       "expected": 1
+    },
+    {
+      "name": "requant_signed_floor_positive_dominates",
+      "op": {"op_type": "Requant", "shift": 6, "mult": 3, "round_bias": 32, "clamp_lo": -8192, "zero_point": 384, "out_bits": 2, "clamp_lut": [0, 1, 2, 3]},
+      "input_bits": [14],
+      "expected": 2,
+      "expected_internal": 16
+    },
+    {
+      "name": "requant_signed_floor_dominates",
+      "op": {"op_type": "Requant", "shift": 4, "mult": 16, "round_bias": 0, "clamp_lo": -128, "zero_point": 128, "out_bits": 2, "clamp_lut": [0, 1, 2, 3]},
+      "input_bits": [8],
+      "expected": 2,
+      "expected_internal": 13
     }
   ]
 }

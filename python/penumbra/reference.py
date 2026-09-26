@@ -77,11 +77,11 @@ def _pool(op: PoolSpec, x: list[int]) -> list[int]:
 
 
 def _requant(op: RequantSpec, x: list[int]) -> list[int]:
-    """Integer requant: ``clamp((max(v,0)*mult + round_bias) >> shift, 0, 2^out_bits-1)``.
+    """Integer requant with signed floor and activation offset.
 
-    Mirrors ``requant.rs`` exactly: ReLU first, then the fixed-point multiply + round bias, then
-    the arithmetic right shift (floor — the value is non-negative here), then the clamp. For a
-    per-channel Requant (``op.mults`` non-empty) each flat element ``idx`` uses its channel's
+    Formula: ``clamp(((max(v, clamp_lo)*mult + round_bias) >> shift) + zero_point, 0, ceil)``.
+    Mirrors ``requant.rs`` exactly: clamp_lo floor first, then fixed-point multiply + round bias,
+    then arithmetic right shift (floor), then zero_point offset, then clamp. For a
     params (channel ``idx // channel_size``) — the same index math as the Rust eval, so the
     per-channel path is bit-exact too.
     """
@@ -102,13 +102,14 @@ def _requant(op: RequantSpec, x: list[int]) -> list[int]:
             )
         for idx, v in enumerate(x):
             ch = idx // cs
-            shifted = (max(v, 0) * op.mults[ch] + op.round_biases[ch]) >> op.shifts[ch]
-            out.append(min(max(shifted, 0), ceil))
+            t = max(v, op.clamp_lo)
+            u = (t * op.mults[ch] + op.round_biases[ch]) >> op.shifts[ch]
+            out.append(min(max(u + op.zero_point, 0), ceil))
         return out
     for v in x:
-        nonneg = max(v, 0)
-        shifted = (nonneg * op.mult + op.round_bias) >> op.shift
-        out.append(min(max(shifted, 0), ceil))
+        t = max(v, op.clamp_lo)
+        u = (t * op.mult + op.round_bias) >> op.shift
+        out.append(min(max(u + op.zero_point, 0), ceil))
     return out
 
 

@@ -44,7 +44,9 @@ from typing import Any
 # byte-identically — but the version still bumps (a 0.6.0 reader is required to interpret them).
 # 0.7.0 added the Compare op (element-wise threshold comparison with a fused gather,
 # used by tree-ensemble lowering) — a breaking schema change.
-SCHEMA_VERSION = "0.7.0"
+# 0.8.0 added signed floor (clamp_lo) and activation offset (zero_point) to Requant — a
+# breaking schema change (AGENTS.md §5, §8).
+SCHEMA_VERSION = "0.8.0"
 
 
 @dataclass(frozen=True)
@@ -103,6 +105,8 @@ class OpSpec:
                 # (mult=1, round_bias=0) when absent so a minimal Requant payload still loads.
                 mult=int(d.get("mult", 1)),
                 round_bias=int(d.get("round_bias", 0)),
+                clamp_lo=int(d.get("clamp_lo", 0)),
+                zero_point=int(d.get("zero_point", 0)),
                 out_bits=int(d["out_bits"]),
                 clamp_lut=[int(v) for v in d["clamp_lut"]],
                 # 0.6.0 per-channel overlay; absent -> empty (per-tensor scalar path).
@@ -348,7 +352,9 @@ class RequantSpec(OpSpec):
     # the Rust struct's field order by `to_dict`. Defaults reproduce the legacy pure-shift.
     mult: int = 1
     round_bias: int = 0
-    # 0.6.0 per-channel overlay; empty/None = per-tensor (scalar) path, omitted from `to_dict`.
+    # 0.8.0 additions for signed floor + activation offset.
+    clamp_lo: int = 0
+    zero_point: int = 0
     mults: list[int] = field(default_factory=list)
     shifts: list[int] = field(default_factory=list)
     round_biases: list[int] = field(default_factory=list)
@@ -369,6 +375,13 @@ class RequantSpec(OpSpec):
             )
         if self.round_bias < 0:
             raise ValueError(f"RequantSpec round_bias must be non-negative, got {self.round_bias}")
+        if self.clamp_lo > 0:
+            raise ValueError(
+                "Requant clamp_lo must be <= 0 (it is the pre-rescale floor; "
+                f"0 is the fused ReLU), got {self.clamp_lo}"
+            )
+        if self.zero_point < 0:
+            raise ValueError(f"Requant zero_point must be non-negative, got {self.zero_point}")
         # Per-channel overlay: if any part is present, all must be consistent (mirror Rust build).
         has_pc = bool(self.mults or self.shifts or self.round_biases or self.channel_size)
         if has_pc:
@@ -400,6 +413,19 @@ class RequantSpec(OpSpec):
             for i, s in enumerate(self.shifts):
                 if s < 0:
                     raise ValueError(f"RequantSpec shifts[{i}] = {s} must be non-negative")
+        if not self.mults:
+            u_min = (self.clamp_lo * self.mult + self.round_bias) >> self.shift
+        else:
+            u_min = min(
+                (self.clamp_lo * m + rb) >> s
+                for m, s, rb in zip(self.mults, self.shifts, self.round_biases, strict=True)
+            )
+        if self.zero_point + u_min < 0:
+            raise ValueError(
+                f"Requant zero_point {self.zero_point} does not cover the floor image {u_min}: "
+                "the narrowed value would be negative and the single-block LUT index would wrap — "
+                "regenerate the graph from the quantization service (AGENTS.md §1.4)"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         # Key order matches the Rust struct declaration (shift, mult, round_bias, out_bits,
@@ -409,9 +435,13 @@ class RequantSpec(OpSpec):
             "shift": self.shift,
             "mult": self.mult,
             "round_bias": self.round_bias,
-            "out_bits": self.out_bits,
-            "clamp_lut": self.clamp_lut,
         }
+        if self.clamp_lo != 0:
+            d["clamp_lo"] = self.clamp_lo
+        if self.zero_point != 0:
+            d["zero_point"] = self.zero_point
+        d["out_bits"] = self.out_bits
+        d["clamp_lut"] = self.clamp_lut
         # Emit the per-channel overlay only when used, so a per-tensor Requant is byte-identical
         # to 0.5.0 (mirrors the Rust `skip_serializing_if` guards) — keeps legacy fixtures stable.
         if self.mults:

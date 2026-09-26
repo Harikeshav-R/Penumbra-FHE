@@ -96,6 +96,8 @@ fn fhe_per_channel_requant_matches_cleartext() {
                 shift: 0,
                 mult: 1,
                 round_bias: 0,
+                clamp_lo: 0,
+                zero_point: 0,
                 out_bits,
                 clamp_lut: clamp_lut(out_bits),
                 mults: mults.clone(),

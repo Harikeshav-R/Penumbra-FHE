@@ -109,6 +109,8 @@ fn test_tfhe_requant_zero_multipliers_and_biases() {
         shift: 4,
         mult: 1,
         round_bias: 0,
+        clamp_lo: 0,
+        zero_point: 0,
         out_bits: 2,
         clamp_lut: vec![0, 1, 2, 3],
         mults: vec![],

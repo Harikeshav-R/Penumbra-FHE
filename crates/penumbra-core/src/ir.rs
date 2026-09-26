@@ -17,11 +17,19 @@ use crate::ops::OpSummary;
 
 /// IR wire-format version. Hardcoded identically in `python/penumbra/ir.py`; a mismatch is
 /// a breaking change caught loudly at load time (`AGENTS.md` §5, §8).
-pub const SCHEMA_VERSION: &str = "0.7.0";
+pub const SCHEMA_VERSION: &str = "0.8.0";
 
 /// Serde default for `Requant.mult`: `1` makes the rescale a pure power-of-two shift.
 fn default_requant_mult() -> u64 {
     1
+}
+
+fn is_zero_i64(v: &i64) -> bool {
+    *v == 0
+}
+
+fn is_zero_u64(v: &u64) -> bool {
+    *v == 0
 }
 
 /// The root IR object: a directed graph of op nodes in a valid topological order.
@@ -89,6 +97,10 @@ pub enum OpSpec {
         mult: u64,
         #[serde(default)]
         round_bias: u64,
+        #[serde(default, skip_serializing_if = "is_zero_i64")]
+        clamp_lo: i64,
+        #[serde(default, skip_serializing_if = "is_zero_u64")]
+        zero_point: u64,
         out_bits: usize,
         clamp_lut: Vec<u64>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -237,14 +249,17 @@ impl OpSpec {
                 }
             }
             OpSpec::Requant {
+                shift,
                 mult,
+                round_bias,
+                clamp_lo,
+                zero_point,
                 out_bits,
                 clamp_lut,
                 mults,
                 shifts,
                 round_biases,
                 channel_size,
-                ..
             } => {
                 let domain = 1usize << MESSAGE_BITS;
                 if clamp_lut.len() != domain {
@@ -276,6 +291,11 @@ impl OpSpec {
                         "Requant mult must be >= 1 (a fixed-point multiplier; 1 is a pure shift)"
                             .to_string(),
                     );
+                }
+                if *clamp_lo > 0 {
+                    return Err(format!(
+                        "Requant clamp_lo must be <= 0 (it is the pre-rescale floor; 0 is the fused ReLU), got {clamp_lo}"
+                    ));
                 }
                 let has_pc = !mults.is_empty()
                     || !shifts.is_empty()
@@ -312,6 +332,22 @@ impl OpSpec {
                              channel; 1 is a pure shift)"
                         ));
                     }
+                }
+                let u_min = if mults.is_empty() {
+                    (*clamp_lo * *mult as i64 + *round_bias as i64) >> shift
+                } else {
+                    mults
+                        .iter()
+                        .zip(shifts)
+                        .zip(round_biases)
+                        .map(|((&m, &s), &rb)| (*clamp_lo * m as i64 + rb as i64) >> s)
+                        .min()
+                        .unwrap_or(0)
+                };
+                if *zero_point as i64 + u_min < 0 {
+                    return Err(format!(
+                        "Requant zero_point {zero_point} does not cover the floor image {u_min}: the narrowed value would be negative and the single-block LUT index would wrap — regenerate the graph from the quantization service (AGENTS.md §1.4)"
+                    ));
                 }
             }
             OpSpec::Pool {
@@ -491,6 +527,8 @@ mod tests {
                     shift: 4,
                     mult: 1,
                     round_bias: 0,
+                    clamp_lo: 0,
+                    zero_point: 0,
                     out_bits: 2,
                     clamp_lut: vec![0, 1, 2, 3],
                     mults: vec![],
@@ -510,6 +548,8 @@ mod tests {
             shift: 1,
             mult: 1,
             round_bias: 0,
+            clamp_lo: 0,
+            zero_point: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2],
             mults: vec![],
@@ -523,6 +563,8 @@ mod tests {
             shift: 1,
             mult: 1,
             round_bias: 0,
+            clamp_lo: 0,
+            zero_point: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2, 9],
             mults: vec![],
@@ -536,6 +578,8 @@ mod tests {
             shift: 1,
             mult: 0,
             round_bias: 0,
+            clamp_lo: 0,
+            zero_point: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2, 3],
             mults: vec![],
@@ -582,6 +626,8 @@ mod tests {
                     shift: 5,
                     mult: 3,
                     round_bias: 16,
+                    clamp_lo: 0,
+                    zero_point: 0,
                     out_bits: 2,
                     clamp_lut: vec![0, 1, 2, 3],
                     mults: vec![],
@@ -611,6 +657,8 @@ mod tests {
                     shift: 0,
                     mult: 1,
                     round_bias: 0,
+                    clamp_lo: 0,
+                    zero_point: 0,
                     out_bits: 2,
                     clamp_lut: vec![0, 1, 2, 3],
                     mults: vec![1, 3],
@@ -629,6 +677,8 @@ mod tests {
             shift: 0,
             mult: 1,
             round_bias: 0,
+            clamp_lo: 0,
+            zero_point: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2, 3],
             mults: vec![1, 3],
@@ -642,6 +692,8 @@ mod tests {
             shift: 0,
             mult: 1,
             round_bias: 0,
+            clamp_lo: 0,
+            zero_point: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2, 3],
             mults: vec![1, 3],

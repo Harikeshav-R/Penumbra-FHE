@@ -1,7 +1,7 @@
 {
   "_comment": "Phase-8 XGBoost tree ensemble fixture: an XGBClassifier (5 estimators, max_depth=3) trained on Wisconsin Breast Cancer (30 features, 2 classes) lowered via penumbra.adapters.from_xgboost into a 4-node IR graph (split_cmp -> leaf_score -> leaf_sel -> logits). FHE output must equal these quantized-cleartext logits/labels bit-for-bit (AGENTS.md \u00a71.1).",
   "graph": {
-    "schema_version": "0.7.0",
+    "schema_version": "0.8.0",
     "num_blocks": 7,
     "input_bits": 8,
     "inputs": [

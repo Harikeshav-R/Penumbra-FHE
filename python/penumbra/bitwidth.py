@@ -104,15 +104,7 @@ def output_bits(op: OpSpec, input_bits: list[int]) -> int:
         return op.out_bits  # internal peak is checked separately (requant_internal_bits)
 
     if isinstance(op, ActivationSpec):
-        # Activation needs an already-narrowed (<= MESSAGE_BITS) single-block input; its output
-        # width is set by the table. Mirror the Rust assert so an un-requantized wide input
-        # fails loudly in the tracker, naming the contract.
         _expect_arity(op, input_bits, 1)
-        if input_bits[0] > MESSAGE_BITS:
-            raise ValueError(
-                f"Activation input is {input_bits[0]} bits, wider than the single "
-                f"{MESSAGE_BITS}-bit block it consumes; insert a Requant in front to narrow it"
-            )
         return op.output_bits
 
     if isinstance(op, ArgmaxSpec):
@@ -131,7 +123,7 @@ def output_bits(op: OpSpec, input_bits: list[int]) -> int:
     raise ValueError(f"output_bits: unsupported op {op.op_type!r}")
 
 
-def requant_internal_bits(input_bits: int, mult: int, round_bias: int) -> int:
+def requant_internal_bits(input_bits: int, mult: int, round_bias: int, clamp_lo: int = 0) -> int:
     """Peak transient width a ``Requant`` materializes before the shift narrows it.
 
     Mirror of the Rust ``requant::requant_internal_bits`` (``AGENTS.md`` §1.3, §5). The op's
@@ -142,9 +134,10 @@ def requant_internal_bits(input_bits: int, mult: int, round_bias: int) -> int:
     accumulator and the narrowed output each fit — which is exactly the case the budget check
     must catch loudly (``AGENTS.md`` §1.4).
     """
-    # Largest positive value a signed ``input_bits``-wide accumulator holds, post-ReLU.
-    relu_max = (1 << (input_bits - 1)) - 1 if input_bits >= 1 else 0
-    intermediate_max = relu_max * mult + round_bias
+    pos_max = (1 << (input_bits - 1)) - 1 if input_bits >= 1 else 0
+    floor_cap = 1 << (input_bits - 1) if input_bits >= 1 else 0
+    neg_mag = min(abs(clamp_lo), floor_cap)
+    intermediate_max = max(pos_max * mult + round_bias, neg_mag * mult)
     # +1 for the sign bit (the intermediate lives in the signed radix); never below input width.
     return max(magnitude_bits(intermediate_max) + 1, input_bits)
 
@@ -162,10 +155,10 @@ def internal_bits(op: OpSpec, input_bits: list[int]) -> int:
         # channel bounds the radix). Empty arrays -> the scalar per-tensor path.
         if op.mults:
             return max(
-                requant_internal_bits(input_bits[0], m, rb)
+                requant_internal_bits(input_bits[0], m, rb, op.clamp_lo)
                 for m, rb in zip(op.mults, op.round_biases, strict=True)
             )
-        return requant_internal_bits(input_bits[0], op.mult, op.round_bias)
+        return requant_internal_bits(input_bits[0], op.mult, op.round_bias, op.clamp_lo)
     return output_bits(op, input_bits)
 
 
@@ -231,6 +224,11 @@ def check_bit_width_budget(graph: Graph) -> None:
                 f"{MESSAGE_BITS} bits). Reduce precision, widen num_blocks, or requantize earlier."
             )
         in_bits = [widths[n] for n in node.inputs]
+        if isinstance(node.op, ActivationSpec) and in_bits[0] > MESSAGE_BITS:
+            raise ValueError(
+                f"Activation input is {in_bits[0]} bits, wider than the single "
+                f"{MESSAGE_BITS}-bit block it consumes; insert a Requant in front to narrow it"
+            )
         peak = internal_bits(node.op, in_bits)
         if peak > capacity:
             raise ValueError(

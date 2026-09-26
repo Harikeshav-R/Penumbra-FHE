@@ -1,7 +1,7 @@
 {
   "_comment": "Phase-5 example: a real torch CNN trained on real 8x8 handwritten digits (sklearn load_digits), quantized through penumbra.Model.quantize. The model is the serialized IR graph under 'graph'; the 10 logits are the graph output and the client argmaxes them. FHE output must equal these quantized-cleartext logits/labels bit-for-bit. 8x8 digits (not 28x28 MNIST) keep FHE latency feasible (see real_digits_export.py).",
   "graph": {
-    "schema_version": "0.7.0",
+    "schema_version": "0.8.0",
     "num_blocks": 9,
     "input_bits": 3,
     "inputs": [

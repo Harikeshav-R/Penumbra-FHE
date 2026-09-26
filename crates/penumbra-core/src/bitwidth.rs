@@ -117,13 +117,25 @@ pub fn op_spec_output_bits_n(spec: &OpSpec, input_bits: &[usize]) -> usize {
 }
 
 /// Peak internal bit-width the rescale needs before the shift narrows it.
-pub fn requant_internal_bits(input_bits: usize, mult: u64, round_bias: u64) -> usize {
-    let relu_max: u128 = if input_bits >= 1 {
+pub fn requant_internal_bits(
+    input_bits: usize,
+    mult: u64,
+    round_bias: u64,
+    clamp_lo: i64,
+) -> usize {
+    let pos_max: u128 = if input_bits >= 1 {
         (1u128 << (input_bits - 1)) - 1
     } else {
         0
     };
-    let intermediate_max = relu_max * mult as u128 + round_bias as u128;
+    let floor_cap: u128 = if input_bits >= 1 {
+        1u128 << (input_bits - 1)
+    } else {
+        0
+    };
+    let neg_mag: u128 = (clamp_lo.unsigned_abs() as u128).min(floor_cap);
+    let intermediate_max =
+        (pos_max * mult as u128 + round_bias as u128).max(neg_mag * mult as u128);
     let magnitude = (u128::BITS - intermediate_max.leading_zeros()) as usize;
     (magnitude + 1).max(input_bits)
 }
@@ -134,18 +146,19 @@ pub fn op_spec_internal_bits_n(spec: &OpSpec, input_bits: &[usize]) -> usize {
         OpSpec::Requant {
             mult,
             round_bias,
+            clamp_lo,
             mults,
             round_biases,
             ..
         } => {
             assert_eq!(input_bits.len(), 1, "Requant is a single-input op");
             if mults.is_empty() {
-                requant_internal_bits(input_bits[0], *mult, *round_bias)
+                requant_internal_bits(input_bits[0], *mult, *round_bias, *clamp_lo)
             } else {
                 mults
                     .iter()
                     .zip(round_biases)
-                    .map(|(&m, &rb)| requant_internal_bits(input_bits[0], m, rb))
+                    .map(|(&m, &rb)| requant_internal_bits(input_bits[0], m, rb, *clamp_lo))
                     .max()
                     .expect("per-channel Requant has at least one channel")
             }

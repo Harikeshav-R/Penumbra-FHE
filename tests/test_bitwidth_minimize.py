@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from penumbra.ir import Graph, LinearSpec, Node, RequantSpec
+from penumbra.ir import SCHEMA_VERSION, Graph, LinearSpec, Node, RequantSpec
 from penumbra.quantization.minimize import (
     BitPlan,
     BitPlanResult,
@@ -44,7 +44,7 @@ def _make_synthetic_graph(plan: BitPlan) -> Graph:
         ),
     ]
     return Graph(
-        schema_version="0.7.0",
+        schema_version=SCHEMA_VERSION,
         num_blocks=8,
         input_bits=plan.input_bits,
         inputs=["x"],
