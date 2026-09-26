@@ -10,8 +10,8 @@ pub use add::eval_add;
 pub use argmax::{prepare_argmax, PreparedArgmax};
 pub use compare::{compare_matrix, eval_compare, prepare_compare, PreparedCompare};
 pub use matvec::{
-    avg_pool_matrix, conv2d_matrix, eval_matvec, linear_matrix, prepare_linear_map, PlainMatrix,
-    PreparedLinearMap,
+    avg_pool_matrix, conv2d_matrix, eval_matvec, linear_matrix, prepare_linear_map,
+    selection_matrix, window_matrix, PlainMatrix, PreparedLinearMap,
 };
 pub use polymap::{
     eval_per_channel_requant, eval_polymap, fit_activation, fit_per_channel_requant, fit_requant,
@@ -372,5 +372,131 @@ impl CoreOp<CkksBackend> for Add {
     }
     fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
         Vec::new()
+    }
+}
+
+// ─── Concat Op ───────────────────────────────────────────────────────────────
+
+pub struct Concat {
+    pub(crate) prepared: Vec<PreparedLinearMap>,
+    pub(crate) sizes: Vec<usize>,
+}
+
+impl CoreOp<CkksBackend> for Concat {
+    fn eval(
+        &self,
+        _ctx: &EvalCtx<crate::keys::CkksServerKey>,
+        _inputs: &CtVec<CkksBackend>,
+    ) -> CtVec<CkksBackend> {
+        unreachable!("Concat is a multi-input op; use eval_n")
+    }
+
+    fn output_bits(&self, _input_bits: usize) -> usize {
+        unreachable!("Concat is a multi-input op; use output_bits_n")
+    }
+
+    fn eval_n(
+        &self,
+        ctx: &EvalCtx<crate::keys::CkksServerKey>,
+        inputs: &[&CtVec<CkksBackend>],
+    ) -> CtVec<CkksBackend> {
+        assert_eq!(
+            inputs.len(),
+            self.sizes.len(),
+            "Concat takes one input per declared segment"
+        );
+        let mut term0 = eval_matvec(ctx.sk, &inputs[0][0], &self.prepared[0])
+            .expect("eval_matvec failed in Concat::eval_n (segment 0)");
+        for i in 1..inputs.len() {
+            let term_i =
+                eval_matvec(ctx.sk, &inputs[i][0], &self.prepared[i]).unwrap_or_else(|e| {
+                    panic!("eval_matvec failed in Concat::eval_n (segment {i}): {e}")
+                });
+            term0 = eval_add(ctx.sk, &term0, &term_i)
+                .unwrap_or_else(|e| panic!("eval_add failed in Concat::eval_n (segment {i}): {e}"));
+        }
+        vec![term0]
+    }
+
+    fn output_bits_n(&self, input_bits: &[usize]) -> usize {
+        assert_eq!(
+            input_bits.len(),
+            self.sizes.len(),
+            "Concat takes one input per declared segment"
+        );
+        input_bits.iter().copied().max().unwrap_or(0)
+    }
+
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let mut counters = Vec::new();
+        let total_rotations: u64 = self
+            .prepared
+            .iter()
+            .map(|p| p.rotation_count() as u64)
+            .sum();
+        if total_rotations > 0 {
+            counters.push(("rotations", total_rotations));
+        }
+        counters.push(("rescales", 1));
+        counters.push(("depth_levels", 1));
+        counters
+    }
+}
+
+// ─── Split Op ────────────────────────────────────────────────────────────────
+
+pub struct Split {
+    pub(crate) prepared: Vec<PreparedLinearMap>,
+}
+
+impl CoreOp<CkksBackend> for Split {
+    fn eval(
+        &self,
+        _ctx: &EvalCtx<crate::keys::CkksServerKey>,
+        _inputs: &CtVec<CkksBackend>,
+    ) -> CtVec<CkksBackend> {
+        unreachable!("Split is a multi-output op; use eval_multi")
+    }
+
+    fn output_bits(&self, input_bits: usize) -> usize {
+        input_bits
+    }
+
+    fn eval_multi(
+        &self,
+        ctx: &EvalCtx<crate::keys::CkksServerKey>,
+        inputs: &[&CtVec<CkksBackend>],
+    ) -> Vec<CtVec<CkksBackend>> {
+        assert_eq!(inputs.len(), 1, "Split is a single-input op");
+        self.prepared
+            .iter()
+            .enumerate()
+            .map(|(i, prep)| {
+                let ct = eval_matvec(ctx.sk, &inputs[0][0], prep).unwrap_or_else(|e| {
+                    panic!("eval_matvec failed in Split::eval_multi (segment {i}): {e}")
+                });
+                vec![ct]
+            })
+            .collect()
+    }
+
+    fn output_bits_multi(&self, input_bits: &[usize]) -> Vec<usize> {
+        assert_eq!(input_bits.len(), 1, "Split is a single-input op");
+        vec![input_bits[0]; self.prepared.len()]
+    }
+
+    fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        let mut counters = Vec::new();
+        let total_rotations: u64 = self
+            .prepared
+            .iter()
+            .map(|p| p.rotation_count() as u64)
+            .sum();
+        if total_rotations > 0 {
+            counters.push(("rotations", total_rotations));
+        }
+        counters.push(("rescales", 1));
+        counters.push(("depth_levels", 1));
+        counters
     }
 }

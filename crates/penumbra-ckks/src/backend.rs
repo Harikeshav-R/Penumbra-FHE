@@ -18,9 +18,14 @@ use crate::hal::ActiveBackend;
 use crate::keys::{alloc_scratch, keygen, CkksClientKey, CkksServerKey, SCHEME_CKKS};
 use crate::ops::add::eval_add;
 use crate::ops::argmax::{self, prepare_argmax};
-use crate::ops::matvec::{avg_pool_matrix, conv2d_matrix, linear_matrix, prepare_linear_map};
+use crate::ops::matvec::{
+    avg_pool_matrix, conv2d_matrix, linear_matrix, prepare_linear_map, selection_matrix,
+    window_matrix,
+};
 use crate::ops::polymap::{eval_polymap, fit_activation, fit_per_channel_requant, fit_requant};
-use crate::ops::{Activation, Add, Argmax, Compare, Conv2d, Linear, PoolAvg, Requant, RequantKind};
+use crate::ops::{
+    Activation, Add, Argmax, Compare, Concat, Conv2d, Linear, PoolAvg, Requant, RequantKind, Split,
+};
 use crate::params::{CkksParams, DEFAULT_PARAMS};
 
 fn is_identity_clamp(lut: &[u64], out_bits: usize) -> bool {
@@ -289,8 +294,50 @@ impl Backend for CkksBackend {
                 Ok(Box::new(Compare { prepared }))
             }
             OpSpec::Add {} => Ok(Box::new(Add)),
-            OpSpec::Concat { .. } | OpSpec::Split { .. } => {
-                Err(format!("operator {} is not yet supported on backend 'ckks'", spec.op_type()))
+            OpSpec::Concat { sizes } => {
+                let total: usize = sizes.iter().sum();
+                let mut scratch_guard = self
+                    .scratch
+                    .lock()
+                    .map_err(|e| format!("mutex poisoned: {e}"))?;
+                let mut prepared = Vec::with_capacity(sizes.len());
+                let mut row_offset = 0;
+                for &sz in sizes {
+                    let m = selection_matrix(total, sz, row_offset);
+                    let prep = prepare_linear_map(
+                        &m,
+                        &self.params,
+                        &self.module,
+                        &mut scratch_guard.borrow(),
+                    )?;
+                    prepared.push(prep);
+                    row_offset += sz;
+                }
+                Ok(Box::new(Concat {
+                    prepared,
+                    sizes: sizes.clone(),
+                }))
+            }
+            OpSpec::Split { sizes } => {
+                let total: usize = sizes.iter().sum();
+                let mut scratch_guard = self
+                    .scratch
+                    .lock()
+                    .map_err(|e| format!("mutex poisoned: {e}"))?;
+                let mut prepared = Vec::with_capacity(sizes.len());
+                let mut col_offset = 0;
+                for &sz in sizes {
+                    let m = window_matrix(sz, total, col_offset);
+                    let prep = prepare_linear_map(
+                        &m,
+                        &self.params,
+                        &self.module,
+                        &mut scratch_guard.borrow(),
+                    )?;
+                    prepared.push(prep);
+                    col_offset += sz;
+                }
+                Ok(Box::new(Split { prepared }))
             }
         }
     }
@@ -516,14 +563,23 @@ pub fn check_graph_depth_budget(backend: &CkksBackend, graph: &Graph) -> Result<
     // 1. Bit-width propagation ensures topological sort and basic graph validity
     let _widths = penumbra_core::bitwidth::propagate_bit_widths(graph)?;
 
-    let mut accumulated_bits = 0usize;
     let budget_capacity = backend.params.log_budget();
+    let mut depth: HashMap<String, usize> = graph.inputs.iter().map(|n| (n.clone(), 0)).collect();
 
-    for node in &graph.nodes {
+    for idx in penumbra_core::ir::topological_order(graph)? {
+        let node = &graph.nodes[idx];
         // Validate and build op, prefixing error with node name
         let _built = backend
             .build_op(&node.op)
             .map_err(|e| format!("node '{}': {e}", node.name))?;
+
+        let in_depth = node
+            .inputs
+            .iter()
+            .filter_map(|n| depth.get(n))
+            .copied()
+            .max()
+            .unwrap_or(0);
 
         // Compute budget consumption for this node
         let node_bits = match &node.op {
@@ -582,19 +638,24 @@ pub fn check_graph_depth_budget(backend: &CkksBackend, graph: &Graph) -> Result<
             OpSpec::Add {} => 0,
             OpSpec::Concat { .. } | OpSpec::Split { .. } => backend.params.log_delta,
         };
-        accumulated_bits += node_bits;
-        if accumulated_bits > budget_capacity {
+
+        let out_depth = in_depth + node_bits;
+        if out_depth > budget_capacity {
             return Err(format!(
                 "depth/scale budget exceeded on backend 'ckks' at node '{}' ({}): the graph needs {} bits of \
                  multiplicative budget by this node but the profile holds only {} (k={}, \
                  log_delta={}). Reduce max_poly_degree, or widen the parameter profile.",
                 node.name,
                 node.op.op_type(),
-                accumulated_bits,
+                out_depth,
                 budget_capacity,
                 backend.params.k,
                 backend.params.log_delta,
             ));
+        }
+
+        for o in &node.outputs {
+            depth.insert(o.clone(), out_depth);
         }
     }
 
