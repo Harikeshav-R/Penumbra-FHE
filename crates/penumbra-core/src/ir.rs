@@ -151,6 +151,115 @@ impl Graph {
     }
 }
 
+/// Node indices in a valid evaluation order (stable Kahn: among ready nodes, the lowest
+/// original index wins, so a graph already emitted in topological order is unchanged).
+///
+/// Fails loudly naming the offending tensor/node on an undefined input, a duplicate output
+/// tensor, or a cycle (`AGENTS.md` §1.4).
+pub fn topological_order(graph: &Graph) -> Result<Vec<usize>, String> {
+    let graph_inputs: std::collections::HashSet<&str> =
+        graph.inputs.iter().map(String::as_str).collect();
+
+    // 1. Collect all produced tensors to detect undefined inputs.
+    let mut all_produced: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for node in &graph.nodes {
+        for out in &node.outputs {
+            all_produced.insert(out.as_str());
+        }
+    }
+
+    // 2. Validate inputs: every input must be a graph input or produced by some node.
+    for node in &graph.nodes {
+        for input in &node.inputs {
+            if !graph_inputs.contains(input.as_str()) && !all_produced.contains(input.as_str()) {
+                return Err(format!(
+                    "node '{}' reads tensor '{input}', which no node produces and is not a graph input",
+                    node.name
+                ));
+            }
+        }
+    }
+
+    // 3. Validate duplicate outputs: tensor names must be unique (no silent overwrite).
+    let mut existing_tensors: std::collections::HashSet<&str> =
+        graph.inputs.iter().map(String::as_str).collect();
+    for node in &graph.nodes {
+        for out in &node.outputs {
+            if !existing_tensors.insert(out.as_str()) {
+                return Err(format!(
+                    "node '{}' writes tensor '{out}', which already exists — tensor names must be unique (no silent overwrite)",
+                    node.name
+                ));
+            }
+        }
+    }
+
+    // 4. Stable Kahn topological sort.
+    let num_nodes = graph.nodes.len();
+    if num_nodes == 0 {
+        return Ok(Vec::new());
+    }
+
+    // Map each tensor to the node index producing it.
+    let mut producer_map: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::with_capacity(num_nodes);
+    for (idx, node) in graph.nodes.iter().enumerate() {
+        for out in &node.outputs {
+            producer_map.insert(out.as_str(), idx);
+        }
+    }
+
+    let mut in_deps: Vec<std::collections::HashSet<usize>> =
+        vec![std::collections::HashSet::new(); num_nodes];
+    let mut dependents: Vec<Vec<usize>> = vec![Vec::new(); num_nodes];
+
+    for (consumer_idx, node) in graph.nodes.iter().enumerate() {
+        for input in &node.inputs {
+            if let Some(&producer_idx) = producer_map.get(input.as_str()) {
+                if in_deps[consumer_idx].insert(producer_idx) {
+                    dependents[producer_idx].push(consumer_idx);
+                }
+            }
+        }
+    }
+
+    let mut ready: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+    for (idx, deps) in in_deps.iter().enumerate() {
+        if deps.is_empty() {
+            ready.insert(idx);
+        }
+    }
+
+    let mut order = Vec::with_capacity(num_nodes);
+    while let Some(&idx) = ready.iter().next() {
+        ready.remove(&idx);
+        order.push(idx);
+
+        for &dep_idx in &dependents[idx] {
+            in_deps[dep_idx].remove(&idx);
+            if in_deps[dep_idx].is_empty() {
+                ready.insert(dep_idx);
+            }
+        }
+    }
+
+    if order.len() < num_nodes {
+        let visited: std::collections::HashSet<usize> = order.iter().copied().collect();
+        let names: Vec<&str> = graph
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| !visited.contains(idx))
+            .map(|(_, n)| n.name.as_str())
+            .collect();
+        return Err(format!(
+            "graph has a cycle: node(s) {names:?} are never ready — their inputs depend on their own outputs"
+        ));
+    }
+
+    Ok(order)
+}
+
 impl OpSpec {
     pub fn op_type(&self) -> &'static str {
         match self {

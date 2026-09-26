@@ -128,6 +128,14 @@ pub fn op_spec_output_bits_n(spec: &OpSpec, input_bits: &[usize]) -> usize {
     }
 }
 
+/// Bit-widths of every output tensor. Only `Split` produces more than one.
+pub fn op_spec_output_bits_multi(spec: &OpSpec, input_bits: &[usize]) -> Vec<usize> {
+    match spec {
+        OpSpec::Split { sizes } => vec![input_bits[0]; sizes.len()],
+        _ => vec![op_spec_output_bits_n(spec, input_bits)],
+    }
+}
+
 /// Peak internal bit-width the rescale needs before the shift narrows it.
 pub fn requant_internal_bits(
     input_bits: usize,
@@ -187,11 +195,13 @@ pub fn propagate_bit_widths(graph: &Graph) -> Result<HashMap<String, usize>, Str
         .map(|name| (name.clone(), graph.input_bits))
         .collect();
 
-    for node in &graph.nodes {
+    let order = crate::ir::topological_order(graph)?;
+    for &idx in &order {
+        let node = &graph.nodes[idx];
         node.op.validate()?;
-        if node.inputs.is_empty() || node.outputs.len() != 1 {
+        if node.inputs.is_empty() || node.outputs.is_empty() {
             return Err(format!(
-                "node '{}' ({}) must have at least one input and exactly one output",
+                "node '{}' ({}) must have at least one input and at least one output",
                 node.name,
                 node.op.op_type()
             ));
@@ -210,16 +220,26 @@ pub fn propagate_bit_widths(graph: &Graph) -> Result<HashMap<String, usize>, Str
             })
             .collect::<Result<_, _>>()?;
 
-        let out_bits = op_spec_output_bits_n(&node.op, &in_bits);
-        let output_name = &node.outputs[0];
-        if widths.contains_key(output_name) {
+        let out_bits = op_spec_output_bits_multi(&node.op, &in_bits);
+        if node.outputs.len() != out_bits.len() {
             return Err(format!(
-                "node '{}' writes tensor '{output_name}', which already exists — tensor names \
-                 must be unique",
-                node.name
+                "node '{}' ({}) declares {} output(s) but produces {}",
+                node.name,
+                node.op.op_type(),
+                node.outputs.len(),
+                out_bits.len()
             ));
         }
-        widths.insert(output_name.clone(), out_bits);
+        for (output_name, bits) in node.outputs.iter().zip(out_bits) {
+            if widths.contains_key(output_name) {
+                return Err(format!(
+                    "node '{}' writes tensor '{output_name}', which already exists — tensor names \
+                     must be unique",
+                    node.name
+                ));
+            }
+            widths.insert(output_name.clone(), bits);
+        }
     }
     Ok(widths)
 }
@@ -231,17 +251,17 @@ pub fn check_graph_bit_width_budget(graph: &Graph) -> Result<(), String> {
     let widths = propagate_bit_widths(graph)?;
 
     for node in &graph.nodes {
-        let name = &node.outputs[0];
-        let bits = widths[name];
-        if bits > capacity {
-            return Err(format!(
-                "bit-width budget exceeded at node '{}' (tensor '{name}'): requires {bits} bits \
-                 but the radix holds only {capacity} ({} blocks × {} bits). Reduce precision or \
-                 widen num_blocks (a Requant here is Phase 4).",
-                node.name, graph.num_blocks, MESSAGE_BITS
-            ));
+        for name in &node.outputs {
+            let bits = widths[name];
+            if bits > capacity {
+                return Err(format!(
+                    "bit-width budget exceeded at node '{}' (tensor '{name}'): requires {bits} bits \
+                     but the radix holds only {capacity} ({} blocks × {} bits). Reduce precision or \
+                     widen num_blocks (a Requant here is Phase 4).",
+                    node.name, graph.num_blocks, MESSAGE_BITS
+                ));
+            }
         }
-
         let in_bits: Vec<usize> = node.inputs.iter().map(|n| widths[n]).collect();
         let internal = op_spec_internal_bits_n(&node.op, &in_bits);
         if internal > capacity {
