@@ -139,6 +139,10 @@ impl Backend for TfheBackend {
                 indices: indices.clone(),
                 thresholds: thresholds.clone(),
             })),
+            OpSpec::Concat { .. } | OpSpec::Split { .. } => Err(format!(
+                "operator {} is not yet supported on backend 'tfhe'",
+                spec.op_type()
+            )),
         }
     }
 

@@ -46,7 +46,9 @@ from typing import Any
 # used by tree-ensemble lowering) — a breaking schema change.
 # 0.8.0 added signed floor (clamp_lo) and activation offset (zero_point) to Requant — a
 # breaking schema change (AGENTS.md §5, §8).
-SCHEMA_VERSION = "0.8.0"
+# 0.9.0 added the Concat and Split ops (multi-input merge / multi-output segmentation for
+# branching graphs), each carrying flat segment sizes — a breaking schema change (AGENTS.md §5, §8).
+SCHEMA_VERSION = "0.9.0"
 
 
 @dataclass(frozen=True)
@@ -127,9 +129,13 @@ class OpSpec:
             )
         if op_type == "Add":
             return AddSpec()
+        if op_type == "Concat":
+            return ConcatSpec(sizes=[int(n) for n in d["sizes"]])
+        if op_type == "Split":
+            return SplitSpec(sizes=[int(n) for n in d["sizes"]])
         raise ValueError(
             f"unknown op_type {op_type!r}; expected one of 'Linear', 'Conv2d', 'Activation', "
-            "'Argmax', 'Compare', 'Requant', 'Pool', 'Add'"
+            "'Argmax', 'Compare', 'Requant', 'Pool', 'Add', 'Concat', 'Split'"
         )
 
 
@@ -511,6 +517,48 @@ class AddSpec(OpSpec):
 
     def to_dict(self) -> dict[str, Any]:
         return {"op_type": self.op_type}
+
+
+@dataclass(frozen=True)
+class ConcatSpec(OpSpec):
+    """Channel-axis concatenation of N tensors on the flat wire.
+
+    Carries flat segment ``sizes`` (one per input operand) to validate wiring at load time
+    and enable backends to prepare linear maps / moves without graph inspection.
+    """
+
+    sizes: list[int]
+    op_type: str = field(init=False, default="Concat")
+
+    def __post_init__(self) -> None:
+        if len(self.sizes) < 2:
+            raise ValueError(f"Concat needs at least 2 input segments; got {len(self.sizes)}")
+        if any(n <= 0 for n in self.sizes):
+            raise ValueError(f"Concat segment sizes must be positive; got {self.sizes!r}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"op_type": self.op_type, "sizes": list(self.sizes)}
+
+
+@dataclass(frozen=True)
+class SplitSpec(OpSpec):
+    """Contiguous segmentation of a single flat wire into N output tensors.
+
+    Carries flat segment ``sizes`` (one per output segment) to validate wiring at load time
+    and enable backends to prepare linear maps / moves without graph inspection.
+    """
+
+    sizes: list[int]
+    op_type: str = field(init=False, default="Split")
+
+    def __post_init__(self) -> None:
+        if len(self.sizes) < 2:
+            raise ValueError(f"Split needs at least 2 output segments; got {len(self.sizes)}")
+        if any(n <= 0 for n in self.sizes):
+            raise ValueError(f"Split segment sizes must be positive; got {self.sizes!r}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"op_type": self.op_type, "sizes": list(self.sizes)}
 
 
 @dataclass(frozen=True)

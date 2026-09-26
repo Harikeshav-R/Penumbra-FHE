@@ -17,7 +17,7 @@ use crate::ops::OpSummary;
 
 /// IR wire-format version. Hardcoded identically in `python/penumbra/ir.py`; a mismatch is
 /// a breaking change caught loudly at load time (`AGENTS.md` §5, §8).
-pub const SCHEMA_VERSION: &str = "0.8.0";
+pub const SCHEMA_VERSION: &str = "0.9.0";
 
 /// Serde default for `Requant.mult`: `1` makes the rescale a pure power-of-two shift.
 fn default_requant_mult() -> u64 {
@@ -122,6 +122,12 @@ pub enum OpSpec {
         stride: usize,
     },
     Add {},
+    Concat {
+        sizes: Vec<usize>,
+    },
+    Split {
+        sizes: Vec<usize>,
+    },
 }
 
 impl Graph {
@@ -156,6 +162,8 @@ impl OpSpec {
             OpSpec::Pool { .. } => "Pool",
             OpSpec::Add { .. } => "Add",
             OpSpec::Compare { .. } => "Compare",
+            OpSpec::Concat { .. } => "Concat",
+            OpSpec::Split { .. } => "Split",
         }
     }
 
@@ -380,6 +388,32 @@ impl OpSpec {
                 }
             }
             OpSpec::Add {} => {}
+            OpSpec::Concat { sizes } => {
+                if sizes.len() < 2 {
+                    return Err(format!(
+                        "Concat needs at least 2 input segments; got {}",
+                        sizes.len()
+                    ));
+                }
+                if sizes.contains(&0) {
+                    return Err(format!(
+                        "Concat segment sizes must be positive; got {sizes:?}"
+                    ));
+                }
+            }
+            OpSpec::Split { sizes } => {
+                if sizes.len() < 2 {
+                    return Err(format!(
+                        "Split needs at least 2 output segments; got {}",
+                        sizes.len()
+                    ));
+                }
+                if sizes.contains(&0) {
+                    return Err(format!(
+                        "Split segment sizes must be positive; got {sizes:?}"
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -783,5 +817,55 @@ mod tests {
             weight_bits: 4,
         };
         assert!(spec.build().is_err());
+    }
+
+    #[test]
+    fn concat_op_json_round_trip_and_validation() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 4,
+            input_bits: 4,
+            inputs: vec!["a".to_string(), "b".to_string()],
+            outputs: vec!["c".to_string()],
+            nodes: vec![Node {
+                name: "concat".to_string(),
+                inputs: vec!["a".to_string(), "b".to_string()],
+                outputs: vec!["c".to_string()],
+                op: OpSpec::Concat { sizes: vec![2, 3] },
+            }],
+        };
+        let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
+        assert_eq!(graph, restored);
+        assert_eq!(graph.nodes[0].op.op_type(), "Concat");
+
+        let too_few = OpSpec::Concat { sizes: vec![2] };
+        assert!(too_few.build().is_err());
+        let zero_size = OpSpec::Concat { sizes: vec![2, 0] };
+        assert!(zero_size.build().is_err());
+    }
+
+    #[test]
+    fn split_op_json_round_trip_and_validation() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 4,
+            input_bits: 4,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["s0".to_string(), "s1".to_string()],
+            nodes: vec![Node {
+                name: "split".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["s0".to_string(), "s1".to_string()],
+                op: OpSpec::Split { sizes: vec![2, 2] },
+            }],
+        };
+        let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
+        assert_eq!(graph, restored);
+        assert_eq!(graph.nodes[0].op.op_type(), "Split");
+
+        let too_few = OpSpec::Split { sizes: vec![4] };
+        assert!(too_few.build().is_err());
+        let zero_size = OpSpec::Split { sizes: vec![2, 0] };
+        assert!(zero_size.build().is_err());
     }
 }

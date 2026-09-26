@@ -28,6 +28,7 @@ from penumbra.ir import (
     AddSpec,
     ArgmaxSpec,
     CompareSpec,
+    ConcatSpec,
     Conv2dSpec,
     Graph,
     LinearSpec,
@@ -35,6 +36,7 @@ from penumbra.ir import (
     OpSpec,
     PoolSpec,
     RequantSpec,
+    SplitSpec,
 )
 
 FIXTURE = Path(__file__).resolve().parent.parent / "examples" / "mnist" / "phase2_fixture.json"
@@ -123,6 +125,36 @@ def test_add_spec_round_trips():
     assert restored == g
     assert restored.nodes[0].op.to_dict() == {"op_type": "Add"}
     assert restored.nodes[0].inputs == ["a", "b"], "Add carries two operands (merge order)"
+
+
+def test_concat_spec_round_trips():
+    """The multi-input ``Concat`` op round-trips through ir.py."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=4,
+        input_bits=4,
+        inputs=["a", "b"],
+        outputs=["c"],
+        nodes=[Node(name="cat", inputs=["a", "b"], outputs=["c"], op=ConcatSpec(sizes=[2, 3]))],
+    )
+    restored = Graph.from_json(g.to_json())
+    assert restored == g
+    assert restored.nodes[0].op.to_dict() == {"op_type": "Concat", "sizes": [2, 3]}
+
+
+def test_split_spec_round_trips():
+    """The multi-output ``Split`` op round-trips through ir.py."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=4,
+        input_bits=4,
+        inputs=["x"],
+        outputs=["s0", "s1"],
+        nodes=[Node(name="split", inputs=["x"], outputs=["s0", "s1"], op=SplitSpec(sizes=[2, 2]))],
+    )
+    restored = Graph.from_json(g.to_json())
+    assert restored == g
+    assert restored.nodes[0].op.to_dict() == {"op_type": "Split", "sizes": [2, 2]}
 
 
 def test_requant_spec_round_trips():
@@ -379,6 +411,26 @@ def test_compare_spec_rejects_invalid():
         CompareSpec(indices=[0, 1], thresholds=[5])
     with pytest.raises(ValueError, match="non-negative"):
         CompareSpec(indices=[-1], thresholds=[5])
+
+
+def test_concat_spec_rejects_invalid():
+    """ConcatSpec fails loudly at construction on fewer than 2 segments or non-positive sizes."""
+    with pytest.raises(ValueError, match="at least 2 input segments"):
+        ConcatSpec(sizes=[4])
+    with pytest.raises(ValueError, match="positive"):
+        ConcatSpec(sizes=[2, 0])
+    with pytest.raises(ValueError, match="positive"):
+        ConcatSpec(sizes=[2, -1])
+
+
+def test_split_spec_rejects_invalid():
+    """SplitSpec fails loudly at construction on fewer than 2 segments or non-positive sizes."""
+    with pytest.raises(ValueError, match="at least 2 output segments"):
+        SplitSpec(sizes=[4])
+    with pytest.raises(ValueError, match="positive"):
+        SplitSpec(sizes=[2, 0])
+    with pytest.raises(ValueError, match="positive"):
+        SplitSpec(sizes=[2, -1])
 
 
 def test_pool_spec_round_trips():

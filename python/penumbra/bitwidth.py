@@ -25,12 +25,14 @@ from penumbra.ir import (
     AddSpec,
     ArgmaxSpec,
     CompareSpec,
+    ConcatSpec,
     Conv2dSpec,
     Graph,
     LinearSpec,
     OpSpec,
     PoolSpec,
     RequantSpec,
+    SplitSpec,
 )
 
 # Mirror of ``runtime/src/keys.rs`` (the default secure profile). Not user-facing.
@@ -119,6 +121,14 @@ def output_bits(op: OpSpec, input_bits: list[int]) -> int:
         _expect_arity(op, input_bits, 2)
         # One carry from the add; the wider operand's sign bit covers the result.
         return max(input_bits[0], input_bits[1]) + 1
+
+    if isinstance(op, ConcatSpec):
+        _expect_arity(op, input_bits, len(op.sizes))
+        return max(input_bits)
+
+    if isinstance(op, SplitSpec):
+        _expect_arity(op, input_bits, 1)
+        return input_bits[0]
 
     raise ValueError(f"output_bits: unsupported op {op.op_type!r}")
 

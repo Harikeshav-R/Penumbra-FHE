@@ -77,7 +77,9 @@ fn oracle_params_from_graph(graph: &Graph) -> (Vec<i64>, i64, i64) {
             | OpSpec::Requant { .. }
             | OpSpec::Pool { .. }
             | OpSpec::Add {}
-            | OpSpec::Compare { .. } => {}
+            | OpSpec::Compare { .. }
+            | OpSpec::Concat { .. }
+            | OpSpec::Split { .. } => {}
         }
     }
     (

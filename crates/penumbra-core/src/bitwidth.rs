@@ -113,6 +113,18 @@ pub fn op_spec_output_bits_n(spec: &OpSpec, input_bits: &[usize]) -> usize {
             assert_eq!(input_bits.len(), 1, "Compare is a single-input op");
             1
         }
+        OpSpec::Concat { sizes } => {
+            assert_eq!(
+                input_bits.len(),
+                sizes.len(),
+                "Concat takes one input per declared segment"
+            );
+            input_bits.iter().copied().max().unwrap_or(0)
+        }
+        OpSpec::Split { .. } => {
+            assert_eq!(input_bits.len(), 1, "Split is a single-input op");
+            input_bits[0]
+        }
     }
 }
 

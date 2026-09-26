@@ -45,6 +45,7 @@ from penumbra.ir import (
     AddSpec,
     ArgmaxSpec,
     CompareSpec,
+    ConcatSpec,
     Conv2dSpec,
     Graph,
     LinearSpec,
@@ -52,6 +53,7 @@ from penumbra.ir import (
     OpSpec,
     PoolSpec,
     RequantSpec,
+    SplitSpec,
     build_linear_argmax_graph,
 )
 from penumbra.layers import Activation, Conv2d, Linear, Pool, QuantConfig
@@ -76,6 +78,8 @@ __all__ = [
     "RequantSpec",
     "PoolSpec",
     "AddSpec",
+    "ConcatSpec",
+    "SplitSpec",
     "build_linear_argmax_graph",
     # Bit-width tracking + compile pass (Phase 4, PROJECT.md §9)
     "output_bits",

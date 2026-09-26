@@ -289,6 +289,9 @@ impl Backend for CkksBackend {
                 Ok(Box::new(Compare { prepared }))
             }
             OpSpec::Add {} => Ok(Box::new(Add)),
+            OpSpec::Concat { .. } | OpSpec::Split { .. } => {
+                Err(format!("operator {} is not yet supported on backend 'ckks'", spec.op_type()))
+            }
         }
     }
 
@@ -577,6 +580,7 @@ pub fn check_graph_depth_budget(backend: &CkksBackend, graph: &Graph) -> Result<
                 (1 + poly_depth) * backend.params.log_delta
             }
             OpSpec::Add {} => 0,
+            OpSpec::Concat { .. } | OpSpec::Split { .. } => backend.params.log_delta,
         };
         accumulated_bits += node_bits;
         if accumulated_bits > budget_capacity {

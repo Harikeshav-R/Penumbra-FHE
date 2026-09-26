@@ -128,6 +128,18 @@
       "input_bits": [8],
       "expected": 2,
       "expected_internal": 13
+    },
+    {
+      "name": "concat_takes_max",
+      "op": {"op_type": "Concat", "sizes": [2, 2]},
+      "input_bits": [4, 6],
+      "expected": 6
+    },
+    {
+      "name": "split_preserves_width",
+      "op": {"op_type": "Split", "sizes": [2, 2]},
+      "input_bits": [7],
+      "expected": 7
     }
   ]
 }
