@@ -39,7 +39,7 @@ cargo test --workspace --release
 > graph and integer arithmetic are identical to a real MNIST 0-vs-1 model; swapping in a
 > trained MNIST model is a drop-in change. Real MNIST + a small CNN comes with Phase 4.
 
-## Phases 4–6 (also current)
+## Phases 4–8 (also current)
 
 The example set grew well past Phase 2; every fixture below is committed, benchmarked
 ([`docs/BENCHMARKS.md`](../../docs/BENCHMARKS.md)), and guarded by a Rust golden test plus a
@@ -52,7 +52,13 @@ fast Python self-consistency test.
 | `phase5_qat_fixture.json` | `qat_export.py` | `Conv2d → Requant → Linear` | Brevitas QAT, exported through the same int path |
 | `phase6_onnx_fixture.json` | `onnx_export.py` | `Conv2d → Requant → Linear` | the ONNX front door, from a PyTorch export |
 | `phase6_sklearn_fixture.json` | `sklearn_export.py` | `Linear` | a second framework (`skl2onnx`) through the same waist |
+| `phase8_tanh_fixture.json` | `tanh_mlp_export.py` | `Linear → Requant → Activation → Linear` | signed-accumulator `Requant` + affine-domain `Activation` LUT |
 
 The Phase-5/6 generators need the optional `ml` extra (torch + sklearn + brevitas); see
 `docs/BENCHMARKS.md` for the exact commands. Their FHE golden tests are `#[ignore]`d because
 they run minutes per sample.
+
+Regenerate the Phase 8 Tanh MLP fixture:
+```bash
+uv run --extra ml --system-certs python examples/mnist/tanh_mlp_export.py
+```

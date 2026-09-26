@@ -21,9 +21,17 @@ implementing (`AGENTS.md` §3.2). Do **not** add a binary format or compression 
 ## Versioning
 
 `SCHEMA_VERSION` is a string constant hardcoded identically in `ir.py` and `ir.rs`
-(currently **`"0.7.0"`**). On load, both sides check it and **fail loudly** on a mismatch
+(currently **`"0.8.0"`**). On load, both sides check it and **fail loudly** on a mismatch
 (`AGENTS.md` §1.4) — the version field is the forward-compatibility gate.
 
+> **0.8.0** added `clamp_lo` (signed floor before rescale, default `0`) and `zero_point`
+> (non-negative activation domain offset, default `0`) to `Requant`. It enables non-ReLU activations
+> (tanh, GELU, leaky ReLU, hardswish, elu, hard sigmoid, mid-graph sigmoid) by narrowing signed
+> accumulators into the unsigned single-block LUT domain with sign intact. Both fields are
+> **omitted from the JSON when zero**, so legacy per-tensor `Requant` payloads serialize
+> byte-identically — but the version string still bumped, which is the breaking change
+> (`AGENTS.md` §8): a 0.7.0 runtime rejects a 0.8.0 file and vice versa.
+>
 > **0.7.0** added the `Compare` op (element-wise threshold comparison with a fused gather,
 > used by tree-ensemble lowering). It maps an input tensor to 0/1 bits via `out[i] = [x[indices[i]] >= thresholds[i]]`.
 > Output is always 1 bit regardless of input width — a breaking schema change (`AGENTS.md` §8).
@@ -58,7 +66,7 @@ This is load-bearing rather than incidental. The scheme comparison (`docs/COMPAR
 is only valid if both backends are handed identical work; a scheme-tagged IR would let the
 two drift and would make any measured difference unattributable.
 
-**Adding the CKKS backend does not bump this schema.** It stayed at `0.6.0` (bumped to `0.7.0` in Phase 8 for `Compare`).
+**Adding the CKKS backend does not bump this schema.** It stayed at `0.6.0` (bumped to `0.7.0` in Phase 8 for `Compare`, and `0.8.0` for non-ReLU activation LUTs).
 
 Some payload fields are historically TFHE-shaped. A second backend **reinterprets** them; it
 does not get fields of its own:
@@ -70,6 +78,7 @@ does not get fields of its own:
 | `Requant.clamp_lut` | a PBS lookup table | Likewise — the clamp is approximated, not looked up. |
 | `Requant.out_bits ≤ MESSAGE_BITS` | the single-block PBS limit | A TFHE feasibility constraint. It still bounds what the *quantizer* emits, so both backends see the same narrow activations — see `docs/QUANTIZATION.md` on why that is deliberate. |
 | `Requant.shift` / `mult` / `round_bias` | fixed-point integer rescale | A rescale in the approximate domain. |
+| `Requant.clamp_lo` / `zero_point` | signed pre-rescale floor and unsigned LUT domain offset | A CKKS backend folds both into the fitted continuous ramp polynomial (`(t.max(clamp_lo)*mult + round_bias)/divisor + zero_point`). |
 
 > ⚠️ If you find yourself wanting to add a field, a tag, or a `backend:` key to the IR to make
 > a scheme work, **stop**. That is the backend abstraction leaking (`AGENTS.md` §1.2), and it
@@ -123,7 +132,7 @@ so the ops themselves stay serialization-free.
 | `"Activation"` | `lut: [int]` (indexed by input value), `output_bits: int` | Single-input LUT via PBS over a narrow domain. |
 | `"Argmax"` | `threshold: int` | 2-class threshold: label `1` iff `z ≥ threshold`. |
 | `"Compare"` | `indices: [int]`, `thresholds: [int]` (equal length, non-empty) | Element-wise `x[indices[i]] >= thresholds[i]` → `0`/`1`, with a fused gather. Output is 1 bit regardless of input width. |
-| `"Requant"` | `shift: int`, `mult: int` (≥ 1, default 1), `round_bias: int` (≥ 0, default 0), `out_bits: int` (≤ `MESSAGE_BITS`), `clamp_lut: [int]` (`2^MESSAGE_BITS` entries, each `< 2^MESSAGE_BITS`); **optional per-channel overlay** `mults: [int]`, `shifts: [int]`, `round_biases: [int]` (one per output channel), `channel_size: int` (≥ 1) | Rescale a wide accumulator → narrow non-negative value: `clamp((max(x, 0) * mult + round_bias) >> shift, 0, 2^out_bits - 1)` (fused ReLU + fixed-point multiply-then-round-shift). `mult / 2^shift` approximates the real scale ratio; `mult = 1, round_bias = 0` is the legacy pure shift. **Per-channel (0.6.0):** when `mults` is non-empty, flat element `idx` uses channel `idx / channel_size` — `clamp((max(x,0)*mults[ch] + round_biases[ch]) >> shifts[ch], …)` — and the scalar `shift`/`mult`/`round_bias` are ignored; `channel_size` is `1` for a `Linear` head, `out_h*out_w` for a `Conv2d`. The four overlay fields are omitted when per-tensor (byte-identical to 0.5.0). LUT length / range, `mult ≥ 1` (per channel too), `out_bits ≤ MESSAGE_BITS`, per-channel array-length consistency + `channel_size ≥ 1`, and the **internal peak** `max(x,0)*mult + round_bias ≤ radix capacity` (max over channels) all validated at load. |
+| `"Requant"` | `shift: int`, `mult: int` (≥ 1, default 1), `round_bias: int` (≥ 0, default 0), `clamp_lo: int` (≤ 0, default 0), `zero_point: int` (≥ 0, default 0), `out_bits: int` (≤ `MESSAGE_BITS`), `clamp_lut: [int]` (`2^MESSAGE_BITS` entries, each `< 2^MESSAGE_BITS`); **optional per-channel overlay** `mults: [int]`, `shifts: [int]`, `round_biases: [int]` (one per output channel), `channel_size: int` (≥ 1) | Rescale a wide accumulator → narrow non-negative value: `clamp(((max(x, clamp_lo) * mult + round_bias) >> shift) + zero_point, 0, 2^out_bits - 1)`. `clamp_lo = 0, zero_point = 0` reproduces the fused-ReLU path. `mult / 2^shift` approximates the real scale ratio; `mult = 1, round_bias = 0` is the legacy pure shift. **Per-channel (0.6.0):** when `mults` is non-empty, flat element `idx` uses channel `idx / channel_size` with the channel's `(m, s, rb)`. **Signed floor + offset (0.8.0):** `clamp_lo` and `zero_point` allow signed accumulators to narrow into the single-block LUT domain without clipping negatives. |
 | `"Pool"` | `mode: string` (`"avg"`\|`"max"`), `in_h, in_w, channels, pool_h, pool_w, stride: int` | Spatial pooling over a flattened **channel-major, row-major** `[channels][in_h][in_w]` map. `avg` emits the window sum (the `/k` is deferred to `Requant`); `max` is pairwise max. Mode and window-fits-input validated at load. |
 | `"Add"` | *(none)* | Element-wise addition of **two** input tensors (residuals). The node carries two `inputs`; the payload is the bare `{"op_type": "Add"}`. Multi-input — see [Node](#node). |
 

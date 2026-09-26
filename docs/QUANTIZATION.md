@@ -181,6 +181,59 @@ Two consequences worth knowing:
   fails loudly.
 - The Requant is a **fused ReLU+rescale**: its output is non-negative (what the single-block PBS
   path requires, and what conv→ReLU produces anyway).
+## The affine activation domain (IR 0.8.0)
+
+A non-ReLU activation (tanh, GELU, leaky ReLU, hardswish, elu, hard sigmoid, mid-graph sigmoid) must
+see negative inputs to preserve the model's function. In the fused ReLU path, `Requant` applies
+`max(x, 0)` before the rescale, clipping negative values.
+
+To support general activations without crypto overhead, IR 0.8.0 generalizes `Requant` with a signed
+floor (`clamp_lo ≤ 0`) and an unsigned LUT domain offset (`zero_point ≥ 0`):
+
+```text
+t = max(x, clamp_lo)                        # clamp_lo = 0 reproduces fused ReLU
+u = (t * mult + round_bias) >> shift        # arithmetic (floor) shift
+v = u + zero_point                          # non-negative index into the LUT domain
+w = min(max(v, 0), 2^out_bits - 1)
+y = clamp_lut[w]
+```
+
+### Encoding and zero-point derivation
+
+For calibrated pre-activation range `[lo, hi]` with `lo ≤ 0 ≤ hi` and `levels = 2^act_bits` (4 levels under `MESSAGE_BITS = 2`):
+
+```text
+act_scale   = (hi - lo) / (levels - 1)
+clamp_lo    = min(0, min_i floor(lo / acc_scale_i))
+(mult, shift, round_bias) = choose_requant_params(acc_scale, act_scale, ...)
+u_min       = min_i ((clamp_lo * mult_i + round_bias_i) >> shift_i)
+zero_point  = max(0, -u_min)
+```
+
+The load-time invariant `zero_point + u_min ≥ 0` ensures that `v ≥ 0` structurally, so the TFHE backend requires no extra ciphertext comparison.
+
+### Downstream bias fold
+
+The activation's output lookup table maps input code `v` to output code `q`:
+
+```text
+y_v       = fn((v - zero_point) * act_scale)
+out_scale = (out_hi - out_lo) / (levels - 1)
+out_zp    = clamp(round(-out_lo / out_scale), 0, levels - 1)
+lut[v]    = clamp(round(y_v / out_scale) + out_zp, 0, levels - 1)
+```
+
+The consumer layer (`Linear` / `Conv2d`) reads integer codes `q` whose represented real values are `(q - out_zp) * out_scale`. Expanding the dot product:
+
+$$\sum_j W_{ij} (q_j - \text{out\_zp}) \cdot \text{out\_scale} + b_i = \text{out\_scale} \sum_j W_{ij} q_j + \left(b_i - \text{out\_scale} \cdot \text{out\_zp} \sum_j W_{ij}\right)$$
+
+The constant offset folds directly into the consumer's float bias before quantization:
+$$b'_i = b_i - \text{out\_scale} \cdot \text{out\_zp} \sum_j W_{ij}$$
+This folding happens at compile time in `quantize_linear` and `quantize_conv`, incurring zero runtime or crypto cost.
+
+### Honest limitation: 4 levels across both signs
+
+Under the default secure crypto parameters, `act_bits ≤ MESSAGE_BITS = 2`. For non-ReLU activations spanning both negative and positive domains (such as tanh or GELU), this means exactly four discrete integer levels across the entire range (e.g. `[-1, 0, 1, 2]` relative to the zero-point). While coarse, properly regularized models achieve competitive accuracy (e.g. ~69% on 10-class handwritten digits).
 
 ## Generating LUTs in the integer domain
 

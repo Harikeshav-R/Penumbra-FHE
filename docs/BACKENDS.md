@@ -102,6 +102,11 @@ The exceptions are the interesting ones:
    (`poulpy-ckks` provides an `approximation` module for the fitting). This is the single
    largest semantic difference between the backends and the most interesting thing the
    comparison measures.
+   *Note on `Requant.clamp_lut`:* a backend implementing `Requant` must honour `clamp_lut`.
+   While an identity table (`[0, 1, ..., 2^out_bits - 1]`) is satisfied by clamping the continuous
+   ramp, graph optimization (e.g. rule R1 fusing `Requant → Activation`) creates a non-identity
+   table that the backend must evaluate (under TFHE via the single-block PBS LUT; under CKKS by
+   composing the Chebyshev polynomial of the table after the requant ramp).
 2. **`ct ≥ scalar`** (`Argmax`, `Compare`) is a comparison PBS under TFHE. Under CKKS it is a polynomial step
    function. For a single comparison (`ckks_golden_ops.rs`), continuous step approximation works; for
    chained sharp steps in a tree graph (4-node lowering), the required depth exceeds CKKS's depth budget
