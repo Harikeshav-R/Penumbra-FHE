@@ -81,6 +81,12 @@ pub const MODELS: &[ModelFixture] = &[
         label: "Phase-8 BN CNN",
         default_bench: false,
     },
+    ModelFixture {
+        key: "phase8_gap_cnn",
+        path: "../../examples/mnist/phase8_gap_cnn_fixture.json",
+        label: "Phase-8 padded-pool + GAP CNN",
+        default_bench: false,
+    },
 ];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

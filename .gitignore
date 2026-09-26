@@ -37,6 +37,7 @@ venv/
 !examples/mnist/digit_tanh_mlp.onnx
 !examples/mnist/digit_bn_cnn.onnx
 !examples/mnist/digit_branch_mlp.onnx
+!examples/mnist/digit_gap_cnn.onnx
 !examples/faces/face_cnn.onnx
 *.key
 # crypto key material — never commit

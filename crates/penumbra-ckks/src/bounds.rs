@@ -14,3 +14,4 @@ pub const PHASE7_FACES: f64 = 120.0;
 pub const PHASE8_TANH: f64 = 35.0;
 pub const PHASE8_BRANCH: f64 = 66.0;
 pub const PHASE8_BN_CNN: f64 = 27.0;
+pub const PHASE8_GAP_CNN: f64 = 247.0;

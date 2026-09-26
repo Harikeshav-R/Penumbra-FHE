@@ -133,6 +133,12 @@ fn main() {
             "logits",
             bounds::PHASE8_BN_CNN,
         ),
+        (
+            "Phase 8 gap cnn",
+            "examples/mnist/phase8_gap_cnn_fixture.json",
+            "logits",
+            bounds::PHASE8_GAP_CNN,
+        ),
     ];
 
     println!("\nEvaluating committed fixtures against declared bounds...");
