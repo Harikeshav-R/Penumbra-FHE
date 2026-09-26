@@ -18,12 +18,26 @@ pub struct Pool {
     pub pool_h: usize,
     pub pool_w: usize,
     pub stride: usize,
+    pub padding: usize,
+}
+
+/// In-bounds input indices covered by output position `o` along one axis (padded taps skipped).
+fn axis_taps(
+    o: usize,
+    stride: usize,
+    padding: usize,
+    pool: usize,
+    len: usize,
+) -> impl Iterator<Item = usize> {
+    (0..pool)
+        .filter_map(move |k| (o * stride + k).checked_sub(padding))
+        .filter(move |&i| i < len)
 }
 
 impl Pool {
     fn out_dims(&self) -> (usize, usize) {
-        let out_h = (self.in_h - self.pool_h) / self.stride + 1;
-        let out_w = (self.in_w - self.pool_w) / self.stride + 1;
+        let out_h = (self.in_h + 2 * self.padding - self.pool_h) / self.stride + 1;
+        let out_w = (self.in_w + 2 * self.padding - self.pool_w) / self.stride + 1;
         (out_h, out_w)
     }
 
@@ -46,15 +60,12 @@ impl Pool {
     ) -> SignedRadixCiphertext {
         let sk = ctx.sk;
         let base = c * self.in_h * self.in_w;
-        let mut window = Vec::with_capacity(self.pool_h * self.pool_w);
-        for ky in 0..self.pool_h {
-            for kx in 0..self.pool_w {
-                let y = oy * self.stride + ky;
-                let x = ox * self.stride + kx;
+        let mut window = Vec::new();
+        for y in axis_taps(oy, self.stride, self.padding, self.pool_h, self.in_h) {
+            for x in axis_taps(ox, self.stride, self.padding, self.pool_w, self.in_w) {
                 window.push(&inputs[base + y * self.in_w + x]);
             }
         }
-
         match self.mode {
             PoolMode::Avg => {
                 if window.len() == 1 {
@@ -91,12 +102,17 @@ impl Op<TfheBackend> for Pool {
             "Pool window and stride must be positive"
         );
         assert!(
-            self.pool_h <= self.in_h && self.pool_w <= self.in_w,
-            "Pool window ({}x{}) must fit the input ({}x{})",
+            self.padding < self.pool_h && self.padding < self.pool_w,
+            "Pool padding must be smaller than the window"
+        );
+        assert!(
+            self.pool_h <= self.in_h + 2 * self.padding
+                && self.pool_w <= self.in_w + 2 * self.padding,
+            "Pool window ({}x{}) must fit the padded input ({}x{})",
             self.pool_h,
             self.pool_w,
-            self.in_h,
-            self.in_w
+            self.in_h + 2 * self.padding,
+            self.in_w + 2 * self.padding
         );
 
         let (out_h, out_w) = self.out_dims();
@@ -121,9 +137,20 @@ impl Op<TfheBackend> for Pool {
 
     fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
         let (out_h, out_w) = self.out_dims();
-        let out_elems = (self.channels * out_h * out_w) as u64;
-        let k = (self.pool_h * self.pool_w) as u64;
-        let ops = if k > 1 { out_elems * (k - 1) } else { 0 };
+        let mut sum_ops: u64 = 0;
+        for oy in 0..out_h {
+            let rows =
+                axis_taps(oy, self.stride, self.padding, self.pool_h, self.in_h).count() as u64;
+            for ox in 0..out_w {
+                let cols =
+                    axis_taps(ox, self.stride, self.padding, self.pool_w, self.in_w).count() as u64;
+                let taps = rows * cols;
+                if taps > 1 {
+                    sum_ops += taps - 1;
+                }
+            }
+        }
+        let ops = (self.channels as u64) * sum_ops;
         let mut counters = Vec::new();
         if ops > 0 {
             match self.mode {

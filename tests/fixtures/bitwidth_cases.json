@@ -140,6 +140,12 @@
       "op": {"op_type": "Split", "sizes": [2, 2]},
       "input_bits": [7],
       "expected": 7
+    },
+    {
+      "name": "pool_avg_3x3_padded",
+      "op": {"op_type": "Pool", "mode": "avg", "in_h": 4, "in_w": 4, "channels": 1, "pool_h": 3, "pool_w": 3, "stride": 1, "padding": 1},
+      "input_bits": [2],
+      "expected": 6
     }
   ]
 }

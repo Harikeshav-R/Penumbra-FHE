@@ -49,7 +49,9 @@ from typing import Any
 # breaking schema change (AGENTS.md §5, §8).
 # 0.9.0 added the Concat and Split ops (multi-input merge / multi-output segmentation for
 # branching graphs), each carrying flat segment sizes — a breaking schema change (AGENTS.md §5, §8).
-SCHEMA_VERSION = "0.9.0"
+# 0.10.0 added symmetric virtual `padding` to Pool (omitted from JSON when 0) — a breaking
+# schema change (AGENTS.md §5, §8).
+SCHEMA_VERSION = "0.10.0"
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,7 @@ class OpSpec:
                 pool_h=int(d["pool_h"]),
                 pool_w=int(d["pool_w"]),
                 stride=int(d["stride"]),
+                padding=int(d.get("padding", 0)),
             )
         if op_type == "Add":
             return AddSpec()
@@ -477,8 +480,15 @@ class PoolSpec(OpSpec):
     pool_h: int
     pool_w: int
     stride: int
+    padding: int = 0
 
     op_type: str = field(init=False, default="Pool")
+
+    def out_dims(self) -> tuple[int, int]:
+        return (
+            (self.in_h + 2 * self.padding - self.pool_h) // self.stride + 1,
+            (self.in_w + 2 * self.padding - self.pool_w) // self.stride + 1,
+        )
 
     def __post_init__(self) -> None:
         # Fail loudly at construction (mirrors Rust ``OpSpec::build``), not later (§1.4).
@@ -486,14 +496,21 @@ class PoolSpec(OpSpec):
             raise ValueError(f'PoolSpec mode must be "avg" or "max"; got {self.mode!r}')
         if min(self.in_h, self.in_w, self.channels, self.pool_h, self.pool_w, self.stride) < 1:
             raise ValueError("PoolSpec dims/window/stride must all be positive")
-        if self.pool_h > self.in_h or self.pool_w > self.in_w:
+        if self.padding < 0:
+            raise ValueError("PoolSpec padding must be non-negative")
+        if self.padding >= min(self.pool_h, self.pool_w):
             raise ValueError(
-                f"PoolSpec window ({self.pool_h}x{self.pool_w}) must fit the input "
-                f"({self.in_h}x{self.in_w})"
+                f"PoolSpec padding {self.padding} must be smaller than the window "
+                f"({self.pool_h}x{self.pool_w}) so every window covers at least one real input"
+            )
+        if self.pool_h > self.in_h + 2 * self.padding or self.pool_w > self.in_w + 2 * self.padding:
+            raise ValueError(
+                f"PoolSpec window ({self.pool_h}x{self.pool_w}) must fit the padded input "
+                f"({self.in_h + 2 * self.padding}x{self.in_w + 2 * self.padding})"
             )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "op_type": self.op_type,
             "mode": self.mode,
             "in_h": self.in_h,
@@ -503,6 +520,9 @@ class PoolSpec(OpSpec):
             "pool_w": self.pool_w,
             "stride": self.stride,
         }
+        if self.padding:
+            d["padding"] = self.padding
+        return d
 
 
 @dataclass(frozen=True)

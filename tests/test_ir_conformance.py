@@ -458,6 +458,37 @@ def test_pool_spec_round_trips():
         PoolSpec(mode="max", in_h=2, in_w=2, channels=1, pool_h=3, pool_w=3, stride=1)
 
 
+def test_pool_spec_padding_round_trips_and_omits_zero():
+    """PoolSpec padding round-trips; padding=0 is omitted from to_dict()."""
+    p_pad = PoolSpec(
+        mode="avg", in_h=3, in_w=3, channels=1, pool_h=2, pool_w=2, stride=2, padding=1
+    )
+    d_pad = p_pad.to_dict()
+    assert d_pad["padding"] == 1
+    keys = list(d_pad.keys())
+    assert keys.index("padding") == keys.index("stride") + 1
+    assert PoolSpec.from_dict(d_pad) == p_pad
+
+    p_zero = PoolSpec(
+        mode="avg", in_h=4, in_w=4, channels=1, pool_h=2, pool_w=2, stride=2, padding=0
+    )
+    d_zero = p_zero.to_dict()
+    assert "padding" not in d_zero
+
+    # from_dict without padding defaults to 0
+    restored = PoolSpec.from_dict(d_zero)
+    assert restored.padding == 0
+    assert restored == p_zero
+
+
+def test_pool_spec_rejects_bad_padding():
+    """PoolSpec rejects padding >= min(pool_h, pool_w) or negative padding."""
+    with pytest.raises(ValueError, match="must be smaller than the window"):
+        PoolSpec(mode="avg", in_h=4, in_w=4, channels=1, pool_h=2, pool_w=2, stride=2, padding=2)
+    with pytest.raises(ValueError, match="non-negative"):
+        PoolSpec(mode="avg", in_h=4, in_w=4, channels=1, pool_h=2, pool_w=2, stride=2, padding=-1)
+
+
 def test_conv2d_spec_round_trips():
     """The ``Conv2d`` op round-trips, and a kernel/fan-in mismatch fails at construction."""
     g = Graph(

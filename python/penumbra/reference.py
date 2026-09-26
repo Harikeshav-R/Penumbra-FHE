@@ -62,18 +62,21 @@ def _conv2d(op: Conv2dSpec, x: list[int]) -> list[int]:
 
 
 def _pool(op: PoolSpec, x: list[int]) -> list[int]:
-    """Integer pooling — ``avg`` emits the window **sum**, ``max`` the window max (``pool.rs``)."""
-    out_h = (op.in_h - op.pool_h) // op.stride + 1
-    out_w = (op.in_w - op.pool_w) // op.stride + 1
+    """Integer pooling with virtual padding: ``avg`` sums the in-bounds taps,
+    ``max`` takes their max (``pool.rs``).
+    """
+    out_h, out_w = op.out_dims()
     out: list[int] = []
     for c in range(op.channels):
         base = c * op.in_h * op.in_w
         for oy in range(out_h):
             for ox in range(out_w):
                 vals = [
-                    x[base + (oy * op.stride + ky) * op.in_w + (ox * op.stride + kx)]
-                    for ky in range(op.pool_h)
-                    for kx in range(op.pool_w)
+                    x[base + iy * op.in_w + ix]
+                    for iy in (oy * op.stride + ky - op.padding for ky in range(op.pool_h))
+                    if 0 <= iy < op.in_h
+                    for ix in (ox * op.stride + kx - op.padding for kx in range(op.pool_w))
+                    if 0 <= ix < op.in_w
                 ]
                 out.append(sum(vals) if op.mode == "avg" else max(vals))
     return out

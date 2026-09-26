@@ -21,9 +21,14 @@ implementing (`AGENTS.md` §3.2). Do **not** add a binary format or compression 
 ## Versioning
 
 `SCHEMA_VERSION` is a string constant hardcoded identically in `ir.py` and `ir.rs`
-(currently **`"0.9.0"`**). On load, both sides check it and **fail loudly** on a mismatch
+(currently **`"0.10.0"`**). On load, both sides check it and **fail loudly** on a mismatch
 (`AGENTS.md` §1.4) — the version field is the forward-compatibility gate.
 
+> **0.10.0** added symmetric virtual `padding` to `Pool` (default 0, omitted from the JSON when 0).
+> Out-of-range taps are skipped: `avg` sums the in-bounds taps (zero padding, the divisor stays `k`
+> via the scale), `max` ignores them. Validated: `padding < min(pool_h, pool_w)` and the window
+> fits the padded input.
+>
 > **0.9.0** added the `Concat` and `Split` ops (multi-input merge / multi-output segmentation
 > for branching graphs), each carrying flat segment `sizes` (one per input segment for `Concat`,
 > one per output segment for `Split`). It enables branching ONNX DAGs with fan-out, skip connections,
@@ -138,7 +143,7 @@ so the ops themselves stay serialization-free.
 | `"Argmax"` | `threshold: int` | 2-class threshold: label `1` iff `z ≥ threshold`. |
 | `"Compare"` | `indices: [int]`, `thresholds: [int]` (equal length, non-empty) | Element-wise `x[indices[i]] >= thresholds[i]` → `0`/`1`, with a fused gather. Output is 1 bit regardless of input width. |
 | `"Requant"` | `shift: int`, `mult: int` (≥ 1, default 1), `round_bias: int` (≥ 0, default 0), `clamp_lo: int` (≤ 0, default 0), `zero_point: int` (≥ 0, default 0), `out_bits: int` (≤ `MESSAGE_BITS`), `clamp_lut: [int]` (`2^MESSAGE_BITS` entries, each `< 2^MESSAGE_BITS`); **optional per-channel overlay** `mults: [int]`, `shifts: [int]`, `round_biases: [int]` (one per output channel), `channel_size: int` (≥ 1) | Rescale a wide accumulator → narrow non-negative value: `clamp(((max(x, clamp_lo) * mult + round_bias) >> shift) + zero_point, 0, 2^out_bits - 1)`. `clamp_lo = 0, zero_point = 0` reproduces the fused-ReLU path. `mult / 2^shift` approximates the real scale ratio; `mult = 1, round_bias = 0` is the legacy pure shift. **Per-channel (0.6.0):** when `mults` is non-empty, flat element `idx` uses channel `idx / channel_size` with the channel's `(m, s, rb)`. **Signed floor + offset (0.8.0):** `clamp_lo` and `zero_point` allow signed accumulators to narrow into the single-block LUT domain without clipping negatives. |
-| `"Pool"` | `mode: string` (`"avg"`\|`"max"`), `in_h, in_w, channels, pool_h, pool_w, stride: int` | Spatial pooling over a flattened **channel-major, row-major** `[channels][in_h][in_w]` map. `avg` emits the window sum (the `/k` is deferred to `Requant`); `max` is pairwise max. Mode and window-fits-input validated at load. |
+| `"Pool"` | `mode: string` (`"avg"`\|`"max"`), `in_h, in_w, channels, pool_h, pool_w, stride: int`, `padding: int` (≥ 0, default 0, omitted when 0) | Spatial pooling over a flattened **channel-major, row-major** `[channels][in_h][in_w]` map. `avg` emits the sum of in-bounds taps (the `1/k` is carried in the output tensor's quantization scale); `max` is the max of in-bounds taps. Output dims `(in + 2·padding − pool)/stride + 1`. Mode, `padding < window`, and window-fits-padded-input validated at load. |
 | `"Add"` | *(none)* | Element-wise addition of **two** input tensors (residuals). The node carries two `inputs`; the payload is the bare `{"op_type": "Add"}`. Multi-input — see [Node](#node). |
 | `"Concat"` | `sizes: [int]` (≥ 2 segments, all positive) | Concatenation along the channel axis on the flat wire. Node carries N `inputs` and 1 `outputs`. Segment sizes validated against inputs at load/eval. |
 | `"Split"` | `sizes: [int]` (≥ 2 segments, all positive) | Contiguous segmentation of the flat wire into N output tensors. Node carries 1 `inputs` and N `outputs`. Segment sizes validated against input length. |

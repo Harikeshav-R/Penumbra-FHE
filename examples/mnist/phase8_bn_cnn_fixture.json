@@ -1,7 +1,7 @@
 {
   "_comment": "Phase-8 example: a PyTorch CNN with folded BatchNorm and AveragePool, trained on real 8x8 handwritten digits (sklearn load_digits), exported to digit_bn_cnn.onnx, loaded through the ONNX front door (penumbra.load_onnx) and quantized via penumbra.Model.quantize. BatchNorm is folded into Conv2d at load time. The serialized IR graph is under 'graph'; the 10 logits are the graph output. FHE output must equal these quantized-cleartext logits/labels bit-for-bit.",
   "graph": {
-    "schema_version": "0.9.0",
+    "schema_version": "0.10.0",
     "num_blocks": 9,
     "input_bits": 4,
     "inputs": [

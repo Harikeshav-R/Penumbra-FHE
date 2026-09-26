@@ -1,7 +1,7 @@
 {
   "_comment": "Phase-8 example: a PyTorch Tanh MLP trained on real 8x8 handwritten digits (sklearn load_digits), exported to digit_tanh_mlp.onnx, loaded through the ONNX front door (penumbra.load_onnx) and quantized via penumbra.Model.quantize. The serialized IR graph is under 'graph'; the 10 logits are the graph output. FHE output must equal these quantized-cleartext logits/labels bit-for-bit.",
   "graph": {
-    "schema_version": "0.9.0",
+    "schema_version": "0.10.0",
     "num_blocks": 10,
     "input_bits": 4,
     "inputs": [

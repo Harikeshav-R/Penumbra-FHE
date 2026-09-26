@@ -24,6 +24,7 @@ struct PoolCfg {
     pool_h: usize,
     pool_w: usize,
     stride: usize,
+    padding: usize,
 }
 
 fn pool_graph(mode: &str, num_blocks: usize, input_bits: usize, cfg: &PoolCfg) -> Graph {
@@ -45,6 +46,7 @@ fn pool_graph(mode: &str, num_blocks: usize, input_bits: usize, cfg: &PoolCfg) -
                 pool_h: cfg.pool_h,
                 pool_w: cfg.pool_w,
                 stride: cfg.stride,
+                padding: cfg.padding,
             },
         }],
     }
@@ -52,8 +54,8 @@ fn pool_graph(mode: &str, num_blocks: usize, input_bits: usize, cfg: &PoolCfg) -
 
 /// Cleartext pooling over a channel-major, row-major `[channels][in_h][in_w]` tensor.
 fn pool_cleartext(x: &[i64], avg: bool, cfg: &PoolCfg) -> Vec<i64> {
-    let out_h = (cfg.in_h - cfg.pool_h) / cfg.stride + 1;
-    let out_w = (cfg.in_w - cfg.pool_w) / cfg.stride + 1;
+    let out_h = (cfg.in_h + 2 * cfg.padding - cfg.pool_h) / cfg.stride + 1;
+    let out_w = (cfg.in_w + 2 * cfg.padding - cfg.pool_w) / cfg.stride + 1;
     let mut out = Vec::with_capacity(cfg.channels * out_h * out_w);
     for c in 0..cfg.channels {
         let base = c * cfg.in_h * cfg.in_w;
@@ -62,9 +64,14 @@ fn pool_cleartext(x: &[i64], avg: bool, cfg: &PoolCfg) -> Vec<i64> {
                 let mut vals = Vec::new();
                 for ky in 0..cfg.pool_h {
                     for kx in 0..cfg.pool_w {
-                        let y = oy * cfg.stride + ky;
-                        let xx = ox * cfg.stride + kx;
-                        vals.push(x[base + y * cfg.in_w + xx]);
+                        if let (Some(y), Some(xx)) = (
+                            (oy * cfg.stride + ky).checked_sub(cfg.padding),
+                            (ox * cfg.stride + kx).checked_sub(cfg.padding),
+                        ) {
+                            if y < cfg.in_h && xx < cfg.in_w {
+                                vals.push(x[base + y * cfg.in_w + xx]);
+                            }
+                        }
                     }
                 }
                 out.push(if avg {
@@ -87,6 +94,7 @@ fn run_pool(mode: &str) -> (Vec<i64>, Vec<i64>) {
         pool_h: 2,
         pool_w: 2,
         stride: 2,
+        padding: 0,
     };
     let num_blocks = 6; // 12-bit signed: holds sums of small values with headroom
     let input_bits = 5; // values in roughly [-16, 15]
@@ -128,5 +136,59 @@ fn fhe_max_pool_matches_cleartext() {
     assert_eq!(
         got, expected,
         "GOLDEN VIOLATION: FHE max pool {got:?} != cleartext {expected:?}"
+    );
+}
+
+fn run_padded_pool(mode: &str) -> (Vec<i64>, Vec<i64>) {
+    // 1 channel, 3x3; 2x2 window, stride 2, padding 1 -> 2x2 output.
+    let cfg = PoolCfg {
+        in_h: 3,
+        in_w: 3,
+        channels: 1,
+        pool_h: 2,
+        pool_w: 2,
+        stride: 2,
+        padding: 1,
+    };
+    let num_blocks = 6;
+    let input_bits = 5;
+
+    // 9 elements: [-4, -3, -2, -1, 0, 1, 2, 3, 4]
+    let x: Vec<i64> = (0..9).map(|i| i - 4).collect();
+
+    let graph = pool_graph(mode, num_blocks, input_bits, &cfg);
+    check_graph_bit_width_budget(&graph).expect("Padded pool budget must fit");
+
+    let expected = pool_cleartext(&x, mode == "avg", &cfg);
+
+    let (ck, sk) = keygen(num_blocks);
+    let ctx = EvalCtx {
+        sk: &sk,
+        num_blocks,
+    };
+    let mut env = HashMap::new();
+    env.insert("x".to_string(), encrypt(&ck, &x));
+    let out = evaluate_graph(&ctx, &graph, env).expect("graph evaluates");
+    let got = decrypt_vec(&ck, &out["y"]);
+    (got, expected)
+}
+
+#[test]
+fn fhe_padded_avg_pool_matches_cleartext_sum() {
+    let (got, expected) = run_padded_pool("avg");
+    assert_eq!(expected, vec![-4, -5, 1, 8]);
+    assert_eq!(
+        got, expected,
+        "GOLDEN VIOLATION: FHE padded avg(sum) pool {got:?} != cleartext {expected:?}"
+    );
+}
+
+#[test]
+fn fhe_padded_max_pool_matches_cleartext() {
+    let (got, expected) = run_padded_pool("max");
+    assert_eq!(expected, vec![-4, -2, 2, 4]);
+    assert_eq!(
+        got, expected,
+        "GOLDEN VIOLATION: FHE padded max pool {got:?} != cleartext {expected:?}"
     );
 }

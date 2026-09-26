@@ -111,6 +111,7 @@ impl Backend for TfheBackend {
                 pool_h,
                 pool_w,
                 stride,
+                padding,
             } => {
                 let pool_mode = match mode.as_str() {
                     "avg" => PoolMode::Avg,
@@ -129,6 +130,7 @@ impl Backend for TfheBackend {
                     pool_h: *pool_h,
                     pool_w: *pool_w,
                     stride: *stride,
+                    padding: *padding,
                 }))
             }
             OpSpec::Add {} => Ok(Box::new(Add)),

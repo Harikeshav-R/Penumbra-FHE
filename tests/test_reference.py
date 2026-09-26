@@ -26,6 +26,7 @@ from penumbra.ir import (
     Graph,
     LinearSpec,
     Node,
+    PoolSpec,
     RequantSpec,
     SplitSpec,
 )
@@ -304,3 +305,41 @@ def test_non_topological_node_order_evaluates():
     )
     out = evaluate_graph_int(graph, {"x": [10, 20, 30, 40]})
     assert out["out"] == [20, 40, 70, 100]
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [
+        ("avg", [-4, -5, 1, 8]),
+        ("max", [-4, -2, 2, 4]),
+    ],
+)
+def test_padded_pool_skips_out_of_range_taps(mode: str, expected: list[int]):
+    """Virtual padding skips out-of-range taps: avg sums in-bounds; max ignores padded taps."""
+    graph = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=5,
+        inputs=["x"],
+        outputs=["out"],
+        nodes=[
+            Node(
+                name="pool",
+                inputs=["x"],
+                outputs=["out"],
+                op=PoolSpec(
+                    mode=mode,
+                    in_h=3,
+                    in_w=3,
+                    channels=1,
+                    pool_h=2,
+                    pool_w=2,
+                    stride=2,
+                    padding=1,
+                ),
+            )
+        ],
+    )
+    x = list(range(-4, 5))  # [-4, -3, -2, -1, 0, 1, 2, 3, 4]
+    out = evaluate_graph_int(graph, {"x": x})
+    assert out["out"] == expected

@@ -1,7 +1,7 @@
 {
   "_comment": "Phase-7 example (the abstraction-validation milestone): a torch CNN trained on the first 8 people of the Olivetti faces dataset (closed-set face recognition), exported to face_cnn.onnx, then loaded THROUGH THE ONNX FRONT DOOR (penumbra.load_onnx) and quantized via penumbra.Model.quantize. 64x64 images are 4x4 block-mean downsampled to 16x16 as NumPy preprocessing (not a graph op). The serialized IR graph is under 'graph'; the 8 identity logits are the graph output and the client argmaxes them. FHE output must equal these quantized-cleartext logits/labels bit-for-bit. This runs through the SAME backend as the digit examples with ZERO Rust edits \u2014 proving the narrow-waist abstraction holds (PROJECT.md section 4, AGENTS.md section 1.2).",
   "graph": {
-    "schema_version": "0.9.0",
+    "schema_version": "0.10.0",
     "num_blocks": 11,
     "input_bits": 4,
     "inputs": [

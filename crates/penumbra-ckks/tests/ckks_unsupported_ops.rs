@@ -28,6 +28,7 @@ fn pool_max_rejected_loudly_at_load_time() {
                 pool_h: 2,
                 pool_w: 2,
                 stride: 2,
+                padding: 0,
             },
         }],
     };

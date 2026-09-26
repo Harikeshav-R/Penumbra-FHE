@@ -137,3 +137,35 @@ fn test_tfhe_concat_and_split_zero_cost() {
     let op_s = backend.build_op(&split_spec).expect("build split");
     assert!(op_s.cost(&[8]).is_empty(), "Split has zero PBS cost");
 }
+
+#[test]
+fn test_tfhe_padded_pool_counts_only_real_taps() {
+    let backend = TfheBackend::default();
+    let max_pool = OpSpec::Pool {
+        mode: "max".to_string(),
+        in_h: 3,
+        in_w: 3,
+        channels: 1,
+        pool_h: 2,
+        pool_w: 2,
+        stride: 2,
+        padding: 1,
+    };
+    let op_max = backend.build_op(&max_pool).expect("build max pool");
+    let cost_max: BTreeMap<&'static str, u64> = op_max.cost(&[9]).into_iter().collect();
+    assert_eq!(cost_max.get("cmp_pbs_ops"), Some(&5));
+
+    let avg_pool = OpSpec::Pool {
+        mode: "avg".to_string(),
+        in_h: 3,
+        in_w: 3,
+        channels: 1,
+        pool_h: 2,
+        pool_w: 2,
+        stride: 2,
+        padding: 1,
+    };
+    let op_avg = backend.build_op(&avg_pool).expect("build avg pool");
+    let cost_avg: BTreeMap<&'static str, u64> = op_avg.cost(&[9]).into_iter().collect();
+    assert_eq!(cost_avg.get("ct_add"), Some(&5));
+}

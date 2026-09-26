@@ -17,7 +17,7 @@ use crate::ops::OpSummary;
 
 /// IR wire-format version. Hardcoded identically in `python/penumbra/ir.py`; a mismatch is
 /// a breaking change caught loudly at load time (`AGENTS.md` §5, §8).
-pub const SCHEMA_VERSION: &str = "0.9.0";
+pub const SCHEMA_VERSION: &str = "0.10.0";
 
 /// Serde default for `Requant.mult`: `1` makes the rescale a pure power-of-two shift.
 fn default_requant_mult() -> u64 {
@@ -29,6 +29,10 @@ fn is_zero_i64(v: &i64) -> bool {
 }
 
 fn is_zero_u64(v: &u64) -> bool {
+    *v == 0
+}
+
+fn is_zero_usize(v: &usize) -> bool {
     *v == 0
 }
 
@@ -120,6 +124,8 @@ pub enum OpSpec {
         pool_h: usize,
         pool_w: usize,
         stride: usize,
+        #[serde(default, skip_serializing_if = "is_zero_usize")]
+        padding: usize,
     },
     Add {},
     Concat {
@@ -475,6 +481,7 @@ impl OpSpec {
                 pool_h,
                 pool_w,
                 stride,
+                padding,
             } => {
                 match mode.as_str() {
                     "avg" | "max" => {}
@@ -490,9 +497,16 @@ impl OpSpec {
                 if *pool_h == 0 || *pool_w == 0 || *stride == 0 {
                     return Err("Pool pool_h/pool_w/stride must be positive".to_string());
                 }
-                if pool_h > in_h || pool_w > in_w {
+                if padding >= pool_h || padding >= pool_w {
                     return Err(format!(
-                        "Pool window ({pool_h}x{pool_w}) must fit the input ({in_h}x{in_w})"
+                        "Pool padding {padding} must be smaller than the window ({pool_h}x{pool_w}) so every window covers at least one real input"
+                    ));
+                }
+                if *pool_h > in_h + 2 * padding || *pool_w > in_w + 2 * padding {
+                    return Err(format!(
+                        "Pool window ({pool_h}x{pool_w}) must fit the padded input ({}x{})",
+                        in_h + 2 * padding,
+                        in_w + 2 * padding
                     ));
                 }
             }
@@ -867,6 +881,7 @@ mod tests {
                     pool_h: 2,
                     pool_w: 2,
                     stride: 2,
+                    padding: 0,
                 },
             }],
         };
@@ -881,6 +896,7 @@ mod tests {
             pool_h: 2,
             pool_w: 2,
             stride: 2,
+            padding: 0,
         };
         assert!(bad_mode.build().is_err());
 
@@ -892,8 +908,101 @@ mod tests {
             pool_h: 3,
             pool_w: 3,
             stride: 1,
+            padding: 0,
         };
         assert!(too_big.build().is_err());
+    }
+
+    #[test]
+    fn pool_padding_round_trips_and_validates() {
+        let pool_padded = OpSpec::Pool {
+            mode: "avg".to_string(),
+            in_h: 3,
+            in_w: 3,
+            channels: 1,
+            pool_h: 2,
+            pool_w: 2,
+            stride: 2,
+            padding: 1,
+        };
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 6,
+            input_bits: 5,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["y".to_string()],
+            nodes: vec![Node {
+                name: "pool".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["y".to_string()],
+                op: pool_padded,
+            }],
+        };
+        let json = graph.to_json();
+        assert!(
+            json.contains(r#""padding":1"#),
+            "must serialize non-zero padding"
+        );
+        let restored = Graph::from_json(&json).expect("round-trips padded pool");
+        assert_eq!(graph, restored);
+
+        let pool_zero = OpSpec::Pool {
+            mode: "avg".to_string(),
+            in_h: 4,
+            in_w: 4,
+            channels: 1,
+            pool_h: 2,
+            pool_w: 2,
+            stride: 2,
+            padding: 0,
+        };
+        let graph_zero = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 6,
+            input_bits: 5,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["y".to_string()],
+            nodes: vec![Node {
+                name: "pool".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["y".to_string()],
+                op: pool_zero,
+            }],
+        };
+        let json_zero = graph_zero.to_json();
+        assert!(
+            !json_zero.contains("padding"),
+            "zero padding must be omitted from JSON"
+        );
+
+        // Deserialization without padding gives padding == 0
+        let json_no_pad = r#"{"schema_version":""#.to_string()
+            + SCHEMA_VERSION
+            + r#"","num_blocks":6,"input_bits":5,"inputs":["x"],"outputs":["y"],"nodes":[{"name":"pool","inputs":["x"],"outputs":["y"],"op":{"op_type":"Pool","mode":"avg","in_h":4,"in_w":4,"channels":1,"pool_h":2,"pool_w":2,"stride":2}}]}"#;
+        let restored_no_pad = Graph::from_json(&json_no_pad).expect("deserializes without padding");
+        if let OpSpec::Pool { padding, .. } = &restored_no_pad.nodes[0].op {
+            assert_eq!(*padding, 0);
+        } else {
+            panic!("expected OpSpec::Pool");
+        }
+
+        let bad_pad = OpSpec::Pool {
+            mode: "avg".to_string(),
+            in_h: 4,
+            in_w: 4,
+            channels: 1,
+            pool_h: 2,
+            pool_w: 2,
+            stride: 2,
+            padding: 2,
+        };
+        match bad_pad.build() {
+            Err(err) => assert!(
+                err.contains("must be smaller than the window"),
+                "got: {err}"
+            ),
+            Ok(_) => panic!("padding >= window must fail"),
+        }
     }
 
     #[test]

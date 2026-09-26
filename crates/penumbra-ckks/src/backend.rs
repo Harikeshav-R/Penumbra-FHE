@@ -170,11 +170,12 @@ impl Backend for CkksBackend {
                 pool_h,
                 pool_w,
                 stride,
+                padding,
             } => {
                 if mode != "avg" {
                     return Err(format!("operator Pool({mode}) is unsupported on backend 'ckks'"));
                 }
-                let m = avg_pool_matrix(*channels, *in_h, *in_w, *pool_h, *pool_w, *stride)?;
+                let m = avg_pool_matrix(*channels, *in_h, *in_w, *pool_h, *pool_w, *stride, *padding)?;
                 let mut scratch_guard = self
                     .scratch
                     .lock()

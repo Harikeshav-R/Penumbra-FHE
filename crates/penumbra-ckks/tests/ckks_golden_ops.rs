@@ -66,6 +66,7 @@ fn ckks_fhe_pool_avg_matches_cleartext() {
                 pool_h: 2,
                 pool_w: 2,
                 stride: 2,
+                padding: 0,
             },
         }],
     };
@@ -103,6 +104,51 @@ fn ckks_fhe_pool_avg_matches_cleartext() {
     let got = decrypt_vec(&ck, &out["y"]);
 
     assert_eq!(got, expected, "CKKS Pool(avg) must match window sums");
+}
+
+#[test]
+fn ckks_fhe_padded_pool_avg_matches_cleartext() {
+    let graph = Graph {
+        schema_version: SCHEMA_VERSION.to_string(),
+        num_blocks: 4,
+        input_bits: 5,
+        inputs: vec!["x".to_string()],
+        outputs: vec!["y".to_string()],
+        nodes: vec![Node {
+            name: "pool".to_string(),
+            inputs: vec!["x".to_string()],
+            outputs: vec!["y".to_string()],
+            op: OpSpec::Pool {
+                mode: "avg".to_string(),
+                in_h: 3,
+                in_w: 3,
+                channels: 1,
+                pool_h: 2,
+                pool_w: 2,
+                stride: 2,
+                padding: 1,
+            },
+        }],
+    };
+
+    let params = DEFAULT_PARAMS;
+    let (ck, sk) = keygen(&params).expect("keygen failed");
+    let ctx = EvalCtx::new(&sk, 8);
+
+    // 1 channel of 3x3 = 9 elements: [-4, -3, -2, -1, 0, 1, 2, 3, 4]
+    let x: Vec<i64> = (0..9).map(|i| i - 4).collect();
+    let expected = vec![-4, -5, 1, 8];
+
+    let mut env = HashMap::new();
+    env.insert("x".to_string(), encrypt(&ck, &x));
+
+    let out = evaluate_graph(&ctx, &graph, env).expect("graph evaluates");
+    let got = decrypt_vec(&ck, &out["y"]);
+
+    assert_eq!(
+        got, expected,
+        "CKKS padded Pool(avg) must match window sums"
+    );
 }
 
 #[test]
