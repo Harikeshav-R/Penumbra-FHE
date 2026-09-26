@@ -52,8 +52,29 @@ from penumbra.bitwidth import (
 )
 from penumbra.client import CryptoProfile, KeySet, run_encrypted
 from penumbra.compile import RequantChannelParams, insert_requants
-from penumbra.ir import SCHEMA_VERSION, ActivationSpec, ArgmaxSpec, Graph, Node
-from penumbra.layers import Activation, Conv2d, Layer, LayerContext, Linear, QuantConfig
+from penumbra.ir import (
+    SCHEMA_VERSION,
+    ActivationSpec,
+    AddSpec,
+    ArgmaxSpec,
+    ConcatSpec,
+    Graph,
+    Node,
+    SplitSpec,
+)
+from penumbra.layers import (
+    Activation,
+    Add,
+    Concat,
+    Conv2d,
+    Layer,
+    LayerContext,
+    LayerNode,
+    Linear,
+    QuantConfig,
+    Split,
+    topological_layer_order,
+)
 from penumbra.quantization.calibration import (
     MinMaxObserver,
     MSEObserver,
@@ -112,11 +133,18 @@ class Model:
     (available as :attr:`graph` afterwards); ``export`` serializes it for the runtime.
     """
 
-    def __init__(self, layers: Sequence[Layer], *, input_bits: int = 4) -> None:
+    def __init__(
+        self,
+        layers: Sequence[Layer] | Sequence[LayerNode],
+        *,
+        input_bits: int = 4,
+        input_name: str = "x",
+        output_name: str | None = None,
+    ) -> None:
         if not layers:
             raise ValueError("Model needs at least one layer")
-        self.layers: list[Layer] = list(layers)
         self.input_bits = int(input_bits)
+        self.input_name = input_name
         self.graph: Graph | None = None
         # Populated by quantize(): the input scale and per-layer scales, for accuracy reporting
         # and for callers that want to dequantize results.
@@ -124,40 +152,91 @@ class Model:
         # Populated by quantize(): per-accumulator-layer weight bit-widths in evaluation order.
         self.weight_bits: list[int] = []
 
+        if isinstance(layers[0], LayerNode):
+            node_list: list[LayerNode] = list(layers)  # type: ignore[arg-type]
+            order = topological_layer_order(node_list, input_name)
+            self.nodes: list[LayerNode] = [node_list[i] for i in order]
+            self.layers: list[Layer] = [n.layer for n in self.nodes]
+            self.output_name = output_name if output_name is not None else self.nodes[-1].outputs[0]
+        else:
+            self.layers = list(layers)  # type: ignore[arg-type]
+            self.nodes = []
+            for i, layer in enumerate(self.layers):
+                inp = input_name if i == 0 else f"t{i - 1}"
+                out = f"t{i}"
+                self.nodes.append(LayerNode(name=f"l{i}", layer=layer, inputs=[inp], outputs=[out]))
+            self.output_name = output_name if output_name is not None else self.nodes[-1].outputs[0]
+
     # -- calibration -----------------------------------------------------------------------
 
     def _calibrate_input(self, x: np.ndarray) -> float:
         """Symmetric input scale from the calibration batch (unsigned: pixel-like inputs)."""
         return symmetric_spec(x, self.input_bits, signed=False).scale
 
-    def _calibrate_accumulators(
+    def _calibrate_graph(
         self, x: np.ndarray, observer_cls: type[Observer], act_bits: int
-    ) -> tuple[dict[int, float], dict[int, tuple[float, float]]]:
-        """Observe each accumulator layer's output range over the calibration batch.
+    ) -> tuple[dict[str, np.ndarray], dict[str, float], dict[str, tuple[float, float]]]:
+        """Observe each accumulator node's output range over the calibration batch.
 
-        Returns ``(peaks, ranges)``:
-        - ``peaks``: ``{layer_index: clip_magnitude}`` for the fused-ReLU path.
-        - ``ranges``: ``{layer_index: (min, max)}`` of raw pre-activation outputs for the
+        Returns ``(acts, peaks, ranges)``:
+        - ``acts``: ``{tensor_name: activation_array}``
+        - ``peaks``: ``{node_name: clip_magnitude}`` for the fused-ReLU path.
+        - ``ranges``: ``{node_name: (min, max)}`` of raw pre-activation outputs for the
           signed-activation path.
         """
-        peaks: dict[int, float] = {}
-        ranges: dict[int, tuple[float, float]] = {}
-        acts = x
-        for i, layer in enumerate(self.layers):
-            out = layer.forward(acts)
-            if isinstance(layer, _ACCUMULATOR_LAYERS):
-                ranges[i] = (float(np.min(out)), float(np.max(out)))
+        acts: dict[str, np.ndarray] = {self.input_name: x}
+        peaks: dict[str, float] = {}
+        ranges: dict[str, tuple[float, float]] = {}
+
+        for node in self.nodes:
+            ins = [acts[name] for name in node.inputs]
+            if isinstance(node.layer, (Add, Concat, Split)):
+                outs = node.layer.forward_multi(*ins)
+            else:
+                outs = [node.layer.forward(ins[0])]
+
+            for out_name, out in zip(node.outputs, outs, strict=True):
+                acts[out_name] = out
+
+            if isinstance(node.layer, _ACCUMULATOR_LAYERS):
+                out = outs[0]
+                ranges[node.name] = (float(np.min(out)), float(np.max(out)))
                 obs = observer_cls()
-                # Post-ReLU magnitude: the Requant fuses a ReLU, so only non-negative values
-                # survive to the activation domain. Observe max(out, 0).
                 obs.update(np.maximum(out, 0.0))
-                # spec(act_bits) drives MSE's bit-width-dependent clip search and updates the
-                # observer's chosen magnitude; magnitude() then returns the clip (== peak for
-                # MinMax, so the default path is unchanged and the committed fixtures reproduce).
                 obs.spec(act_bits, signed=False)
-                peaks[i] = obs.magnitude()
-            acts = out
-        return peaks, ranges
+                peaks[node.name] = obs.magnitude()
+
+        return acts, peaks, ranges
+
+    def _merge_scale_classes(self) -> dict[str, str]:
+        """Map each float-graph tensor to its scale-class representative.
+
+        ``Add``/``Concat`` union every operand with their output; ``Split`` unions its input
+        with every output. All members of a class must share one quantization scale, because
+        integer addition/concatenation is only meaningful in common units.
+        """
+        parent: dict[str, str] = {}
+
+        def find(t: str) -> str:
+            root = parent.setdefault(t, t)
+            if root != t:
+                parent[t] = find(root)
+            return parent[t]
+
+        def union(a: str, b: str) -> None:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[ra] = rb
+
+        for node in self.nodes:
+            if isinstance(node.layer, (Add, Concat)):
+                for inp in node.inputs:
+                    union(inp, node.outputs[0])
+            elif isinstance(node.layer, Split):
+                for out in node.outputs:
+                    union(node.inputs[0], out)
+
+        return {t: find(t) for t in parent}
 
     # -- quantization ----------------------------------------------------------------------
 
@@ -195,105 +274,262 @@ class Model:
                 "post-Requant activation must fit one shortint block — wider activations are not "
                 "representable (raise n_bits for weights/inputs instead, which is independent)."
             )
-        acc_indices = [i for i, ly in enumerate(self.layers) if isinstance(ly, _ACCUMULATOR_LAYERS)]
-        if isinstance(n_bits, int):
-            layer_bits = [int(n_bits)] * len(acc_indices)
-        else:
-            layer_bits = [int(b) for b in n_bits]
-            if len(layer_bits) != len(acc_indices):
-                raise ValueError(
-                    f"n_bits has {len(layer_bits)} entries but the model has "
-                    f"{len(acc_indices)} accumulator layer(s) (Conv2d/Linear) at indices "
-                    f"{acc_indices}; pass one bit-width per accumulator layer in evaluation "
-                    "order, or a single int for all of them"
-                )
-        if any(b < 1 for b in layer_bits):
-            raise ValueError(f"every n_bits entry must be >= 1, got {layer_bits}")
-        # Per-accumulator-layer weight width. `weight_bits` is already a per-node IR field
-        # (ir.py LinearSpec/Conv2dSpec), so this needs no schema change.
-        self.weight_bits = list(layer_bits)
+        x = np.asarray(calibration_data, dtype=np.float64)
+        if x.ndim != 2:
+            raise ValueError(
+                f"calibration_data must be a 2D float batch (N, feature_len); got shape {x.shape}"
+            )
+        if len(x) == 0:
+            raise ValueError("calibration_data is empty")
 
         if calibration not in _OBSERVERS:
             raise ValueError(
                 f"calibration must be one of {sorted(_OBSERVERS)}; got {calibration!r}"
             )
-        observer_cls = _OBSERVERS[calibration]
+        obs_cls = _OBSERVERS[calibration]
+        acc_nodes = [n for n in self.nodes if isinstance(n.layer, _ACCUMULATOR_LAYERS)]
+        n_accumulators = len(acc_nodes)
+
+        if isinstance(n_bits, int):
+            layer_bits = [int(n_bits)] * n_accumulators
+        else:
+            layer_bits = [int(b) for b in n_bits]
+            if len(layer_bits) != n_accumulators:
+                raise ValueError(
+                    f"n_bits has {len(layer_bits)} entries but the model has {n_accumulators} "
+                    f"accumulator layer(s) (Conv2d/Linear); provide either a single int or one "
+                    "entry per accumulator layer in topological order"
+                )
+        self.weight_bits = list(layer_bits)
+        if any(b < 1 for b in layer_bits):
+            raise ValueError(f"every n_bits entry must be >= 1, got {layer_bits}")
+
+        self.input_scale = self._calibrate_input(x)
+        _cal_acts, acc_peaks, acc_ranges = self._calibrate_graph(x, obs_cls, act_bits)
+
+        scale_classes = self._merge_scale_classes()
+
         cfg = QuantConfig(
-            n_bits=layer_bits[0] if layer_bits else 4,
+            n_bits=4,
             act_bits=act_bits,
             per_channel=per_channel,
             max_mult_bits=max_mult_bits,
         )
-        x = np.asarray(calibration_data, dtype=np.float64)
-        if x.ndim == 1:
-            x = x[None, :]
+        act_ceiling = (1 << cfg.act_bits) - 1
 
-        self.input_scale = self._calibrate_input(x)
-        acc_peaks, acc_ranges = self._calibrate_accumulators(x, observer_cls, cfg.act_bits)
+        # Precompute class target scales for merge classes:
+        class_scales: dict[str, float] = {}
+        for node in acc_nodes:
+            consumers = [n for n in self.nodes if node.outputs[0] in n.inputs]
+            if (
+                len(consumers) == 1
+                and isinstance(consumers[0].layer, Activation)
+                and _is_relu_like(consumers[0].layer.fn)
+            ):
+                act_node = consumers[0]
+                peak = acc_peaks.get(node.name, 0.0)
+                root = scale_classes.get(act_node.outputs[0], act_node.outputs[0])
+                natural_scale = (peak / act_ceiling) if peak > 0 else 0.0
+                class_scales[root] = max(class_scales.get(root, 0.0), natural_scale)
 
-        # Walk layers, emitting natural IR nodes (no Requant yet). An accumulator (Conv2d/Linear)
-        # immediately followed by a ReLU Activation is **requantized**: the fused-ReLU Requant
-        # narrows its wide accumulator to the `act_bits` activation domain. That changes the scale
-        # the *downstream* layer reads — it consumes post-Requant activations at `act_scale`, NOT
-        # the accumulator's wide `acc_scale`. So we must choose the Requant rescale and switch the
-        # threaded scale to `act_scale` **before** quantizing the downstream layer, or the
-        # downstream layer's bias is mis-scaled by the requant ratio (a silent accuracy killer).
-        ctx = LayerContext(tensor="x", scale=self.input_scale, config=cfg, index=0)
-        nodes = []
+        ir_tensor: dict[str, str] = {self.input_name: self.input_name}
+        scale: dict[str, float] = {self.input_name: self.input_scale}
+        zero_point: dict[str, int] = {self.input_name: 0}
+        length: dict[str, int] = {self.input_name: x.shape[1]}
+        producer_map: dict[str, LayerNode] = {}
+
+        nodes: list[Node] = []
         shifts: dict[str, int] = {}
         mults: dict[str, int] = {}
         round_biases: dict[str, int] = {}
         clamp_los: dict[str, int] = {}
         zero_points: dict[str, int] = {}
         per_channel_params: dict[str, RequantChannelParams] = {}
-        act_ceiling = (1 << cfg.act_bits) - 1
 
-        i = 0
-        n_layers = len(self.layers)
-        while i < n_layers:
-            layer = self.layers[i]
-            ctx.index = i
+        handled_nodes: set[str] = set()
+
+        for idx, node in enumerate(self.nodes):
+            if node.name in handled_nodes:
+                continue
+
+            layer = node.layer
 
             if isinstance(layer, Activation):
-                # Reached standalone: an accumulator+activation pair is consumed
-                # together below (i += 2), so hitting an Activation here means it does
-                # not follow an accumulator.
+                loc = f"layer {idx}" if self.nodes[0].name == "l0" else f"node {node.name!r}"
                 raise ValueError(
-                    f"Activation at layer {i} does not follow an accumulator (Conv2d/Linear); "
-                    "a standalone Activation without a preceding accumulator is not supported"
+                    f"Activation at {loc} does not follow an accumulator "
+                    "(Conv2d/Linear); a standalone Activation without a preceding accumulator "
+                    "is not supported"
                 )
-            if isinstance(layer, _ACCUMULATOR_LAYERS):
-                ctx.config = replace(cfg, n_bits=layer_bits[acc_indices.index(i)])
 
-            layer_nodes, out_scale, _out_len, ch_scales = layer.quantize(ctx)
-            nodes.extend(layer_nodes)
-            ctx.tensor = layer_nodes[-1].outputs[0]
-            ctx.scale = out_scale
-            ctx.zero_point = 0  # consumed by this layer's bias fold
-
-            followed_by_activation = (
-                isinstance(layer, _ACCUMULATOR_LAYERS)
-                and i + 1 < n_layers
-                and isinstance(self.layers[i + 1], Activation)
-            )
-            if followed_by_activation:
-                act = self.layers[i + 1]
-                assert isinstance(act, Activation)
-                if _is_relu_like(act.fn):
-                    # Fused ReLU path
-                    if i + 2 >= n_layers:
+            if isinstance(layer, (Add, Concat)):
+                for inp_t in node.inputs:
+                    prod = producer_map.get(inp_t)
+                    is_valid = False
+                    if prod is not None:
+                        if isinstance(prod.layer, (Add, Concat, Split)):
+                            is_valid = True
+                        elif isinstance(prod.layer, Activation) and _is_relu_like(prod.layer.fn):
+                            is_valid = True
+                    if not is_valid:
+                        if inp_t == self.input_name:
+                            prod_desc = "the graph input"
+                        elif prod is not None:
+                            prod_desc = f"{type(prod.layer).__name__} at node {prod.name!r}"
+                        else:
+                            prod_desc = "an unknown producer"
                         raise ValueError(
-                            f"the terminal ReLU at layer {i + 1} cannot be fused: it follows the "
-                            f"final accumulator (layer {i}), whose output is the model's wide "
-                            "logit head (left un-narrowed for client-side argmax, `PROJECT.md` "
-                            "§11). A trailing ReLU has no Requant to fuse into — drop it (argmax "
-                            "is unaffected by a monotonic ReLU on the logits), or add a layer "
-                            "after it."
+                            f"{type(layer).__name__} at node {node.name!r}: operand {inp_t!r} is "
+                            f"produced by {prod_desc}, but a merge operand must be a "
+                            "ReLU-activated layer output (zero_point 0) so both operands share "
+                            "one integer scale. Insert a ReLU after that layer, or move the skip "
+                            "connection."
                         )
-                    acc_scale = out_scale
-                    peak = acc_peaks.get(i, 0.0)
-                    act_scale = (peak / act_ceiling) if peak > 0 else acc_scale
+                    if zero_point.get(inp_t, 0) != 0:
+                        raise ValueError(
+                            f"{type(layer).__name__} at node {node.name!r}: operand {inp_t!r} has "
+                            f"non-zero zero_point {zero_point[inp_t]}; merge operands must have "
+                            "zero_point 0"
+                        )
+
+                root = scale_classes.get(node.inputs[0], node.inputs[0])
+                target_scale = class_scales.get(root, scale[node.inputs[0]])
+
+                if isinstance(layer, Add):
+                    if len(node.inputs) != 2:
+                        raise ValueError(
+                            f"Add at node {node.name!r} expects 2 inputs, got {len(node.inputs)}"
+                        )
+                    t_a, t_b = node.inputs
+                    if length[t_a] != length[t_b]:
+                        raise ValueError(
+                            f"Add at node {node.name!r}: operands {t_a!r} (length {length[t_a]}) "
+                            f"and {t_b!r} (length {length[t_b]}) must have equal length"
+                        )
+                    out_tensor_name = f"{node.name}_out"
+                    ir_node = Node(
+                        name=node.name,
+                        inputs=[ir_tensor[t_a], ir_tensor[t_b]],
+                        outputs=[out_tensor_name],
+                        op=AddSpec(),
+                    )
+                    nodes.append(ir_node)
+                    out_t = node.outputs[0]
+                    ir_tensor[out_t] = out_tensor_name
+                    scale[out_t] = target_scale
+                    zero_point[out_t] = 0
+                    length[out_t] = length[t_a]
+                    producer_map[out_t] = node
+                else:
+                    sizes = [length[t] for t in node.inputs]
+                    out_tensor_name = f"{node.name}_out"
+                    ir_node = Node(
+                        name=node.name,
+                        inputs=[ir_tensor[t] for t in node.inputs],
+                        outputs=[out_tensor_name],
+                        op=ConcatSpec(sizes=sizes),
+                    )
+                    nodes.append(ir_node)
+                    out_t = node.outputs[0]
+                    ir_tensor[out_t] = out_tensor_name
+                    scale[out_t] = target_scale
+                    zero_point[out_t] = 0
+                    length[out_t] = sum(sizes)
+                    producer_map[out_t] = node
+
+                continue
+
+            if isinstance(layer, Split):
+                in_t = node.inputs[0]
+                if sum(layer.sizes) != length[in_t]:
+                    raise ValueError(
+                        f"Split at node {node.name!r}: sum of sizes {sum(layer.sizes)} does not "
+                        f"match input tensor {in_t!r} length {length[in_t]}"
+                    )
+                out_tensor_names = [f"{node.name}_out{j}" for j in range(len(layer.sizes))]
+                ir_node = Node(
+                    name=node.name,
+                    inputs=[ir_tensor[in_t]],
+                    outputs=out_tensor_names,
+                    op=SplitSpec(sizes=list(layer.sizes)),
+                )
+                nodes.append(ir_node)
+                for out_t, sz, ir_out in zip(
+                    node.outputs, layer.sizes, out_tensor_names, strict=True
+                ):
+                    ir_tensor[out_t] = ir_out
+                    scale[out_t] = scale[in_t]
+                    zero_point[out_t] = zero_point[in_t]
+                    length[out_t] = sz
+                    producer_map[out_t] = node
+                continue
+
+            # Pool or Accumulator
+            in_t = node.inputs[0]
+            ctx = LayerContext(
+                tensor=ir_tensor[in_t],
+                scale=scale[in_t],
+                config=cfg,
+                index=idx,
+                zero_point=zero_point[in_t],
+            )
+
+            if isinstance(layer, _ACCUMULATOR_LAYERS):
+                ctx.config = replace(cfg, n_bits=layer_bits[acc_nodes.index(node)])
+
+            layer_nodes, out_scale, out_len, ch_scales = layer.quantize(ctx)
+            nodes.extend(layer_nodes)
+            acc_out_name = layer_nodes[-1].outputs[0]
+            out_t = node.outputs[0]
+            ir_tensor[out_t] = acc_out_name
+            scale[out_t] = out_scale
+            zero_point[out_t] = 0
+            length[out_t] = out_len
+            producer_map[out_t] = node
+
+            consumers = [n for n in self.nodes if node.outputs[0] in n.inputs]
+            has_act = any(isinstance(c.layer, Activation) for c in consumers)
+            if has_act:
+                if len(consumers) != 1:
+                    act_c = [c.name for c in consumers if isinstance(c.layer, Activation)][0]
+                    other_c = [c.name for c in consumers if not isinstance(c.layer, Activation)]
+                    raise ValueError(
+                        f"accumulator {node.name!r} feeds Activation {act_c!r} but also feeds "
+                        f"other consumer(s): {', '.join(other_c)}; branching an un-activated "
+                        "accumulator is not supported"
+                    )
+                act_node = consumers[0]
+                act = act_node.layer
+                assert isinstance(act, Activation)
+
+                if _is_relu_like(act.fn):
+                    act_loc = (
+                        f"layer {self.nodes.index(act_node)}"
+                        if self.nodes[0].name == "l0"
+                        else f"node {act_node.name!r}"
+                    )
+                    node_loc = (
+                        f"layer {self.nodes.index(node)}"
+                        if self.nodes[0].name == "l0"
+                        else f"node {node.name!r}"
+                    )
+                    if act_node.outputs[0] == self.output_name:
+                        raise ValueError(
+                            f"the terminal ReLU at {act_loc} cannot be fused: it "
+                            f"follows the final accumulator ({node_loc}), whose output "
+                            "is the model's wide logit head (left un-narrowed for "
+                            "client-side argmax, `PROJECT.md` §11). A trailing ReLU has no "
+                            "Requant to fuse into — drop it (argmax is unaffected by a "
+                            "monotonic ReLU on the logits), or add a layer after it."
+                        )
+                    peak = acc_peaks.get(node.name, 0.0)
+                    root = scale_classes.get(act_node.outputs[0], act_node.outputs[0])
+                    natural_scale = (peak / act_ceiling) if peak > 0 else out_scale
+                    act_scale = class_scales.get(root, natural_scale)
+                    if act_scale == 0.0:
+                        act_scale = natural_scale
                     acc_name = layer_nodes[-1].name
+
                     if ch_scales is not None:
                         ch_mults, ch_shifts, ch_rbs = [], [], []
                         for acc_scale_i in ch_scales:
@@ -311,7 +547,7 @@ class Model:
                         )
                     else:
                         mult, shift, round_bias = choose_requant_params(
-                            acc_scale,
+                            out_scale,
                             act_scale,
                             out_bits=cfg.act_bits,
                             max_mult_bits=cfg.max_mult_bits,
@@ -319,29 +555,47 @@ class Model:
                         shifts[acc_name] = shift
                         mults[acc_name] = mult
                         round_biases[acc_name] = round_bias
-                    ctx.scale = act_scale  # downstream reads post-Requant activations
-                    ctx.zero_point = 0
-                    i += 2
-                    continue
+
+                    act_out_t = act_node.outputs[0]
+                    scale[act_out_t] = act_scale
+                    zero_point[act_out_t] = 0
+                    length[act_out_t] = out_len
+                    ir_tensor[act_out_t] = acc_out_name
+                    producer_map[act_out_t] = act_node
+                    handled_nodes.add(act_node.name)
                 else:
-                    # Non-ReLU signed activation path
-                    if i + 2 >= n_layers:
+                    act_loc = (
+                        f"layer {self.nodes.index(act_node)}"
+                        if self.nodes[0].name == "l0"
+                        else f"node {act_node.name!r}"
+                    )
+                    node_loc = (
+                        f"layer {self.nodes.index(node)}"
+                        if self.nodes[0].name == "l0"
+                        else f"node {node.name!r}"
+                    )
+                    if act_node.outputs[0] == self.output_name:
                         raise ValueError(
-                            f"the terminal activation at layer {i + 1} cannot be lowered: it "
-                            f"follows the final accumulator (layer {i}), whose output is the "
-                            "model's wide logit head (left un-narrowed for client-side argmax, "
-                            "`PROJECT.md` §11). A trailing activation has nowhere to go — "
+                            f"the terminal activation at {act_loc} cannot be lowered: "
+                            f"it follows the final accumulator ({node_loc}), whose output "
+                            "is the model's wide logit head (left un-narrowed for client-side "
+                            "argmax, `PROJECT.md` §11). A trailing activation has nowhere to go — "
                             "drop it, or add a layer after it."
                         )
-                    next_layer = self.layers[i + 2]
-                    if not isinstance(next_layer, _ACCUMULATOR_LAYERS):
-                        raise ValueError(
-                            f"the activation at layer {i + 1} is consumed by "
-                            f"{type(next_layer).__name__}; a non-ReLU activation must feed a "
-                            "Conv2d/Linear (its output zero-point folds into that layer's bias). "
-                            "Pool/other consumers are not supported."
+                    act_consumers = [n for n in self.nodes if act_node.outputs[0] in n.inputs]
+                    if not act_consumers or not all(
+                        isinstance(c.layer, _ACCUMULATOR_LAYERS) for c in act_consumers
+                    ):
+                        next_desc = (
+                            type(act_consumers[0].layer).__name__ if act_consumers else "nothing"
                         )
-                    lo, hi = acc_ranges[i]
+                        raise ValueError(
+                            f"the activation at node {act_node.name!r} is consumed by {next_desc}; "
+                            "a non-ReLU activation must feed a Conv2d/Linear (its output "
+                            "zero-point folds into that layer's bias). Pool/other consumers are "
+                            "not supported."
+                        )
+                    lo, hi = acc_ranges[node.name]
                     lo = min(lo, 0.0)
                     hi = max(hi, 0.0)
                     levels = 1 << cfg.act_bits
@@ -369,68 +623,65 @@ class Model:
                             (clamp_lo * m + rb) >> s
                             for m, s, rb in zip(ch_mults, ch_shifts, ch_rbs, strict=True)
                         )
-                        zero_point = max(0, -u_min)
+                        zero_point_val = max(0, -u_min)
                         clamp_los[acc_name] = clamp_lo
-                        zero_points[acc_name] = zero_point
+                        zero_points[acc_name] = zero_point_val
                     else:
-                        acc_scale = out_scale
-                        clamp_lo = min(0, math.floor(lo / acc_scale))
+                        clamp_lo = min(0, math.floor(lo / out_scale))
                         mult, shift, round_bias = choose_requant_params(
-                            acc_scale,
+                            out_scale,
                             act_scale,
                             out_bits=cfg.act_bits,
                             max_mult_bits=cfg.max_mult_bits,
                             clamp_lo=clamp_lo,
                         )
                         u_min = (clamp_lo * mult + round_bias) >> shift
-                        zero_point = max(0, -u_min)
+                        zero_point_val = max(0, -u_min)
                         shifts[acc_name] = shift
                         mults[acc_name] = mult
                         round_biases[acc_name] = round_bias
                         clamp_los[acc_name] = clamp_lo
-                        zero_points[acc_name] = zero_point
+                        zero_points[acc_name] = zero_point_val
 
-                    out_scale, out_zp = affine_activation_codomain(
+                    out_act_scale, out_zp = affine_activation_codomain(
                         act.fn,
                         in_scale=act_scale,
-                        in_zero_point=zero_point,
+                        in_zero_point=zero_point_val,
                         act_bits=cfg.act_bits,
                     )
                     lut = make_affine_activation_lut(
                         act.fn,
                         in_scale=act_scale,
-                        in_zero_point=zero_point,
-                        out_scale=out_scale,
+                        in_zero_point=zero_point_val,
+                        out_scale=out_act_scale,
                         out_zero_point=out_zp,
                         out_bits=cfg.act_bits,
                     )
-                    acc_out_tensor = layer_nodes[-1].outputs[0]
-                    act_name = f"act{i + 1}"
-                    act_out_tensor = f"act{i + 1}_out"
+                    act_name = f"act{self.nodes.index(act_node)}"
+                    act_out_tensor = f"{act_name}_out"
                     nodes.append(
                         Node(
                             name=act_name,
-                            inputs=[acc_out_tensor],
+                            inputs=[acc_out_name],
                             outputs=[act_out_tensor],
                             op=ActivationSpec(lut=lut, output_bits=lut_output_bits(lut)),
                         )
                     )
-                    ctx.tensor = act_out_tensor
-                    ctx.scale = out_scale
-                    ctx.zero_point = out_zp
-                    i += 2
-                    continue
-            i += 1
+                    act_out_t = act_node.outputs[0]
+                    scale[act_out_t] = out_act_scale
+                    zero_point[act_out_t] = out_zp
+                    length[act_out_t] = out_len
+                    ir_tensor[act_out_t] = act_out_tensor
+                    producer_map[act_out_t] = act_node
+                    handled_nodes.add(act_node.name)
 
-        outputs = [nodes[-1].outputs[0]]
+        outputs = [ir_tensor[self.output_name]]
 
-        # Build the natural graph at a generous radix to learn widths, insert requants, then
-        # search the minimal num_blocks that fits every tensor AND every Requant internal peak.
         probe = Graph(
             schema_version=SCHEMA_VERSION,
             num_blocks=64,
             input_bits=self.input_bits,
-            inputs=["x"],
+            inputs=[self.input_name],
             outputs=outputs,
             nodes=nodes,
         )
@@ -451,7 +702,7 @@ class Model:
                 schema_version=SCHEMA_VERSION,
                 num_blocks=num_blocks,
                 input_bits=self.input_bits,
-                inputs=["x"],
+                inputs=[self.input_name],
                 outputs=outputs,
                 nodes=nodes,
             ),
@@ -501,7 +752,7 @@ class Model:
         sample = x[: min(4, len(x))]
         for row in sample:
             xq = in_spec.quantize(row).tolist()
-            evaluate_graph_int(graph, {"x": xq})  # raises on any inconsistency
+            evaluate_graph_int(graph, {self.input_name: xq})  # raises on any inconsistency
 
     # -- export ----------------------------------------------------------------------------
 

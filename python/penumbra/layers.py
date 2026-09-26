@@ -26,7 +26,8 @@ Quantization conventions (mirrors :mod:`penumbra.quantization.ptq`):
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import heapq
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -70,9 +71,13 @@ class LayerContext:
 class Layer:
     """Base class: a float layer that can run a forward pass and emit quantized IR nodes."""
 
-    def forward(self, x: np.ndarray) -> np.ndarray:  # pragma: no cover - abstract
+    def forward(self, *inputs: np.ndarray) -> np.ndarray:  # pragma: no cover - abstract
         """Float forward over a batch ``(N, ...)`` -> ``(N, ...)`` (for calibration)."""
         raise NotImplementedError
+
+    def forward_multi(self, *inputs: np.ndarray) -> list[np.ndarray]:
+        """Float forward returning all output tensors."""
+        return [self.forward(*inputs)]
 
     def quantize(
         self, ctx: LayerContext
@@ -294,6 +299,144 @@ class Activation(Layer):
             "Activation is materialized by Model.quantize after Requant insertion; it cannot be "
             "quantized standalone"
         )
+
+
+@dataclass(frozen=True)
+class LayerNode:
+    """One node of a branching float model: a layer plus the float-graph tensor names it
+    reads and writes. A plain ``Model([...])`` list is the degenerate chain case."""
+
+    name: str
+    layer: Layer
+    inputs: list[str]
+    outputs: list[str]
+
+
+@dataclass
+class Add(Layer):
+    """Element-wise residual add of two same-length tensors (IR ``AddSpec``)."""
+
+    def forward(self, *inputs: np.ndarray) -> np.ndarray:
+        if len(inputs) != 2:
+            raise ValueError(f"Add takes exactly 2 inputs, got {len(inputs)}")
+        return inputs[0] + inputs[1]
+
+    def forward_multi(self, *xs: np.ndarray) -> list[np.ndarray]:
+        return [self.forward(*xs)]
+
+    def quantize(self, ctx: LayerContext):
+        raise NotImplementedError("Add is materialized by Model.quantize directly")
+
+
+@dataclass
+class Concat(Layer):
+    """Channel-axis concatenation of N tensors on the flat wire (IR ``ConcatSpec``)."""
+
+    def forward(self, *inputs: np.ndarray) -> np.ndarray:
+        if len(inputs) < 2:
+            raise ValueError(f"Concat takes at least 2 inputs, got {len(inputs)}")
+        return np.concatenate(inputs, axis=1)
+
+    def forward_multi(self, *xs: np.ndarray) -> list[np.ndarray]:
+        return [self.forward(*xs)]
+
+    def quantize(self, ctx: LayerContext):
+        raise NotImplementedError("Concat is materialized by Model.quantize directly")
+
+
+@dataclass
+class Split(Layer):
+    """Contiguous segmentation into ``sizes`` flat parts (IR ``SplitSpec``)."""
+
+    sizes: list[int]
+
+    def __post_init__(self) -> None:
+        if len(self.sizes) < 2:
+            raise ValueError(f"Split needs at least 2 output segments; got {len(self.sizes)}")
+        if any(n <= 0 for n in self.sizes):
+            raise ValueError(f"Split segment sizes must be positive; got {self.sizes!r}")
+
+    def forward(self, *inputs: np.ndarray) -> np.ndarray:
+        raise NotImplementedError("Split produces multiple outputs; use forward_multi")
+
+    def forward_multi(self, *xs: np.ndarray) -> list[np.ndarray]:
+        if len(xs) != 1:
+            raise ValueError(f"Split takes exactly 1 input, got {len(xs)}")
+        x = xs[0]
+        split_points = list(np.cumsum(self.sizes)[:-1])
+        return list(np.split(x, split_points, axis=1))
+
+    def quantize(self, ctx: LayerContext):
+        raise NotImplementedError("Split is materialized by Model.quantize directly")
+
+
+def topological_layer_order(nodes: Sequence[LayerNode], graph_input: str) -> list[int]:
+    """Indices of ``nodes`` in a valid topological order (stable Kahn).
+
+    Among ready nodes, the lowest original index wins, so a graph already emitted in
+    topological order is unchanged. Fails loudly on an undefined input, duplicate output,
+    or cycle.
+    """
+    graph_inputs = {graph_input}
+    all_produced = {out for node in nodes for out in node.outputs}
+
+    for node in nodes:
+        for inp in node.inputs:
+            if inp not in graph_inputs and inp not in all_produced:
+                raise ValueError(
+                    f"node {node.name!r} reads tensor {inp!r}, which no node produces and is "
+                    "not a graph input"
+                )
+
+    existing: set[str] = set(graph_inputs)
+    for node in nodes:
+        for out in node.outputs:
+            if out in existing:
+                raise ValueError(
+                    f"node {node.name!r} writes tensor {out!r}, which already exists — "
+                    "tensor names must be unique (no silent overwrite)"
+                )
+            existing.add(out)
+
+    num_nodes = len(nodes)
+    if num_nodes == 0:
+        return []
+
+    producer_map: dict[str, int] = {
+        out: idx for idx, node in enumerate(nodes) for out in node.outputs
+    }
+    in_deps: list[set[int]] = [set() for _ in range(num_nodes)]
+    dependents: list[list[int]] = [[] for _ in range(num_nodes)]
+
+    for c_idx, node in enumerate(nodes):
+        for inp in node.inputs:
+            if inp in producer_map:
+                p_idx = producer_map[inp]
+                if p_idx not in in_deps[c_idx]:
+                    in_deps[c_idx].add(p_idx)
+                    dependents[p_idx].append(c_idx)
+
+    ready = [idx for idx, deps in enumerate(in_deps) if not deps]
+    heapq.heapify(ready)
+
+    order: list[int] = []
+    while ready:
+        idx = heapq.heappop(ready)
+        order.append(idx)
+        for dep in dependents[idx]:
+            in_deps[dep].remove(idx)
+            if not in_deps[dep]:
+                heapq.heappush(ready, dep)
+
+    if len(order) < num_nodes:
+        visited = set(order)
+        names = [node.name for idx, node in enumerate(nodes) if idx not in visited]
+        raise ValueError(
+            f"graph has a cycle: node(s) {names!r} are never ready — their inputs depend on "
+            "their own outputs"
+        )
+
+    return order
 
 
 def _representative_scale(specs: list) -> float:
