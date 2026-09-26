@@ -33,14 +33,26 @@ run in reasonable time (``PROJECT.md`` §10, §16). Anything else fails loudly h
 
 from __future__ import annotations
 
+import heapq
+
 import numpy as np
 import onnx
 from onnx import numpy_helper
 
 from penumbra import op_registry
-from penumbra.layers import Activation, Conv2d, Layer, Linear, Pool
+from penumbra.layers import (
+    Activation,
+    Add,
+    Concat,
+    Conv2d,
+    LayerNode,
+    Linear,
+    Pool,
+    Split,
+)
 from penumbra.model import Model
 from penumbra.quantization.activations import activation_fn
+from penumbra.quantization.batchnorm import fold_batchnorm
 
 
 class UnsupportedModelError(ValueError):
@@ -55,7 +67,7 @@ class UnsupportedModelError(ValueError):
         self.problems = list(problems)
         header = (
             f"model is not supported ({len(self.problems)} problem(s) — Penumbra-FHE accepts a "
-            "linear chain of supported ops; see docs/SUPPORTED-OPS.md):"
+            "directed acyclic graph of supported ops; see docs/SUPPORTED-OPS.md):"
         )
         super().__init__(header + "".join(f"\n  - {p}" for p in self.problems))
 
@@ -104,13 +116,20 @@ def load_onnx(path: str, *, input_bits: int = 4) -> Model:
         )
     graph_output = graph.output[0].name
 
-    chain = _identify_chain(graph, consts, graph_input, graph_output)
-    layers = _lower_chain(chain, consts, shapes, graph_input)
-    if not layers:
+    topo_nodes = _topological_nodes(graph, consts, graph_input, graph_output)
+    layer_nodes, effective_output = _lower_graph(
+        topo_nodes, consts, shapes, graph_input, graph_output
+    )
+    if not layer_nodes:
         raise UnsupportedModelError(
             ["model has no computational layers after folding shape/terminal ops"]
         )
-    return Model(layers, input_bits=input_bits)
+    return Model(
+        layer_nodes,
+        input_bits=input_bits,
+        input_name=graph_input,
+        output_name=effective_output,
+    )
 
 
 # --- parsing helpers ----------------------------------------------------------------------
@@ -204,14 +223,6 @@ def _validate(graph: onnx.GraphProto, consts: dict[str, np.ndarray]) -> list[str
         # A residual/branching Add (both operands are activations, not a constant bias) needs
         # multi-input topological eval — surfaced here so it lands in the same all-at-once report
         # as unsupported ops (the registry lists Add as the constant-bias-fold case only).
-        if node.op_type == "Add":
-            act_inputs = [i for i in node.input if i not in consts]
-            if len(act_inputs) != 1:
-                problems.append(
-                    f"Add (node {name!r}): residual/branching Add not supported (needs exactly one "
-                    "constant-bias operand; both operands are activations here — deferred to "
-                    "Phase 8)"
-                )
 
     return problems
 
@@ -219,62 +230,81 @@ def _validate(graph: onnx.GraphProto, consts: dict[str, np.ndarray]) -> list[str
 # --- linear-chain identification ----------------------------------------------------------
 
 
-def _identify_chain(
+def _nonconstant_nodes(graph: onnx.GraphProto) -> list[onnx.NodeProto]:
+    return [n for n in graph.node if n.op_type != "Constant"]
+
+
+def _topological_nodes(
     graph: onnx.GraphProto,
     consts: dict[str, np.ndarray],
     graph_input: str,
     graph_output: str,
 ) -> list[onnx.NodeProto]:
-    """Walk the single input->output path; fail loudly on any branching or disconnection.
+    """Every non-Constant node in a valid evaluation order (stable Kahn).
 
-    Each step: the current activation tensor must be consumed by exactly one node (else fan-out
-    branching), and that node must have exactly one activation input (its other inputs are
-    constants — else fan-in branching, already reported for Add). Returns the ordered node list.
+    Raises loudly on a cycle, on a node whose activation input no node produces, and on a
+    node that cannot reach the graph output (dead code).
     """
-    producers = _nonconstant_nodes(graph)  # nodes we must account for (Constants excluded)
-    by_input: dict[str, list[onnx.NodeProto]] = {}
+    producers = _nonconstant_nodes(graph)
+    if not producers:
+        return []
+
+    producer_map: dict[str, int] = {}
+    for idx, node in enumerate(producers):
+        for out in node.output:
+            producer_map[out] = idx
+
     for node in producers:
-        for name in node.input:
-            if name not in consts:
-                by_input.setdefault(name, []).append(node)
+        name = node.name or f"<{node.op_type}>"
+        for inp in node.input:
+            if inp not in consts and inp != graph_input and inp not in producer_map:
+                raise UnsupportedModelError(
+                    [
+                        f"node {name!r} ({node.op_type}) reads tensor {inp!r}, which no node "
+                        "produces and is not a graph input"
+                    ]
+                )
 
-    chain: list[onnx.NodeProto] = []
-    seen: set[int] = set()
-    current = graph_input
-    while True:
-        consumers = by_input.get(current, [])
-        if not consumers:
-            break  # reached a graph output (a dead-end tensor)
-        if len(consumers) > 1:
-            names = [n.name or f"<{n.op_type}>" for n in consumers]
-            raise UnsupportedModelError(
-                [
-                    f"tensor {current!r} feeds {len(consumers)} nodes {names}: branching/fan-out "
-                    "graphs are not supported (linear chain only; Phase 8)"
-                ]
-            )
-        node = consumers[0]
-        act_inputs = [i for i in node.input if i not in consts]
-        if len(act_inputs) != 1:
-            name = node.name or f"<{node.op_type}>"
-            raise UnsupportedModelError(
-                [
-                    f"node {name!r} ({node.op_type}) has {len(act_inputs)} activation inputs "
-                    f"{act_inputs}: multi-input/branching nodes are not supported (Phase 8)"
-                ]
-            )
-        chain.append(node)
-        seen.add(id(node))
-        current = node.output[0]
+    forward_reachable_tensors: set[str] = {graph_input}
+    backward_reachable_tensors: set[str] = {graph_output}
 
-    if current != graph_output:
-        raise UnsupportedModelError(
-            [
-                f"the linear chain ends at tensor {current!r}, not the graph output "
-                f"{graph_output!r}: the graph is not a single input->output path (Phase 8)"
-            ]
+    node_act_inputs: list[list[str]] = [
+        [i for i in node.input if i not in consts] for node in producers
+    ]
+
+    changed = True
+    while changed:
+        changed = False
+        for idx, node in enumerate(producers):
+            ins = node_act_inputs[idx]
+            if ins and all(i in forward_reachable_tensors for i in ins):
+                for o in node.output:
+                    if o not in forward_reachable_tensors:
+                        forward_reachable_tensors.add(o)
+                        changed = True
+
+    changed = True
+    while changed:
+        changed = False
+        for idx, node in enumerate(producers):
+            if any(o in backward_reachable_tensors for o in node.output):
+                for i in node_act_inputs[idx]:
+                    if i not in backward_reachable_tensors:
+                        backward_reachable_tensors.add(i)
+                        changed = True
+
+    unreached = []
+    for idx, node in enumerate(producers):
+        name = node.name or f"<{node.op_type}>"
+        is_forward = (
+            all(i in forward_reachable_tensors for i in node_act_inputs[idx])
+            if node_act_inputs[idx]
+            else False
         )
-    unreached = [n.name or f"<{n.op_type}>" for n in producers if id(n) not in seen]
+        is_backward = any(o in backward_reachable_tensors for o in node.output)
+        if not (is_forward and is_backward):
+            unreached.append(name)
+
     if unreached:
         raise UnsupportedModelError(
             [
@@ -282,66 +312,234 @@ def _identify_chain(
                 "graphs are not supported (Phase 8)"
             ]
         )
-    return chain
+
+    num_nodes = len(producers)
+    in_deps: list[set[int]] = [set() for _ in range(num_nodes)]
+    dependents: list[list[int]] = [[] for _ in range(num_nodes)]
+
+    for c_idx, ins in enumerate(node_act_inputs):
+        for inp in ins:
+            if inp in producer_map:
+                p_idx = producer_map[inp]
+                if p_idx not in in_deps[c_idx]:
+                    in_deps[c_idx].add(p_idx)
+                    dependents[p_idx].append(c_idx)
+
+    ready = [idx for idx, deps in enumerate(in_deps) if not deps]
+    heapq.heapify(ready)
+
+    order: list[int] = []
+    while ready:
+        idx = heapq.heappop(ready)
+        order.append(idx)
+        for dep in dependents[idx]:
+            in_deps[dep].remove(idx)
+            if not in_deps[dep]:
+                heapq.heappush(ready, dep)
+
+    if len(order) < num_nodes:
+        visited = set(order)
+        cycle_names = [
+            producers[i].name or f"<{producers[i].op_type}>"
+            for i in range(num_nodes)
+            if i not in visited
+        ]
+        raise UnsupportedModelError(
+            [
+                f"graph has a cycle: node(s) {cycle_names} are never ready — their inputs depend "
+                "on their own outputs"
+            ]
+        )
+
+    return [producers[i] for i in order]
 
 
-def _nonconstant_nodes(graph: onnx.GraphProto) -> list[onnx.NodeProto]:
-    return [n for n in graph.node if n.op_type != "Constant"]
-
-
-# --- lowering -----------------------------------------------------------------------------
-
-
-def _lower_chain(
-    chain: list[onnx.NodeProto],
+def _lower_graph(
+    topo_nodes: list[onnx.NodeProto],
     consts: dict[str, np.ndarray],
     shapes: dict[str, tuple[int | None, ...]],
     graph_input: str,
-) -> list[Layer]:
-    """Lower an ordered node chain to float :mod:`penumbra.layers` layers.
+    graph_output: str,
+) -> tuple[list[LayerNode], str]:
+    """Lower an ordered node DAG to a list of LayerNodes.
 
-    Shape ops (Reshape/Flatten/Transpose) fold to nothing; a terminal classifier tail
-    (Softmax/LogSoftmax/Sigmoid/ArgMax) is dropped; a constant-bias Add folds into the preceding
-    accumulator's bias; everything else lowers to its layer.
+    Returns (layer_nodes, effective_graph_output).
     """
-    layers: list[Layer] = []
-    n = len(chain)
-    for idx, node in enumerate(chain):
-        cat = op_registry.rule_for(node.op_type).category
-        is_last = idx == n - 1
-        act_in = _activation_input(node, consts)
+    layer_nodes: list[LayerNode] = []
+    produced: dict[str, str] = {graph_input: graph_input}
+    effective_output = graph_output
+
+    for node in topo_nodes:
+        rule = op_registry.rule_for(node.op_type)
+        cat = rule.category
+        name = node.name or f"<{node.op_type}>"
 
         if cat == op_registry.CAT_TERMINAL:
-            if not is_last:
+            if graph_output not in node.output:
                 raise UnsupportedModelError(
                     [
-                        f"{node.op_type} (node {node.name or '<?>'!r}) is not the terminal node: a "
+                        f"{node.op_type} (node {name!r}) is not the terminal node: a "
                         "non-terminal Softmax/Sigmoid/ArgMax is a real activation and is not "
                         "supported (only a terminal classifier tail is dropped; Phase 8)"
                     ]
                 )
-            break  # drop the terminal tail: logits are the graph output, client argmaxes them
-        elif cat == op_registry.CAT_SHAPE:
-            _check_shape_op_is_noop(node, shapes, act_in)
-            continue  # layout no-op on the flat wire
-        elif cat == op_registry.CAT_BIAS_ADD:
-            _fold_bias_add(node, consts, layers)
+            act_ins = [i for i in node.input if i not in consts]
+            if len(act_ins) != 1:
+                raise UnsupportedModelError(
+                    [f"node {name!r} ({node.op_type}) does not have a single activation input"]
+                )
+            effective_output = produced.get(act_ins[0], act_ins[0])
             continue
-        elif node.op_type == "Conv":
-            layers.append(_lower_conv(node, consts, shapes, act_in))
-        elif node.op_type in ("Gemm", "MatMul"):
-            layers.append(_lower_linear(node, consts, act_in))
-        elif cat == op_registry.CAT_ACTIVATION:
-            if node.op_type == "Sigmoid" and is_last:
-                break  # terminal sigmoid is argmax-invariant — dropped, as in Phase 6
-            layers.append(Activation(activation_fn(node.op_type, _attrs(node))))
-        elif cat == op_registry.CAT_POOL:
-            layers.append(_lower_pool(node, shapes, act_in))
-        else:  # pragma: no cover - registry/loader drift guard
-            raise UnsupportedModelError(
-                [f"operator {node.op_type} (node {node.name or '<?>'!r}) has no lowering rule"]
+
+        if cat == op_registry.CAT_SHAPE:
+            act_ins = [i for i in node.input if i not in consts]
+            if len(act_ins) != 1:
+                raise UnsupportedModelError(
+                    [f"node {name!r} ({node.op_type}) does not have a single activation input"]
+                )
+            act_in = act_ins[0]
+            _check_shape_op_is_noop(node, shapes, act_in)
+            produced[node.output[0]] = produced.get(act_in, act_in)
+            continue
+
+        if cat == op_registry.CAT_BIAS_ADD:
+            const_inputs = [i for i in node.input if i in consts]
+            if const_inputs:
+                _fold_bias_add(node, consts, produced, layer_nodes, topo_nodes)
+                continue
+            cat = op_registry.CAT_MERGE
+
+        if cat == op_registry.CAT_BN_FOLD:
+            _fold_batchnorm(node, consts, produced, layer_nodes, topo_nodes)
+            continue
+
+        if cat == op_registry.CAT_MERGE:
+            if node.op_type == "Concat":
+                act_ins = [i for i in node.input if i not in consts]
+                rank = len(shapes[act_ins[0]]) if act_ins and act_ins[0] in shapes else 2
+                raw_axis = int(_attrs(node).get("axis", 1))  # type: ignore[arg-type]
+                resolved_axis = raw_axis % rank
+                if resolved_axis != 1:
+                    raise UnsupportedModelError(
+                        [
+                            f"Concat (node {name!r}): axis={raw_axis} resolved to {resolved_axis}; "
+                            "only axis 1 is supported"
+                        ]
+                    )
+                if rank == 4 and act_ins[0] in shapes:
+                    h0, w0 = shapes[act_ins[0]][2], shapes[act_ins[0]][3]
+                    for inp in act_ins[1:]:
+                        if inp in shapes:
+                            h, w = shapes[inp][2], shapes[inp][3]
+                            if (h, w) != (h0, w0):
+                                raise UnsupportedModelError(
+                                    [
+                                        f"Concat (node {name!r}): all inputs must share spatial "
+                                        f"dimensions (H, W); got ({h0}, {w0}) vs ({h}, {w})"
+                                    ]
+                                )
+                inputs = [produced.get(i, i) for i in node.input]
+                ln = LayerNode(name=name, layer=Concat(), inputs=inputs, outputs=[node.output[0]])
+                layer_nodes.append(ln)
+                produced[node.output[0]] = node.output[0]
+            elif node.op_type == "Add":
+                inputs = [produced.get(i, i) for i in node.input]
+                ln = LayerNode(name=name, layer=Add(), inputs=inputs, outputs=[node.output[0]])
+                layer_nodes.append(ln)
+                produced[node.output[0]] = node.output[0]
+            continue
+
+        if cat == op_registry.CAT_SPLIT:
+            act_ins = [i for i in node.input if i not in consts]
+            if len(act_ins) != 1:
+                raise UnsupportedModelError(
+                    [f"Split (node {name!r}): must have a single activation input"]
+                )
+            act_in = act_ins[0]
+            rank = len(shapes[act_in]) if act_in in shapes else 2
+            node_attrs = _attrs(node)
+            axis_attr = node_attrs.get("axis", 0)
+            raw_axis = int(axis_attr)  # type: ignore[arg-type]
+            resolved_axis = raw_axis % rank
+            if resolved_axis != 1:
+                raise UnsupportedModelError(
+                    [
+                        f"Split (node {name!r}): axis={raw_axis} resolved to {resolved_axis}; "
+                        "only axis 1 is supported"
+                    ]
+                )
+
+            attrs = _attrs(node)
+            if "split" in attrs:
+                split_channels = [int(v) for v in attrs["split"]]  # type: ignore[union-attr]
+            elif len(node.input) > 1 and node.input[1] in consts:
+                split_channels = [int(v) for v in consts[node.input[1]].reshape(-1)]
+            else:
+                total_c = (
+                    shapes[act_in][1]
+                    if act_in in shapes and shapes[act_in][1] is not None
+                    else None
+                )
+                if total_c is None:
+                    raise UnsupportedModelError(
+                        [
+                            f"Split (node {name!r}): cannot infer split sizes without shape or "
+                            "split attribute"
+                        ]
+                    )
+                n_splits = len(node.output)
+                if total_c % n_splits != 0:
+                    raise UnsupportedModelError(
+                        [
+                            f"Split (node {name!r}): cannot split {total_c} channels into "
+                            f"{n_splits} equal parts"
+                        ]
+                    )
+                split_channels = [total_c // n_splits] * n_splits
+
+            if rank == 4 and act_in in shapes:
+                h, w = shapes[act_in][2], shapes[act_in][3]
+                spatial = (h or 1) * (w or 1)
+            else:
+                spatial = 1
+            flat_sizes = [c * spatial for c in split_channels]
+
+            ln = LayerNode(
+                name=name,
+                layer=Split(sizes=flat_sizes),
+                inputs=[produced.get(act_in, act_in)],
+                outputs=list(node.output),
             )
-    return layers
+            layer_nodes.append(ln)
+            for out in node.output:
+                produced[out] = out
+            continue
+
+        act_ins = [i for i in node.input if i not in consts]
+        act_in = act_ins[0]
+        in_name = produced.get(act_in, act_in)
+
+        if node.op_type == "Conv":
+            ly = _lower_conv(node, consts, shapes, act_in)
+        elif node.op_type in ("Gemm", "MatMul"):
+            ly = _lower_linear(node, consts, act_in)
+        elif cat == op_registry.CAT_ACTIVATION:
+            if node.op_type == "Sigmoid" and node.output[0] == graph_output:
+                effective_output = in_name
+                continue
+            ly = Activation(activation_fn(node.op_type, _attrs(node)))
+        elif cat == op_registry.CAT_POOL:
+            ly = _lower_pool(node, shapes, act_in)
+        else:
+            raise UnsupportedModelError(
+                [f"operator {node.op_type} (node {name!r}) has no lowering rule"]
+            )
+
+        ln = LayerNode(name=name, layer=ly, inputs=[in_name], outputs=[node.output[0]])
+        layer_nodes.append(ln)
+        produced[node.output[0]] = node.output[0]
+
+    return layer_nodes, effective_output
 
 
 def _activation_input(node: onnx.NodeProto, consts: dict[str, np.ndarray]) -> str:
@@ -521,30 +719,63 @@ def _lower_pool(
     )
 
 
-def _fold_bias_add(
-    node: onnx.NodeProto, consts: dict[str, np.ndarray], layers: list[Layer]
-) -> None:
-    """Fold a constant-operand Add into the preceding accumulator layer's bias.
+def _fold_into_producer(
+    produced: dict[str, str],
+    layer_nodes: list[LayerNode],
+    topo_nodes: list[onnx.NodeProto],
+    act_in: str,
+    node_name: str,
+    what: str,
+) -> tuple[Linear | Conv2d, LayerNode]:
+    prod_tensor = produced.get(act_in, act_in)
+    producer_ln = None
+    for ln in layer_nodes:
+        if prod_tensor in ln.outputs:
+            producer_ln = ln
+            break
 
-    A dense layer commonly exports as MatMul then Add-of-a-constant; that Add *is* the layer's
-    bias. (A residual Add — both operands activations — was already rejected in validation.)
-    """
+    consumers = [n for n in topo_nodes if any(i == act_in for i in n.input)]
+    if len(consumers) != 1:
+        raise UnsupportedModelError(
+            [
+                f"{what} (node {node_name!r}): must directly follow a Conv/Gemm/MatMul to fold "
+                f"into its weights; its input is consumed by {len(consumers)} nodes. Branching an "
+                "un-folded accumulator is not supported."
+            ]
+        )
+
+    if producer_ln is None or not isinstance(producer_ln.layer, (Linear, Conv2d)):
+        producer_desc = type(producer_ln.layer).__name__ if producer_ln else "nothing"
+        raise UnsupportedModelError(
+            [
+                f"{what} (node {node_name!r}): must directly follow a Conv/Gemm/MatMul to "
+                f"fold into its weights; its input is produced by {producer_desc}. Re-export "
+                f"with the {what} adjacent to its accumulator, or remove it."
+            ]
+        )
+    return producer_ln.layer, producer_ln
+
+
+def _fold_bias_add(
+    node: onnx.NodeProto,
+    consts: dict[str, np.ndarray],
+    produced: dict[str, str],
+    layer_nodes: list[LayerNode],
+    topo_nodes: list[onnx.NodeProto],
+) -> None:
+    """Fold a constant-operand Add into the preceding accumulator layer's bias."""
     name = node.name or "<Add>"
     const_inputs = [i for i in node.input if i in consts]
-    if len(const_inputs) != 1:
+    act_inputs = [i for i in node.input if i not in consts]
+    if len(const_inputs) != 1 or len(act_inputs) != 1:
         raise UnsupportedModelError(
             [f"Add (node {name!r}): expected exactly one constant operand to fold as a bias"]
         )
+    act_in = act_inputs[0]
     addend = np.asarray(consts[const_inputs[0]], dtype=np.float64).reshape(-1)
-    if not layers or not isinstance(layers[-1], (Linear, Conv2d)):
-        raise UnsupportedModelError(
-            [
-                f"Add (node {name!r}): a constant-bias Add must directly follow a "
-                "Gemm/MatMul/Conv accumulator to fold into its bias"
-            ]
-        )
-    acc = layers[-1]
-    n_out = acc.weight.shape[0]
+
+    producer_layer, _ = _fold_into_producer(produced, layer_nodes, topo_nodes, act_in, name, "Add")
+    n_out = producer_layer.weight.shape[0]
     if addend.shape[0] != n_out:
         raise UnsupportedModelError(
             [
@@ -552,7 +783,61 @@ def _fold_bias_add(
                 f"layer output size {n_out}; cannot fold as a bias"
             ]
         )
-    acc.bias = addend if acc.bias is None else np.asarray(acc.bias, dtype=np.float64) + addend
+    producer_layer.bias = (
+        addend
+        if producer_layer.bias is None
+        else np.asarray(producer_layer.bias, dtype=np.float64) + addend
+    )
+    produced[node.output[0]] = produced.get(act_in, act_in)
+
+
+def _fold_batchnorm(
+    node: onnx.NodeProto,
+    consts: dict[str, np.ndarray],
+    produced: dict[str, str],
+    layer_nodes: list[LayerNode],
+    topo_nodes: list[onnx.NodeProto],
+) -> None:
+    """Fold inference-time BatchNorm into the preceding accumulator layer."""
+    name = node.name or "<BatchNormalization>"
+    if len(node.output) != 1:
+        raise UnsupportedModelError(
+            [
+                f"BatchNormalization (node {name!r}): has {len(node.output)} outputs; "
+                "only inference-mode BN (1 output) is supported"
+            ]
+        )
+    if len(node.input) < 5 or any(node.input[i] not in consts for i in range(1, 5)):
+        raise UnsupportedModelError(
+            [
+                f"BatchNormalization (node {name!r}): scale/B/mean/var must be constant "
+                "initializers (a runtime-computed BN cannot be folded)"
+            ]
+        )
+
+    act_in = node.input[0]
+    producer_layer, _ = _fold_into_producer(
+        produced, layer_nodes, topo_nodes, act_in, name, "BatchNormalization"
+    )
+
+    scale = np.asarray(consts[node.input[1]], dtype=np.float64)
+    beta = np.asarray(consts[node.input[2]], dtype=np.float64)
+    mean = np.asarray(consts[node.input[3]], dtype=np.float64)
+    var = np.asarray(consts[node.input[4]], dtype=np.float64)
+    epsilon = float(_attrs(node).get("epsilon", 1e-5))
+
+    folded_w, folded_b = fold_batchnorm(
+        producer_layer.weight,
+        producer_layer.bias,
+        scale=scale,
+        beta=beta,
+        mean=mean,
+        var=var,
+        epsilon=epsilon,
+    )
+    producer_layer.weight = folded_w
+    producer_layer.bias = folded_b
+    produced[node.output[0]] = produced.get(act_in, act_in)
 
 
 def _check_shape_op_is_noop(

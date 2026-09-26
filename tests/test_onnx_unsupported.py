@@ -41,31 +41,30 @@ def _f32(arr, name):
 
 
 def test_lists_all_unsupported_problems_at_once(tmp_path):
-    """A model with BatchNorm + a residual Add reports both at once (Tanh is supported)."""
+    """A model with invalid attributes on Concat + Conv reports both at once."""
     rng = np.random.default_rng(0)
     w = rng.normal(size=(4, 4))
-    scale = np.ones(4)
-    b = np.zeros(4)
-    mean = np.zeros(4)
-    var = np.ones(4)
+    wc = rng.normal(size=(4, 1, 3, 3))
     nodes = [
         helper.make_node("MatMul", ["x", "w"], ["h"], name="mm"),
-        helper.make_node("BatchNormalization", ["h", "s", "bb", "m", "v"], ["bn"], name="bn1"),
-        helper.make_node("Tanh", ["bn"], ["t"], name="tanh1"),
-        helper.make_node(
-            "Add", ["t", "h"], ["y"], name="res"
-        ),  # residual: both operands activations
+        helper.make_node("Concat", ["h", "h"], ["c"], name="cat1", axis=0),
+        helper.make_node("Conv", ["img", "wc"], ["y"], name="c1", group=2, strides=[1, 1]),
     ]
-    inits = [_f32(w, "w"), _f32(scale, "s"), _f32(b, "bb"), _f32(mean, "m"), _f32(var, "v")]
-    path = _model(nodes, inits, [_vi("x", [1, 4])], [_vi("y", [1, 4])], tmp_path)
+    inits = [_f32(w, "w"), _f32(wc, "wc")]
+    path = _model(
+        nodes,
+        inits,
+        [_vi("x", [1, 4]), _vi("img", [1, 2, 8, 8])],
+        [_vi("c", [2, 4]), _vi("y", [1, 4, 6, 6])],
+        tmp_path,
+    )
 
     with pytest.raises(UnsupportedModelError) as exc:
         fhe.load_onnx(path)
     problems = exc.value.problems
-    # Two offenders named in one report, each actionable (Tanh is supported).
     joined = "\n".join(problems)
-    assert "BatchNormalization" in joined and "'bn1'" in joined
-    assert "Add" in joined and "'res'" in joined
+    assert "Concat" in joined and "'cat1'" in joined
+    assert "Conv" in joined and "'c1'" in joined
     assert len(problems) == 2
 
 
@@ -109,22 +108,6 @@ def test_branching_graph_fails_loudly(tmp_path):
     )
     with pytest.raises(UnsupportedModelError, match="output"):
         # Two graph outputs is itself rejected; if single-output, fan-out is caught in the walker.
-        fhe.load_onnx(path)
-
-
-def test_fanout_branching_single_output_fails_loudly(tmp_path):
-    """x feeding two nodes that reconverge is branching even with a single graph output."""
-    rng = np.random.default_rng(2)
-    w1 = rng.normal(size=(4, 4))
-    w2 = rng.normal(size=(4, 4))
-    nodes = [
-        helper.make_node("Gemm", ["x", "w1"], ["a"], name="ga", transB=1),
-        helper.make_node("Gemm", ["x", "w2"], ["b"], name="gb", transB=1),  # fan-out on x
-        helper.make_node("Add", ["a", "b"], ["y"], name="merge"),  # reconverge (residual)
-    ]
-    inits = [_f32(w1, "w1"), _f32(w2, "w2")]
-    path = _model(nodes, inits, [_vi("x", [1, 4])], [_vi("y", [1, 4])], tmp_path)
-    with pytest.raises(UnsupportedModelError, match="branch|fan-out|residual"):
         fhe.load_onnx(path)
 
 

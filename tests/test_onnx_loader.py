@@ -408,3 +408,119 @@ def test_terminal_sigmoid_is_dropped_mid_graph_lowers(tmp_path):
     m_mid = fhe.load_onnx(path_mid)
     assert len(m_mid.layers) == 3
     assert isinstance(m_mid.layers[1], Activation)
+
+
+def test_residual_add_lowers_to_add_layer(tmp_path):
+    """Residual Add (both inputs activations) lowers to a layers.Add node."""
+    w1 = np.eye(4)
+    w2 = np.eye(4)
+    nodes = [
+        helper.make_node("Gemm", ["x", "w1"], ["a"], name="ga", transB=1),
+        helper.make_node("Gemm", ["x", "w2"], ["b"], name="gb", transB=1),
+        helper.make_node("Add", ["a", "b"], ["y"], name="res"),
+    ]
+    inits = [_f32(w1, "w1"), _f32(w2, "w2")]
+    path = _save(nodes, inits, [_vi("x", [1, 4])], [_vi("y", [1, 4])], tmp_path)
+    model = fhe.load_onnx(path)
+    assert len(model.nodes) == 3
+    add_node = next(n for n in model.nodes if n.name == "res")
+    assert isinstance(add_node.layer, fhe.layers.Add)
+    assert add_node.inputs == ["a", "b"]
+    assert add_node.outputs == ["y"]
+
+
+def test_concat_lowers_with_right_flat_sizes(tmp_path):
+    """Concat along axis=1 lowers to layers.Concat."""
+    w1 = np.eye(3)
+    w2 = np.eye(5)
+    nodes = [
+        helper.make_node("Gemm", ["x", "w1"], ["a"], name="ga", transB=1),
+        helper.make_node("Gemm", ["x", "w2"], ["b"], name="gb", transB=1),
+        helper.make_node("Concat", ["a", "b"], ["y"], name="cat", axis=1),
+    ]
+    inits = [_f32(w1, "w1"), _f32(w2, "w2")]
+    path = _save(nodes, inits, [_vi("x", [1, 4])], [_vi("y", [1, 8])], tmp_path)
+    model = fhe.load_onnx(path)
+    cat_node = next(n for n in model.nodes if n.name == "cat")
+    assert isinstance(cat_node.layer, fhe.layers.Concat)
+    assert cat_node.inputs == ["a", "b"]
+    assert cat_node.outputs == ["y"]
+
+
+def test_split_lowers_with_channel_to_flat_sizes_rank4(tmp_path):
+    """Split along channel axis converts channel counts to flat element counts on rank-4."""
+    wc = np.ones((4, 1, 3, 3))
+    sp_split = numpy_helper.from_array(np.array([2, 2], dtype=np.int64), "sp_split")
+    nodes = [
+        helper.make_node("Conv", ["x", "wc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node("Split", ["c", "sp_split"], ["s0", "s1"], name="sp", axis=1),
+        helper.make_node("Concat", ["s0", "s1"], ["y"], name="cat", axis=1),
+    ]
+    inits = [_f32(wc, "wc"), sp_split]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 8, 8])], [_vi("y", [1, 4, 6, 6])], tmp_path)
+    model = fhe.load_onnx(path)
+    split_node = next(n for n in model.nodes if n.name == "sp")
+    assert isinstance(split_node.layer, fhe.layers.Split)
+    assert split_node.layer.sizes == [72, 72]
+    assert split_node.outputs == ["s0", "s1"]
+
+
+def test_batchnorm_folds_into_preceding_conv(tmp_path):
+    """BatchNorm immediately following Conv folds into Conv weights/bias with no extra layer."""
+    rng = np.random.default_rng(42)
+    wc = rng.normal(size=(4, 1, 3, 3))
+    bc = rng.normal(size=4)
+    scale = rng.uniform(0.5, 2.0, size=4)
+    b = rng.normal(size=4)
+    mean = rng.normal(size=4)
+    var = rng.uniform(0.1, 3.0, size=4)
+    eps = 1e-5
+
+    nodes = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node(
+            "BatchNormalization",
+            ["c", "scale", "b", "mean", "var"],
+            ["y"],
+            name="bn",
+            epsilon=eps,
+        ),
+    ]
+    inits = [
+        _f32(wc, "wc"),
+        _f32(bc, "bc"),
+        _f32(scale, "scale"),
+        _f32(b, "b"),
+        _f32(mean, "mean"),
+        _f32(var, "var"),
+    ]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 8, 8])], [_vi("y", [1, 4, 6, 6])], tmp_path)
+    model = fhe.load_onnx(path)
+
+    assert len(model.nodes) == 1
+    assert model.nodes[0].name == "conv"
+    conv_layer = model.nodes[0].layer
+    assert isinstance(conv_layer, Conv2d)
+
+    s = scale / np.sqrt(var + eps)
+    expected_w = s[:, None, None, None] * wc
+    expected_b = (bc - mean) * s + b
+    np.testing.assert_allclose(conv_layer.weight, expected_w, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(conv_layer.bias, expected_b, rtol=1e-6, atol=1e-6)
+
+
+def test_fanout_tensor_lowers_without_error(tmp_path):
+    """A fan-out tensor read by two downstream nodes lowers cleanly in the DAG."""
+    w1 = np.eye(3)
+    w2 = np.eye(3)
+    nodes = [
+        helper.make_node("Gemm", ["x", "w1"], ["h"], name="fc1", transB=1),
+        helper.make_node("Gemm", ["h", "w2"], ["a"], name="branch_a", transB=1),
+        helper.make_node("Gemm", ["h", "w2"], ["b"], name="branch_b", transB=1),
+        helper.make_node("Add", ["a", "b"], ["y"], name="add"),
+    ]
+    inits = [_f32(w1, "w1"), _f32(w2, "w2")]
+    path = _save(nodes, inits, [_vi("x", [1, 3])], [_vi("y", [1, 3])], tmp_path)
+    model = fhe.load_onnx(path)
+    assert len(model.nodes) == 4
+    assert [n.name for n in model.nodes] == ["fc1", "branch_a", "branch_b", "add"]

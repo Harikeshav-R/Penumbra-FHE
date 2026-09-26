@@ -139,7 +139,10 @@ equals `op_registry.supported_onnx_ops()` exactly, so doc and validator never dr
 | `MaxPool` | `Pool` (`max`) | `pads=0`; `ceil_mode=0`; uniform 2-D kernel/stride |
 | `AveragePool` | `Pool` (`avg`) | `pads=0`; `ceil_mode=0`; uniform 2-D kernel/stride (emits window **sum**) |
 | `GlobalAveragePool` | `Pool` (`avg`) | kernel = full spatial size (emits window **sum**) |
-| `Add` | `Linear` bias | fold-only: one operand must be a constant initializer (residual `Add` is Phase 8) |
+| `Add` | `Add / Linear bias fold` | constant add folds into preceding accumulator bias; residual add (both activations) lowers to internal `Add` |
+| `Concat` | `Concat` | `axis=1` (or resolves to 1); non-concatenated dimensions must match |
+| `Split` | `Split` | `axis=1` (or resolves to 1); sizes from attribute, constant input, or equal division |
+| `BatchNormalization` | `(folded into preceding Conv2d/Linear)` | `training_mode=0`; constant scale/B/mean/var; must follow a Conv/Gemm/MatMul |
 | `Reshape` | dropped (layout no-op) | must not reorder the flat channel-major vector |
 | `Flatten` | dropped (layout no-op) | — |
 | `Transpose` | dropped (layout no-op) | `perm` must not change flat element order (else rejected) |

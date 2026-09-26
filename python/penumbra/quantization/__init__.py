@@ -48,6 +48,7 @@ from penumbra.quantization.activations import (
     sigmoid,
     tanh,
 )
+from penumbra.quantization.batchnorm import fold_batchnorm
 from penumbra.quantization.calibration import (
     Calibrator,
     MinMaxObserver,
@@ -94,6 +95,7 @@ __all__ = [
     "quantize_linear_integer_input",
     "choose_requant_params",
     # LUT generation (lut.py)
+    "fold_batchnorm",
     # Float activations + dispatch (activations.py)
     "activation_fn",
     "relu",

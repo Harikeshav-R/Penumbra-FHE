@@ -30,8 +30,9 @@ registry recognizes exactly the ONNX ops that shape maps onto that chain:
     Softmax / LogSoftmax /      -> (terminal classifier tail, dropped; client argmaxes logits)
       Sigmoid / ArgMax
 
-Branching (residual ``Add``, ``Concat``), non-ReLU activations, and ``BatchNormalization``
-are deferred to Phase 8 and rejected loudly (``ROADMAP.md`` Phase 6/8).
+Branching (residual ``Add``, ``Concat``, ``Split``), non-ReLU activations (via affine LUTs),
+and inference-mode ``BatchNormalization`` (folded into preceding accumulators) are supported
+as of Phase 8.
 """
 
 from __future__ import annotations
@@ -55,6 +56,9 @@ CAT_POOL = "pool"  # MaxPool / AveragePool / GlobalAveragePool -> Pool
 CAT_BIAS_ADD = "bias_add"  # Add -> folded into a preceding MatMul's Linear bias (or rejected)
 CAT_SHAPE = "shape"  # Reshape / Flatten / Transpose -> layout no-op, folded away
 CAT_TERMINAL = "terminal"  # Softmax / LogSoftmax / Sigmoid / ArgMax -> dropped terminal tail
+CAT_MERGE = "merge"  # Concat -> Concat; a residual Add -> Add
+CAT_SPLIT = "split"  # Split -> Split
+CAT_BN_FOLD = "bn_fold"  # BatchNormalization -> folded into preceding accumulator
 
 
 @dataclass(frozen=True)
@@ -235,15 +239,56 @@ REGISTRY: dict[str, OnnxOpRule] = {
     ),
     "Add": OnnxOpRule(
         onnx_op="Add",
-        internal_op="Linear (bias fold)",
+        internal_op="Add / Linear bias fold",
         category=CAT_BIAS_ADD,
         rationale=(
-            "A constant-initializer Add right after a MatMul is that dense layer's bias — folded "
-            "into `Linear.bias`. A residual/branching Add (both operands are activations) needs "
-            "multi-input topological eval and is deferred to Phase 8."
+            "A constant-initializer Add after MatMul/Conv folds into its bias; a residual Add "
+            "(both operands activations) lowers to internal Add. Operands must share one "
+            "quantization scale, which the merge-scale pass enforces."
+        ),
+        attribute_constraints="none; both operands must have matching shapes.",
+    ),
+    "Concat": OnnxOpRule(
+        onnx_op="Concat",
+        internal_op="Concat",
+        category=CAT_MERGE,
+        rationale=(
+            "Concatenation along the channel axis is a relabelling of the flat channel-major "
+            "wire — free under TFHE (a ciphertext move, no PBS) and a 0/1 selection linear map "
+            "under CKKS. Operands must share one quantization scale, which the merge-scale "
+            "pass enforces."
         ),
         attribute_constraints=(
-            "one operand must be a constant initializer (else branching -> Phase 8)."
+            "axis must resolve to 1 (the channel/feature axis); all inputs must share their "
+            "non-concatenated dims."
+        ),
+    ),
+    "Split": OnnxOpRule(
+        onnx_op="Split",
+        internal_op="Split",
+        category=CAT_SPLIT,
+        rationale=(
+            "Splitting along the channel axis is a contiguous segmentation of the flat wire — "
+            "free under TFHE, a 0/1 window map under CKKS. Scale and zero-point pass through "
+            "unchanged."
+        ),
+        attribute_constraints=(
+            "axis must resolve to 1; split sizes come from the 'split' attribute (opset < 13), "
+            "a constant 'split' input (opset >= 13), or an equal division."
+        ),
+    ),
+    "BatchNormalization": OnnxOpRule(
+        onnx_op="BatchNormalization",
+        internal_op="(folded into the preceding Conv2d/Linear)",
+        category=CAT_BN_FOLD,
+        rationale=(
+            "Inference-time BN is a per-channel affine map that composes exactly with the "
+            "preceding accumulator's weights and bias, so it is folded at load time and costs "
+            "nothing at runtime."
+        ),
+        attribute_constraints=(
+            "training_mode must be 0/absent; exactly one output; scale/B/mean/var must be "
+            "constant initializers; must directly follow a Conv/Gemm/MatMul."
         ),
     ),
     "Reshape": OnnxOpRule(
@@ -485,6 +530,27 @@ def check_attributes(op_type: str, attrs: dict[str, object], node_name: str) -> 
                 problems.append(
                     f"HardSigmoid (node {node_name!r}): beta={beta} is not a valid float"
                 )
+    elif op_type in ("Concat", "Split"):
+        axis = attrs.get("axis")
+        if axis is None and op_type == "Concat":
+            problems.append(f"Concat (node {node_name!r}): missing required attribute 'axis'")
+        elif axis is not None:
+            try:
+                ax = int(axis)  # type: ignore[arg-type]
+                if ax != 1 and ax >= 0:
+                    problems.append(
+                        f"{op_type} (node {node_name!r}): axis={axis} not supported "
+                        "(only channel axis 1)"
+                    )
+            except (TypeError, ValueError):
+                problems.append(f"{op_type} (node {node_name!r}): axis={axis!r} is not a valid int")
+    elif op_type == "BatchNormalization":
+        training_mode = attrs.get("training_mode", 0)
+        if training_mode != 0:
+            problems.append(
+                f"BatchNormalization (node {node_name!r}): training_mode={training_mode} not "
+                "supported (only inference-mode BN with training_mode=0)"
+            )
     return problems
 
 
