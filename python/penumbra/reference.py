@@ -27,11 +27,14 @@ from penumbra.ir import (
     AddSpec,
     ArgmaxSpec,
     CompareSpec,
+    ConcatSpec,
     Conv2dSpec,
     Graph,
     LinearSpec,
     PoolSpec,
     RequantSpec,
+    SplitSpec,
+    topological_nodes,
 )
 
 
@@ -153,6 +156,33 @@ def _compare(op: CompareSpec, x: list[int]) -> list[int]:
     return out
 
 
+def _concat(op: ConcatSpec, xs: list[list[int]]) -> list[int]:
+    """Integer channel-axis concatenation of N tensors (``concat.rs``)."""
+    if len(xs) != len(op.sizes):
+        raise ValueError(f"Concat expects {len(op.sizes)} input tensors; got {len(xs)}")
+    out: list[int] = []
+    for i, (x, sz) in enumerate(zip(xs, op.sizes, strict=True)):
+        if len(x) != sz:
+            raise ValueError(f"Concat segment {i} expects length {sz}; got {len(x)}")
+        out.extend(x)
+    return out
+
+
+def _split(op: SplitSpec, x: list[int]) -> list[list[int]]:
+    """Integer contiguous segmentation of a flat tensor into N output tensors (``split.rs``)."""
+    total = sum(op.sizes)
+    if len(x) != total:
+        raise ValueError(
+            f"Split input length {len(x)} does not match sum of declared sizes {total}"
+        )
+    out: list[list[int]] = []
+    offset = 0
+    for sz in op.sizes:
+        out.append(x[offset : offset + sz])
+        offset += sz
+    return out
+
+
 def evaluate_graph_int(graph: Graph, inputs: dict[str, list[int]]) -> dict[str, list[int]]:
     """Evaluate ``graph`` in plain integers, returning every graph-output tensor.
 
@@ -163,11 +193,26 @@ def evaluate_graph_int(graph: Graph, inputs: dict[str, list[int]]) -> dict[str, 
     """
     env: dict[str, list[int]] = {name: list(inputs[name]) for name in graph.inputs}
 
-    for node in graph.nodes:
+    for node in topological_nodes(graph):
         op = node.op
         if isinstance(op, AddSpec):
             a, b = (env[name] for name in node.inputs)
             out = [x + y for x, y in zip(a, b, strict=True)]
+            env[node.outputs[0]] = out
+        elif isinstance(op, ConcatSpec):
+            xs = [env[name] for name in node.inputs]
+            out = _concat(op, xs)
+            env[node.outputs[0]] = out
+        elif isinstance(op, SplitSpec):
+            x = env[node.inputs[0]]
+            outs = _split(op, x)
+            if len(node.outputs) != len(outs):
+                raise ValueError(
+                    f"node {node.name!r} declares {len(node.outputs)} outputs but Split "
+                    f"produces {len(outs)}"
+                )
+            for out_name, out in zip(node.outputs, outs, strict=True):
+                env[out_name] = out
         else:
             x = env[node.inputs[0]]
             if isinstance(op, Conv2dSpec):
@@ -181,9 +226,6 @@ def evaluate_graph_int(graph: Graph, inputs: dict[str, list[int]]) -> dict[str, 
             elif isinstance(op, ActivationSpec):
                 out = _activation(op, x)
             elif isinstance(op, ArgmaxSpec):
-                # 2-class threshold -> encrypted 0/1 label (a single value). The op thresholds a
-                # single logit; a multi-element input is a wiring bug (it would silently threshold
-                # only x[0] and drop the rest). Fail loudly (`AGENTS.md` §1.4).
                 if len(x) != 1:
                     raise ValueError(
                         f"Argmax expects a single-logit input, got {len(x)} elements; the 2-class "
@@ -192,8 +234,8 @@ def evaluate_graph_int(graph: Graph, inputs: dict[str, list[int]]) -> dict[str, 
                 out = [1 if x[0] >= op.threshold else 0]
             elif isinstance(op, CompareSpec):
                 out = _compare(op, x)
-            else:  # pragma: no cover - every OpSpec variant is handled above
+            else:  # pragma: no cover
                 raise ValueError(f"reference evaluator: unsupported op {op.op_type!r}")
-        env[node.outputs[0]] = out
+            env[node.outputs[0]] = out
 
     return {name: env[name] for name in graph.outputs}

@@ -42,7 +42,15 @@ from penumbra.bitwidth import (
     propagate_bit_widths,
     radix_capacity_bits,
 )
-from penumbra.ir import ArgmaxSpec, Conv2dSpec, Graph, LinearSpec, Node, RequantSpec
+from penumbra.ir import (
+    ArgmaxSpec,
+    Conv2dSpec,
+    Graph,
+    LinearSpec,
+    Node,
+    RequantSpec,
+    topological_nodes,
+)
 from penumbra.quantization.lut import identity_clamp_lut
 
 
@@ -194,7 +202,7 @@ def insert_requants(
     # should read instead. Built as we insert; consumers are rewired below.
     rewire: dict[str, str] = {}
 
-    for node in graph.nodes:
+    for node in topological_nodes(graph):
         # Rewire this node's inputs to any requantized upstream tensors — but ONLY for narrow-input
         # ops. A wide-input op (Argmax) must keep reading the original *wide* logit even when the
         # producer fans out to a narrow consumer that triggered a Requant: rewiring it to the
@@ -206,13 +214,14 @@ def insert_requants(
             node = replace(node, inputs=[rewire.get(name, name) for name in node.inputs])
         new_nodes.append(node)
 
+        if not isinstance(node.op, _ACCUMULATOR_OPS):
+            continue
         out_name = node.outputs[0]
-        is_accumulator = isinstance(node.op, _ACCUMULATOR_OPS)
         # Only requant when the output feeds a *narrow-input* op (not just any consumer): a
         # terminal accumulator, or one feeding only wide-input ops like Argmax, stays wide.
         feeds_narrow = out_name in consumed_by_narrow and out_name not in graph_outputs
         # Skip if already requantized (idempotency) — see `already_requantized` above.
-        if not (is_accumulator and feeds_narrow) or out_name in already_requantized:
+        if not feeds_narrow or out_name in already_requantized:
             continue
 
         incoming_bits = widths[out_name]

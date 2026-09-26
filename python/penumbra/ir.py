@@ -28,6 +28,7 @@ load-bearing for correctness.
 
 from __future__ import annotations
 
+import heapq
 import json
 from dataclasses import dataclass, field
 from typing import Any
@@ -682,3 +683,72 @@ def build_linear_argmax_graph(
             ),
         ],
     )
+
+
+def topological_nodes(graph: Graph) -> list[Node]:
+    """Every node of ``graph`` in a valid evaluation order (stable Kahn).
+
+    Among ready nodes, the lowest original index wins, so a graph already emitted in
+    topological order is unchanged. Fails loudly on an undefined input, duplicate output,
+    or cycle (AGENTS.md §1.4).
+    """
+    graph_inputs = set(graph.inputs)
+    all_produced = {out for node in graph.nodes for out in node.outputs}
+
+    for node in graph.nodes:
+        for inp in node.inputs:
+            if inp not in graph_inputs and inp not in all_produced:
+                raise ValueError(
+                    f"node {node.name!r} reads tensor {inp!r}, which no node produces and is "
+                    "not a graph input"
+                )
+
+    existing: set[str] = set(graph.inputs)
+    for node in graph.nodes:
+        for out in node.outputs:
+            if out in existing:
+                raise ValueError(
+                    f"node {node.name!r} writes tensor {out!r}, which already exists — "
+                    "tensor names must be unique (no silent overwrite)"
+                )
+            existing.add(out)
+
+    num_nodes = len(graph.nodes)
+    if num_nodes == 0:
+        return []
+
+    producer_map: dict[str, int] = {
+        out: idx for idx, node in enumerate(graph.nodes) for out in node.outputs
+    }
+    in_deps: list[set[int]] = [set() for _ in range(num_nodes)]
+    dependents: list[list[int]] = [[] for _ in range(num_nodes)]
+
+    for c_idx, node in enumerate(graph.nodes):
+        for inp in node.inputs:
+            if inp in producer_map:
+                p_idx = producer_map[inp]
+                if p_idx not in in_deps[c_idx]:
+                    in_deps[c_idx].add(p_idx)
+                    dependents[p_idx].append(c_idx)
+
+    ready = [idx for idx, deps in enumerate(in_deps) if not deps]
+    heapq.heapify(ready)
+
+    order: list[int] = []
+    while ready:
+        idx = heapq.heappop(ready)
+        order.append(idx)
+        for dep in dependents[idx]:
+            in_deps[dep].remove(idx)
+            if not in_deps[dep]:
+                heapq.heappush(ready, dep)
+
+    if len(order) < num_nodes:
+        visited = set(order)
+        names = [node.name for idx, node in enumerate(graph.nodes) if idx not in visited]
+        raise ValueError(
+            f"graph has a cycle: node(s) {names!r} are never ready — their inputs depend on "
+            "their own outputs"
+        )
+
+    return [graph.nodes[i] for i in order]

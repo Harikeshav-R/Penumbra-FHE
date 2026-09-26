@@ -19,12 +19,15 @@ import pytest
 from penumbra.ir import (
     SCHEMA_VERSION,
     ActivationSpec,
+    AddSpec,
     ArgmaxSpec,
     CompareSpec,
+    ConcatSpec,
     Graph,
     LinearSpec,
     Node,
     RequantSpec,
+    SplitSpec,
 )
 from penumbra.reference import evaluate_graph_int
 
@@ -263,3 +266,41 @@ def test_requant_signed_floor_and_zero_point():
     expected = [0, 0, 1, 2, 3, 3, 3]
     out = evaluate_graph_int(g, {"x": inputs})
     assert out["y"] == expected
+
+
+def test_branching_dag_evaluation():
+    """Branching DAG: Split + Add + Concat + Add evaluates correctly with fan-out."""
+    graph = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=4,
+        inputs=["x"],
+        outputs=["out"],
+        nodes=[
+            Node(name="split", inputs=["x"], outputs=["s0", "s1"], op=SplitSpec(sizes=[2, 2])),
+            Node(name="add_half", inputs=["s0", "s1"], outputs=["sum"], op=AddSpec()),
+            Node(name="concat", inputs=["s0", "sum"], outputs=["c"], op=ConcatSpec(sizes=[2, 2])),
+            Node(name="final_add", inputs=["x", "c"], outputs=["out"], op=AddSpec()),
+        ],
+    )
+    out = evaluate_graph_int(graph, {"x": [10, 20, 30, 40]})
+    assert out["out"] == [20, 40, 70, 100]
+
+
+def test_non_topological_node_order_evaluates():
+    """Stable Kahn sort ensures nodes emitted in arbitrary valid order still evaluate."""
+    graph = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=4,
+        inputs=["x"],
+        outputs=["out"],
+        nodes=[
+            Node(name="final_add", inputs=["x", "c"], outputs=["out"], op=AddSpec()),
+            Node(name="concat", inputs=["s0", "sum"], outputs=["c"], op=ConcatSpec(sizes=[2, 2])),
+            Node(name="add_half", inputs=["s0", "s1"], outputs=["sum"], op=AddSpec()),
+            Node(name="split", inputs=["x"], outputs=["s0", "s1"], op=SplitSpec(sizes=[2, 2])),
+        ],
+    )
+    out = evaluate_graph_int(graph, {"x": [10, 20, 30, 40]})
+    assert out["out"] == [20, 40, 70, 100]

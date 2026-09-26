@@ -33,6 +33,7 @@ from penumbra.ir import (
     PoolSpec,
     RequantSpec,
     SplitSpec,
+    topological_nodes,
 )
 
 # Mirror of ``runtime/src/keys.rs`` (the default secure profile). Not user-facing.
@@ -133,6 +134,14 @@ def output_bits(op: OpSpec, input_bits: list[int]) -> int:
     raise ValueError(f"output_bits: unsupported op {op.op_type!r}")
 
 
+def output_bits_multi(op: OpSpec, input_bits: list[int]) -> list[int]:
+    """Bit-widths of all outputs (mirror of Rust ``op_spec_output_bits_multi``)."""
+    if isinstance(op, SplitSpec):
+        _expect_arity(op, input_bits, 1)
+        return [input_bits[0]] * len(op.sizes)
+    return [output_bits(op, input_bits)]
+
+
 def requant_internal_bits(input_bits: int, mult: int, round_bias: int, clamp_lo: int = 0) -> int:
     """Peak transient width a ``Requant`` materializes before the shift narrows it.
 
@@ -182,17 +191,17 @@ def _expect_arity(op: OpSpec, input_bits: list[int], n: int) -> None:
 def propagate_bit_widths(graph: Graph) -> dict[str, int]:
     """Per-tensor bit-widths through ``graph``, seeded by ``graph.input_bits``.
 
-    The Python mirror of ``eval::propagate_bit_widths``: walk nodes in order, resolve each
-    node's input widths from a running map, apply :func:`output_bits`, and store the single
-    output. Fails loudly (`AGENTS.md` §1.4) on a tensor read before it is produced, a duplicate
-    output name, or a node without exactly one output.
+    The Python mirror of ``eval::propagate_bit_widths``: walk nodes in topological order, resolve
+    each node's input widths, apply :func:`output_bits_multi`, and store every output. Fails loudly
+    (``AGENTS.md`` §1.4) on a tensor read before it is produced, a duplicate output name, or a node
+    without at least one input/output.
     """
     widths: dict[str, int] = {name: graph.input_bits for name in graph.inputs}
-    for node in graph.nodes:
-        if not node.inputs or len(node.outputs) != 1:
+    for node in topological_nodes(graph):
+        if not node.inputs or not node.outputs:
             raise ValueError(
                 f"node {node.name!r} ({node.op.op_type}) must have at least one input and "
-                "exactly one output"
+                "at least one output"
             )
         in_bits = []
         for name in node.inputs:
@@ -202,13 +211,19 @@ def propagate_bit_widths(graph: Graph) -> dict[str, int]:
                     "and is not a graph input — node order is not a valid topological order"
                 )
             in_bits.append(widths[name])
-        out_name = node.outputs[0]
-        if out_name in widths:
+        out_widths = output_bits_multi(node.op, in_bits)
+        if len(node.outputs) != len(out_widths):
             raise ValueError(
-                f"node {node.name!r} writes tensor {out_name!r}, which already exists — "
-                "tensor names must be unique"
+                f"node {node.name!r} ({node.op.op_type}) declares {len(node.outputs)} output(s) "
+                f"but produces {len(out_widths)}"
             )
-        widths[out_name] = output_bits(node.op, in_bits)
+        for out_name, out_b in zip(node.outputs, out_widths, strict=True):
+            if out_name in widths:
+                raise ValueError(
+                    f"node {node.name!r} writes tensor {out_name!r}, which already exists — "
+                    "tensor names must be unique"
+                )
+            widths[out_name] = out_b
     return widths
 
 
@@ -225,14 +240,15 @@ def check_bit_width_budget(graph: Graph) -> None:
     capacity = radix_capacity_bits(graph.num_blocks)
     widths = propagate_bit_widths(graph)
     for node in graph.nodes:
-        name = node.outputs[0]
-        bits = widths[name]
-        if bits > capacity:
-            raise ValueError(
-                f"bit-width budget exceeded at node {node.name!r} (tensor {name!r}): requires "
-                f"{bits} bits but the radix holds only {capacity} ({graph.num_blocks} blocks x "
-                f"{MESSAGE_BITS} bits). Reduce precision, widen num_blocks, or requantize earlier."
-            )
+        for name in node.outputs:
+            bits = widths[name]
+            if bits > capacity:
+                raise ValueError(
+                    f"bit-width budget exceeded at node {node.name!r} (tensor {name!r}): "
+                    f"requires {bits} bits but the radix holds only {capacity} "
+                    f"({graph.num_blocks} blocks x {MESSAGE_BITS} bits). Reduce precision, "
+                    "widen num_blocks, or requantize earlier."
+                )
         in_bits = [widths[n] for n in node.inputs]
         if isinstance(node.op, ActivationSpec) and in_bits[0] > MESSAGE_BITS:
             raise ValueError(

@@ -34,6 +34,7 @@ from penumbra.bitwidth import (
     check_bit_width_budget,
     minimal_num_blocks,
     output_bits,
+    output_bits_multi,
     propagate_bit_widths,
     radix_capacity_bits,
 )
@@ -55,6 +56,7 @@ from penumbra.ir import (
     RequantSpec,
     SplitSpec,
     build_linear_argmax_graph,
+    topological_nodes,
 )
 from penumbra.layers import Activation, Conv2d, Linear, Pool, QuantConfig
 from penumbra.model import Model
@@ -81,8 +83,10 @@ __all__ = [
     "ConcatSpec",
     "SplitSpec",
     "build_linear_argmax_graph",
+    "topological_nodes",
     # Bit-width tracking + compile pass (Phase 4, PROJECT.md §9)
     "output_bits",
+    "output_bits_multi",
     "propagate_bit_widths",
     "minimal_num_blocks",
     "check_bit_width_budget",
