@@ -235,6 +235,23 @@ This folding happens at compile time in `quantize_linear` and `quantize_conv`, i
 
 Under the default secure crypto parameters, `act_bits ≤ MESSAGE_BITS = 2`. For non-ReLU activations spanning both negative and positive domains (such as tanh or GELU), this means exactly four discrete integer levels across the entire range (e.g. `[-1, 0, 1, 2]` relative to the zero-point). While coarse, properly regularized models achieve competitive accuracy (e.g. ~69% on 10-class handwritten digits).
 
+## Branching DAG quantization & merge-scale classes (IR 0.9.0)
+
+Branching graphs with `Add`, `Concat`, and `Split` join separate evaluation paths. In quantized integer arithmetic, element-wise addition and concatenation are only meaningful if operands share the **same quantization scale and zero-point**:
+
+1. **Merge-scale equivalence classes (Union-Find):** Tensors joined by an `Add`, `Concat`, or `Split` form a scale equivalence class. During calibration, the model identifies each class and selects one unified target activation scale:
+   $$\text{class\_scale} = \max_{m \in \text{accumulators}} \text{natural\_scale}_m$$
+   Each accumulator feeding the merge calibrates its `Requant` rescale parameters `(mult, shift, round_bias)` to this common target scale. No extra PBS or runtime rescaling is required.
+2. **ReLU-operand contract:** Merging operands must be ReLU-fused post-`Requant` activation tensors (`zero_point == 0`) or outputs of `Split`/`Concat`/`Add` that resolve to such. A wide un-requantized accumulator, a `Pool` output, a signed activation with `zero_point > 0`, or the raw graph input is rejected loudly at `quantize` time.
+
+## BatchNorm folding at load time
+
+Inference-time Batch Normalization is a per-channel affine map:
+$$y = \gamma \frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}} + \beta$$
+When immediately following a `Linear` ($x = W a + b$) or `Conv2d`, BN composes exactly with the preceding accumulator's weights and bias:
+$$W' = s \cdot W, \quad b' = (b - \mu) \cdot s + \beta \quad \text{where } s = \frac{\gamma}{\sqrt{\sigma^2 + \epsilon}}$$
+In `penumbra.load_onnx`, BN is folded directly into the preceding `Conv2d` or `Linear` weights and bias. It emits no IR node, requires no runtime computation, and costs zero PBS or CKKS depth levels.
+
 ## Generating LUTs in the integer domain
 
 A non-ReLU activation (sigmoid, GELU, …) is realized as a **lookup table** applied by a bootstrap.

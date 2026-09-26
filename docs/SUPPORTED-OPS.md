@@ -90,7 +90,8 @@ and bit-width columns in the tables below describe this backend specifically.
 | Op | Covers | TFHE realization | Bit-width rule (`output_bits`) |
 |---|---|---|---|
 | `Compare` | decision trees, random forests, XGBoost | `out[i] = (x[indices[i]] >= thresholds[i]) ? 1 : 0` via `scalar_ge_parallelized` | `1` bit regardless of input width |
-
+| `Concat` | channel-axis merge in branching DAGs | ciphertext moves, **no PBS** | `max(input_bits)` |
+| `Split` | channel-axis segmentation in branching DAGs | contiguous segmentation, **no PBS** | `input_bits` (preserves input width across all outputs) |
 ### 4-stage tree ensemble lowering
 
 Tree ensembles lower through `penumbra.adapters.from_sklearn` and `from_xgboost` without ciphertext × ciphertext multiplies:
@@ -154,13 +155,14 @@ equals `op_registry.supported_onnx_ops()` exactly, so doc and validator never dr
 ### Notes — Phase 6
 
 - **What "any ONNX model" means (bounded).** The front door accepts a model iff (1) every node
-  is in the table above, (2) the graph is a **single linear chain** from input to output (a chain
-  of `Conv`/`Gemm`/`MatMul` accumulators, each optionally ReLU'd, plus pooling, ending in a wide
-  logit head), (3) it quantizes acceptably, and (4) it is small enough to run in feasible FHE time
+  is in the table above, (2) the graph is a directed acyclic graph (DAG) from input to output,
+  (3) it quantizes acceptably, and (4) it is small enough to run in feasible FHE time
   (`PROJECT.md` §10, §16). Anything else fails loudly at `load_onnx()`.
-- **Branching is Phase 8.** Residual `Add` (both operands activations), `Concat`, and any fan-out
-  are rejected — the Rust eval loop already walks DAGs, but `Model.quantize`'s compile pass is
-  linear-chain-only, and widening it is Phase-8 work.
+- **Branching graphs are supported.** Residual `Add` (both operands activations), `Concat`, `Split`,
+  and fan-out connections are supported in both the IR walker and the `Model.quantize` compile pass
+  as of Phase 8.
+- **Batch normalization is folded at load time.** Inference-time `BatchNormalization` (constant parameters)
+  folds directly into preceding `Conv`/`Gemm`/`MatMul` accumulator weights and bias with zero runtime cost.
 - **Terminal classifier tails are dropped, not lowered.** `Softmax`/`LogSoftmax`/`Sigmoid`/`ArgMax`
   at the graph output are argmax-invariant (Penumbra leaves logits wide and argmaxes client-side,
   `PROJECT.md` §11), so they emit no op. A *non-terminal* one is a real activation and is rejected.
@@ -197,8 +199,9 @@ approximated, and the vocabulary never forks per backend (`AGENTS.md` §1.2).
 | `Add` | ✅ exact, no PBS | ✅ approximate within declared bound | native ciphertext-ciphertext add (zero depth) |
 | `Activation` | ✅ exact, one PBS | ✅ approximate within declared bound | exact Chebyshev interpolating polynomial over LUT domain; zero fit error on integer inputs |
 | `Requant` | ✅ exact, one PBS | ✅ approximate within declared bound | continuous polynomial ramp approximation + scale/shift; per-channel via 0/1 mask multiply; evaluates composed clamp_lut polynomial when non-identity |
-| `Argmax` | ✅ exact, comparison PBS | ✅ approximate within declared bound | continuous piecewise-linear step approximation evaluated over normalized logit |
 | `Compare` | ✅ exact, comparison PBS | ⚠️ op implemented; chained sharp steps exceed level budget for tree graph (needs 360 bits vs 330 budget capacity) | plaintext linear map (gather - threshold) + continuous smoothed step polynomial approximation |
+| `Concat` | ✅ exact, no PBS | ✅ approximate within declared bound | 0/1 selection linear map per segment, summed (spends one level) |
+| `Split` | ✅ exact, no PBS | ✅ approximate within declared bound | 0/1 window linear map per segment (spends one level) |
 Two notes that explain the whole column:
 
 - **CKKS has no lookup table and no programmable bootstrap.** Every op marked *approximate*
@@ -214,6 +217,5 @@ Two notes that explain the whole column:
 
 | Op | Phase | Notes |
 |---|---|---|
-| `Concat` / branching | 8 | multi-input graphs; true topological eval |
-| `BatchNormalization` | 8 | fold into the preceding Conv/Linear at quantize time |
+
 | `>2`-class `Argmax` (in-FHE) | later | pairwise `max`/`gt` over a score vector; Phase 4 decrypts the logits and argmaxes client-side |

@@ -46,9 +46,9 @@ def test_bn_cnn_fixture_graph_round_trips_and_fits_budget():
 def test_bn_cnn_fixture_graph_structure_and_idempotent():
     """Graph structure is Conv2d -> Requant -> Pool -> Linear; NO BatchNorm op exists."""
     g = Graph.from_dict(_fixture()["graph"])
-    assert not any("batchnorm" in n.op.op_type.lower() for n in g.nodes), (
-        "BatchNorm op must not appear in the emitted IR graph"
-    )
+    assert not any(
+        "batchnorm" in n.op.op_type.lower() for n in g.nodes
+    ), "BatchNorm op must not appear in the emitted IR graph"
     op_types = [n.op.op_type for n in g.nodes]
     assert op_types == ["Conv2d", "Requant", "Pool", "Linear"]
 

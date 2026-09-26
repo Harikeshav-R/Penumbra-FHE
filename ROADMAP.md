@@ -376,10 +376,12 @@ that unlock new model classes, each via the same add-an-op discipline.
 - [x] **More activations:** tanh, GELU, leaky ReLU, hardswish — all are single-input LUTs, so
       mostly LUT-generation work in the quantization service.
       *Note:* Delivered in Phase 8 Step 2 via signed `Requant` (`clamp_lo` + `zero_point`, IR schema 0.8.0), affine `Activation` LUT generation, lowering for 7 ONNX ops (`Tanh`, `LeakyRelu`, `HardSwish`, `Gelu`, `Elu`, `HardSigmoid`, mid-graph `Sigmoid`), and committed fixture `phase8_tanh_fixture.json`.
-- [ ] **Concat / split / multi-input graphs:** support branching graphs (not just linear
+- [x] **Concat / split / multi-input graphs:** support branching graphs (not just linear
       chains) in the IR walker.
-- [ ] **Batch norm folding:** fold BN into preceding conv/linear at quantization time (common
+      *Note:* Delivered in Phase 8 Step 3 via `Concat` and `Split` ops (IR schema 0.9.0), stable Kahn topological walker, multi-output evaluation, merge-scale classes in `Model.quantize`, and committed fixture `phase8_branch_fixture.json`.
+- [x] **Batch norm folding:** fold BN into preceding conv/linear at quantization time (common
       ONNX pattern) so it costs nothing at runtime.
+      *Note:* Delivered in Phase 8 Step 4 via load-time BatchNorm folding (`penumbra.quantization.fold_batchnorm`) into preceding Conv2d/Linear weights and bias, and committed fixture `phase8_bn_cnn_fixture.json`.
 - [ ] **Additional pooling / global average pool.**
 - [ ] For each new op: registry entry + Rust impl + bit-width rule + golden test.
 - [ ] Expand `docs/SUPPORTED-OPS.md` and add a model-zoo of validated examples.

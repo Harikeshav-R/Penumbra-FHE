@@ -26,7 +26,7 @@ schemes multiply.
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │  ◀── waist 1: the stable IR
 ┌─ Layer 2: IR + OP REGISTRY + EVAL LOOP (fixed, backend-neutral) ────┐
-│  a graph of ~8 op types, walked once: Linear, Conv2d, Requant, ...   │
+│  a graph of ~10 op types, walked once: Linear, Conv2d, Requant, Concat, Split, ... │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │  ◀── waist 2: the `Backend` trait
 ┌─ Layer 1: FHE BACKENDS (pluggable — one per scheme) ────────────────┐
@@ -134,7 +134,7 @@ Two consequences worth stating plainly:
   float model instead of the quantized one would make its accuracy look better and the
   comparison meaningless.
 
-Under CKKS the PBS-free ops (`Linear`, `Conv2d`, `Pool`, `Add`) may well round-trip to the
+Under CKKS the PBS-free ops (`Linear`, `Conv2d`, `Pool`, `Add`, `Concat`, `Split`) may well round-trip to the
 exact integers at a generous scale. That is worth **reporting as a diagnostic** — it isolates
 approximation error to the nonlinearities — but it is not a CI gate, because it is a
 property of the chosen scale rather than of the implementation.
