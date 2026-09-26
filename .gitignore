@@ -30,11 +30,13 @@ venv/
 # serialized IR / exported models
 *.onnx
 # exported model artifacts (examples regenerate these) — EXCEPT the small committed ONNX
-# fixtures the loader's framework-proof tests reload in CI (tests/test_onnx_fixture.py: a torch
-# CNN; tests/test_sklearn_fixture.py: a scikit-learn linear classifier — the two-frameworks proof).
+# fixtures the loader's framework-proof and regression tests reload in CI (tests/test_onnx_fixture.py,
+# tests/test_sklearn_fixture.py, tests/test_bn_cnn_fixture.py, tests/test_branch_fixture.py).
 !examples/mnist/digit_cnn.onnx
 !examples/mnist/digit_linear_sklearn.onnx
 !examples/mnist/digit_tanh_mlp.onnx
+!examples/mnist/digit_bn_cnn.onnx
+!examples/mnist/digit_branch_mlp.onnx
 !examples/faces/face_cnn.onnx
 *.key
 # crypto key material — never commit
