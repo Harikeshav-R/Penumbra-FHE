@@ -2,7 +2,7 @@
 //!
 //! Pooling is spatial, but the inter-op currency is a flat `CtVec`. This test pins the
 //! channel-major / row-major layout contract and asserts both modes match cleartext:
-//! - `avg` emits the window **sum** (the `/k` is deferred to `Requant`),
+//! - `avg` emits the window **sum** (the `/k` is carried in the tensor's quantization scale),
 //! - `max` emits the window maximum.
 //!
 //! A 2-channel 4x4 → 2x2 (2x2 window, stride 2) case exercises the per-channel indexing.
@@ -68,7 +68,7 @@ fn pool_cleartext(x: &[i64], avg: bool, cfg: &PoolCfg) -> Vec<i64> {
                     }
                 }
                 out.push(if avg {
-                    vals.iter().sum() // sum-pool (the /k is deferred to Requant)
+                    vals.iter().sum() // sum-pool (the /k is carried in the tensor's quantization scale)
                 } else {
                     *vals.iter().max().unwrap()
                 });

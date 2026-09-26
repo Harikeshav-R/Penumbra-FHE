@@ -524,3 +524,87 @@ def test_fanout_tensor_lowers_without_error(tmp_path):
     model = fhe.load_onnx(path)
     assert len(model.nodes) == 4
     assert [n.name for n in model.nodes] == ["fc1", "branch_a", "branch_b", "add"]
+
+
+def test_avg_pool_lowering_matches_true_mean(tmp_path):
+    """AveragePool lowers to Pool(avg) whose float forward emits the true mean."""
+    rng = np.random.default_rng(0)
+    wc = rng.normal(size=(3, 1, 3, 3)).astype(np.float32)
+    bc = rng.normal(size=3).astype(np.float32)
+    # Conv on 6x6 with 3x3 s1 -> 4x4. AvgPool 2x2 s2 -> 2x2. Flatten -> 3*2*2 = 12.
+    wg = rng.normal(size=(4, 12)).astype(np.float32)
+    bg = (rng.normal(size=4) * 5.0).astype(np.float32)
+
+    nodes = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node("Relu", ["c"], ["r"], name="relu"),
+        helper.make_node(
+            "AveragePool", ["r"], ["p"], name="pool", kernel_shape=[2, 2], strides=[2, 2]
+        ),
+        helper.make_node("Flatten", ["p"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg", "bg"], ["y"], name="gemm", transB=1),
+    ]
+    inits = [_f32(wc, "wc"), _f32(bc, "bc"), _f32(wg, "wg"), _f32(bg, "bg")]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 6, 6])], [_vi("y", [1, 4])], tmp_path)
+
+    model = fhe.load_onnx(path)
+    x = rng.uniform(0.0, 1.0, size=(3, 36))
+    acts = x
+    for layer in model.layers:
+        acts = layer.forward(acts)
+
+    # Independent numpy reference:
+    xr = x.reshape(3, 1, 6, 6)
+    conv_out = np.zeros((3, 3, 4, 4), dtype=np.float64)
+    for c_out in range(3):
+        for oy in range(4):
+            for ox in range(4):
+                conv_out[:, c_out, oy, ox] = (
+                    xr[:, 0, oy : oy + 3, ox : ox + 3] * wc[c_out, 0]
+                ).sum(axis=(1, 2)) + bc[c_out]
+    relu_out = np.maximum(conv_out, 0.0)
+    pool_out = relu_out.reshape(3, 3, 2, 2, 2, 2).mean(axis=(3, 5))
+    flat_out = pool_out.reshape(3, 12)
+    ref = flat_out @ wg.T + bg
+    assert np.allclose(acts, ref, atol=1e-9)
+
+
+def test_global_average_pool_lowering_matches_true_mean(tmp_path):
+    """GlobalAveragePool lowers to Pool(avg) whose float forward emits the true mean."""
+    rng = np.random.default_rng(0)
+    wc = rng.normal(size=(3, 1, 3, 3)).astype(np.float32)
+    bc = rng.normal(size=3).astype(np.float32)
+    # Conv on 6x6 with 3x3 s1 -> 4x4. GlobalAveragePool -> 1x1. Flatten -> 3*1*1 = 3.
+    wg = rng.normal(size=(4, 3)).astype(np.float32)
+    bg = (rng.normal(size=4) * 5.0).astype(np.float32)
+
+    nodes = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node("Relu", ["c"], ["r"], name="relu"),
+        helper.make_node("GlobalAveragePool", ["r"], ["p"], name="gap"),
+        helper.make_node("Flatten", ["p"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg", "bg"], ["y"], name="gemm", transB=1),
+    ]
+    inits = [_f32(wc, "wc"), _f32(bc, "bc"), _f32(wg, "wg"), _f32(bg, "bg")]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 6, 6])], [_vi("y", [1, 4])], tmp_path)
+
+    model = fhe.load_onnx(path)
+    x = rng.uniform(0.0, 1.0, size=(3, 36))
+    acts = x
+    for layer in model.layers:
+        acts = layer.forward(acts)
+
+    # Independent numpy reference:
+    xr = x.reshape(3, 1, 6, 6)
+    conv_out = np.zeros((3, 3, 4, 4), dtype=np.float64)
+    for c_out in range(3):
+        for oy in range(4):
+            for ox in range(4):
+                conv_out[:, c_out, oy, ox] = (
+                    xr[:, 0, oy : oy + 3, ox : ox + 3] * wc[c_out, 0]
+                ).sum(axis=(1, 2)) + bc[c_out]
+    relu_out = np.maximum(conv_out, 0.0)
+    pool_out = relu_out.mean(axis=(2, 3))
+    flat_out = pool_out.reshape(3, 3)
+    ref = flat_out @ wg.T + bg
+    assert np.allclose(acts, ref, atol=1e-9)

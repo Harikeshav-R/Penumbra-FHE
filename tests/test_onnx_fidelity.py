@@ -12,9 +12,9 @@ Guarded by ``pytest.importorskip("onnxruntime")``: onnxruntime is in the optiona
 this **skips in CI** (which installs dev-only) and runs locally under ``uv run --extra ml pytest``.
 
 Comparison-model constraints (baked into the fixtures below so the two sides are directly
-comparable): the models are **logit-terminated** (no dropped Softmax tail) and **avg-pool-free**
-(our ``Pool('avg')`` emits the window *sum*, not the mean, deferring 1/k to the next Requant —
-which has no float-forward counterpart in onnxruntime's true averaging).
+comparable): the models are **logit-terminated** (no dropped Softmax tail); AveragePool and
+GlobalAveragePool are included because the float layer emits the true mean (with the integer
+op emitting the window sum and 1/k carried in the output quantization scale).
 """
 
 from __future__ import annotations
@@ -140,3 +140,34 @@ def test_fidelity_conv_layout(tmp_path):
     got = _lowered_forward(model, x.reshape(1, -1).astype(np.float64))  # flat channel-major
     ref = _ort_run(path, x).reshape(1, -1)  # onnxruntime output is (1,3,3,3) channel-major
     assert np.allclose(got, ref, atol=1e-4), f"conv lowering diverges:\n{got}\n{ref}"
+
+
+def test_fidelity_avgpool_and_gap(tmp_path):
+    """AveragePool and GlobalAveragePool float forwards match onnxruntime true averaging."""
+    rng = np.random.default_rng(4)
+    wc = rng.normal(size=(3, 1, 3, 3)).astype(np.float32)
+    bc = rng.normal(size=3).astype(np.float32)
+    wg = rng.normal(size=(4, 3)).astype(np.float32)
+    bg = rng.normal(size=4).astype(np.float32)
+    nodes = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node("Relu", ["c"], ["r"], name="relu"),
+        helper.make_node(
+            "AveragePool", ["r"], ["p"], name="avgpool", kernel_shape=[2, 2], strides=[2, 2]
+        ),
+        helper.make_node("GlobalAveragePool", ["p"], ["g"], name="gap"),
+        helper.make_node("Flatten", ["g"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg", "bg"], ["y"], name="gemm", transB=1),
+    ]
+    path = _save(
+        nodes,
+        [_f32(wc, "wc"), _f32(bc, "bc"), _f32(wg, "wg"), _f32(bg, "bg")],
+        [_vi("x", [1, 1, 8, 8])],
+        [_vi("y", [1, 4])],
+        tmp_path,
+    )
+    model = fhe.load_onnx(path)
+    x = rng.uniform(-2.0, 2.0, size=(1, 1, 8, 8)).astype(np.float32)
+    got = _lowered_forward(model, x.reshape(1, -1).astype(np.float64))
+    ref = _ort_run(path, x).reshape(1, -1)
+    assert np.allclose(got, ref, atol=1e-4), f"avgpool/gap lowering diverges:\n{got}\n{ref}"

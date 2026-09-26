@@ -18,8 +18,8 @@ import pytest
 
 from penumbra import Conv2d, Linear, Model, Pool
 from penumbra.bitwidth import check_bit_width_budget, radix_capacity_bits
-from penumbra.ir import Graph
-from penumbra.layers import Activation
+from penumbra.ir import SCHEMA_VERSION, Graph
+from penumbra.layers import Activation, LayerContext, QuantConfig
 from penumbra.reference import evaluate_graph_int
 
 
@@ -425,3 +425,26 @@ def test_non_relu_activation_errors():
     )
     with pytest.raises(ValueError, match=r"consumed by Pool.*must feed a Conv2d/Linear"):
         m_pool.quantize(rng.uniform(0.0, 16.0, size=(16, 36)), n_bits=4)
+
+
+@pytest.mark.parametrize("mode", ["avg", "max"])
+def test_pool_output_dequantizes_to_float_forward(mode: str):
+    """Pool output dequantizes (out_scale * int_oracle) to the float layer's forward pass."""
+    pool = Pool(mode, in_h=4, in_w=4, channels=2, pool_h=2, pool_w=2, stride=2)
+    s = 0.25
+    q = np.random.default_rng(0).integers(0, 4, size=32)
+    x = s * q
+    nodes, out_scale, out_len, _ = pool.quantize(
+        LayerContext(tensor="t", scale=s, config=QuantConfig())
+    )
+    graph = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=4,
+        inputs=["t"],
+        outputs=[nodes[0].outputs[0]],
+        nodes=nodes,
+    )
+    ints = evaluate_graph_int(graph, {"t": q.tolist()})[nodes[0].outputs[0]]
+    assert np.allclose(pool.forward(x[None, :])[0], out_scale * np.asarray(ints))
+    assert out_len == 8

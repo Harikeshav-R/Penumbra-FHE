@@ -681,7 +681,7 @@ def _lower_pool(
     shapes: dict[str, tuple[int | None, ...]],
     act_in: str,
 ) -> Pool:
-    """MaxPool/AveragePool/GlobalAveragePool -> layers.Pool (avg emits the window sum)."""
+    """MaxPool/AveragePool/GlobalAveragePool -> layers.Pool (float avg is the true mean)."""
     name = node.name or f"<{node.op_type}>"
     channels, in_h, in_w = _nonbatch(act_in, shapes, name, expect=3)
     mode = "max" if node.op_type == "MaxPool" else "avg"

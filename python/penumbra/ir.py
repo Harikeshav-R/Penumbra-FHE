@@ -463,8 +463,8 @@ class RequantSpec(OpSpec):
 class PoolSpec(OpSpec):
     """Spatial pooling over a flattened ``[channels][in_h][in_w]`` feature map.
 
-    ``mode`` is ``"avg"`` (window **sum** — the ``1/k`` averaging is folded into the
-    downstream ``Requant`` so pooling stays PBS-free) or ``"max"`` (pairwise max, expensive).
+    ``mode`` is ``"avg"`` (window **sum** — the ``1/k`` is carried in the output tensor's
+    quantization scale so pooling stays PBS-free) or ``"max"`` (pairwise max, expensive).
     The flat tensor is **channel-major, row-major**: element ``(c, y, x)`` is at
     ``c*in_h*in_w + y*in_w + x`` — the same layout ``Conv2d`` produces, so a ``Conv2d → Pool``
     chain needs no reshape. Output is ``[channels][out_h][out_w]`` in the same layout.

@@ -221,7 +221,7 @@ REGISTRY: dict[str, OnnxOpRule] = {
         category=CAT_POOL,
         rationale=(
             "Average pooling is a per-channel window sum (`add_parallelized`, no PBS); the 1/k "
-            "averaging folds into the next Requant's rescale — `Pool` mode 'avg'."
+            "is carried in the output quantization scale — `Pool` mode 'avg'."
         ),
         attribute_constraints=(
             "pads=0; ceil_mode=0; count_include_pad moot (pads=0); uniform kernel/stride."
@@ -233,7 +233,7 @@ REGISTRY: dict[str, OnnxOpRule] = {
         category=CAT_POOL,
         rationale=(
             "Global average pooling is AveragePool over the whole feature map (kernel = spatial "
-            "size) — the same PBS-free window sum, 1/k folded into the next Requant."
+            "size) — the same PBS-free window sum, 1/k is carried in the output quantization scale."
         ),
         attribute_constraints="none (kernel = full input spatial size).",
     ),

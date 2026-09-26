@@ -221,7 +221,9 @@ class Conv2d(Layer):
 
 @dataclass
 class Pool(Layer):
-    """Average/max pool over a ``[channels][in_h][in_w]`` feature map (``avg`` emits window sum)."""
+    """Average/max pool over a [channels][in_h][in_w] feature map (float avg = true mean;
+    IR avg = window sum at scale in_scale/k).
+    """
 
     mode: str
     in_h: int
@@ -245,10 +247,10 @@ class Pool(Layer):
                     oy * self.stride : oy * self.stride + self.pool_h,
                     ox * self.stride : ox * self.stride + self.pool_w,
                 ]
-                # avg emits the window SUM (the 1/k averaging is folded into the next Requant's
-                # rescale — keeps Pool PBS-free), matching pool.rs and the example.
+                # avg is the true mean (ONNX/PyTorch semantics); the integer op emits the window
+                # sum and the 1/k lives in the output scale (see quantize).
                 out[:, :, oy, ox] = (
-                    window.sum(axis=(2, 3)) if self.mode == "avg" else window.max(axis=(2, 3))
+                    window.mean(axis=(2, 3)) if self.mode == "avg" else window.max(axis=(2, 3))
                 )
         return out.reshape(n, -1)
 
@@ -270,10 +272,12 @@ class Pool(Layer):
                 stride=self.stride,
             ),
         )
-        # avg-pool sums pool_h*pool_w terms -> the value scale is unchanged (the sum is in the
-        # same integer units); max-pool selects one value, also scale-preserving. Not an
-        # accumulator layer, so no per-channel accumulator scales.
-        return [node], ctx.scale, self.channels * out_h * out_w, None
+        # avg: the IR op emits the integer window SUM of k = pool_h*pool_w taps, so float
+        # mean = (in_scale / k) * sum — the 1/k is carried in the output scale and folds into
+        # the next layer's weight/bias quantization (PBS-free). max selects one value:
+        # scale-preserving.
+        out_scale = ctx.scale / (self.pool_h * self.pool_w) if self.mode == "avg" else ctx.scale
+        return [node], out_scale, self.channels * out_h * out_w, None
 
 
 @dataclass
