@@ -36,6 +36,7 @@ are deferred to Phase 8 and rejected loudly (``ROADMAP.md`` Phase 6/8).
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 # Supported opset range for the default (ai.onnx, domain "") operator set. The ops we lower
@@ -115,11 +116,90 @@ REGISTRY: dict[str, OnnxOpRule] = {
         internal_op="Activation",
         category=CAT_ACTIVATION,
         rationale=(
-            "ReLU max(x,0) is the exact hard-clip the fused Requant already applies "
-            "(`runtime/src/ops/requant.rs`), so it costs no extra op — the accumulator's Requant "
-            "realizes it. Must follow an accumulator (Conv/Gemm/MatMul), not be terminal."
+            "ReLU max(x,0) is realized via the fused-Requant special case: the preceding layer's "
+            "Requant applies max(x,0) directly with zero extra op cost "
+            "(`runtime/src/ops/requant.rs`). Must follow an accumulator, not be terminal."
         ),
         attribute_constraints="none.",
+    ),
+    "Tanh": OnnxOpRule(
+        onnx_op="Tanh",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "Hyperbolic tangent is realized as a single-input LUT over the narrow post-Requant "
+            "activation domain, with signed pre-rescale floor and output zero-point folded into "
+            "the downstream layer's bias. Must follow an accumulator and feed one."
+        ),
+        attribute_constraints="none.",
+    ),
+    "LeakyRelu": OnnxOpRule(
+        onnx_op="LeakyRelu",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "Leaky ReLU is realized as a single-input LUT over the narrow post-Requant "
+            "activation domain, with signed pre-rescale floor and output zero-point folded into "
+            "the downstream layer's bias. Must follow an accumulator and feed one."
+        ),
+        attribute_constraints="alpha (default 0.01).",
+    ),
+    "HardSwish": OnnxOpRule(
+        onnx_op="HardSwish",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "HardSwish is realized as a single-input LUT over the narrow post-Requant "
+            "activation domain, with signed pre-rescale floor and output zero-point folded into "
+            "the downstream layer's bias. Must follow an accumulator and feed one."
+        ),
+        attribute_constraints="none.",
+    ),
+    "Gelu": OnnxOpRule(
+        onnx_op="Gelu",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "GELU is realized as a single-input LUT over the narrow post-Requant "
+            "activation domain, with signed pre-rescale floor and output zero-point folded into "
+            "the downstream layer's bias. Must follow an accumulator and feed one."
+        ),
+        attribute_constraints="approximate in {'none', 'tanh'}.",
+    ),
+    "Elu": OnnxOpRule(
+        onnx_op="Elu",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "ELU is realized as a single-input LUT over the narrow post-Requant "
+            "activation domain, with signed pre-rescale floor and output zero-point folded into "
+            "the downstream layer's bias. Must follow an accumulator and feed one."
+        ),
+        attribute_constraints="alpha (default 1.0).",
+    ),
+    "HardSigmoid": OnnxOpRule(
+        onnx_op="HardSigmoid",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "HardSigmoid is realized as a single-input LUT over the narrow post-Requant "
+            "activation domain, with signed pre-rescale floor and output zero-point folded into "
+            "the downstream layer's bias. Must follow an accumulator and feed one."
+        ),
+        attribute_constraints="alpha (default 0.2), beta (default 0.5).",
+    ),
+    "Sigmoid": OnnxOpRule(
+        onnx_op="Sigmoid",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "Sigmoid is realized as a single-input LUT over the narrow post-Requant activation "
+            "domain; a terminal Sigmoid is still dropped (argmax-invariant)."
+        ),
+        attribute_constraints=(
+            "none; a terminal Sigmoid is dropped (argmax-invariant), a mid-graph one lowers to "
+            "an Activation LUT."
+        ),
     ),
     "MaxPool": OnnxOpRule(
         onnx_op="MaxPool",
@@ -224,16 +304,6 @@ REGISTRY: dict[str, OnnxOpRule] = {
         internal_op="(terminal, dropped)",
         category=CAT_TERMINAL,
         rationale="Log-softmax is monotone and argmax-invariant — dropped as a terminal tail.",
-        attribute_constraints="must be the terminal (graph-output) node.",
-    ),
-    "Sigmoid": OnnxOpRule(
-        onnx_op="Sigmoid",
-        internal_op="(terminal, dropped)",
-        category=CAT_TERMINAL,
-        rationale=(
-            "A terminal Sigmoid is monotone; the thresholded label is argmax-invariant, so it is "
-            "dropped (a non-terminal Sigmoid is a real activation and is not supported)."
-        ),
         attribute_constraints="must be the terminal (graph-output) node.",
     ),
     "ArgMax": OnnxOpRule(
@@ -372,6 +442,49 @@ def check_attributes(op_type: str, attrs: dict[str, object], node_name: str) -> 
                 f"Cast (node {node_name!r}): to={to} not supported (only a cast to a floating type "
                 "is a value-preserving no-op; an int/bool cast changes the value — Phase 8)"
             )
+    elif op_type == "Gelu":
+        approx = _as_str(attrs.get("approximate", "none")).lower()
+        if not approx:
+            approx = "none"
+        if approx not in ("none", "tanh"):
+            problems.append(
+                f"Gelu (node {node_name!r}): approximate={approx!r} not supported "
+                "(only 'none' or 'tanh')"
+            )
+    elif op_type in ("LeakyRelu", "Elu"):
+        alpha = attrs.get("alpha")
+        if alpha is not None:
+            try:
+                val = float(alpha)  # type: ignore[arg-type]
+                if not math.isfinite(val):
+                    problems.append(f"{op_type} (node {node_name!r}): alpha={alpha} must be finite")
+            except (TypeError, ValueError):
+                problems.append(
+                    f"{op_type} (node {node_name!r}): alpha={alpha} is not a valid float"
+                )
+    elif op_type == "HardSigmoid":
+        alpha = attrs.get("alpha")
+        if alpha is not None:
+            try:
+                val = float(alpha)  # type: ignore[arg-type]
+                if not math.isfinite(val):
+                    problems.append(
+                        f"HardSigmoid (node {node_name!r}): alpha={alpha} must be finite"
+                    )
+            except (TypeError, ValueError):
+                problems.append(
+                    f"HardSigmoid (node {node_name!r}): alpha={alpha} is not a valid float"
+                )
+        beta = attrs.get("beta")
+        if beta is not None:
+            try:
+                val = float(beta)  # type: ignore[arg-type]
+                if not math.isfinite(val):
+                    problems.append(f"HardSigmoid (node {node_name!r}): beta={beta} must be finite")
+            except (TypeError, ValueError):
+                problems.append(
+                    f"HardSigmoid (node {node_name!r}): beta={beta} is not a valid float"
+                )
     return problems
 
 

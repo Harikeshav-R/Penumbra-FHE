@@ -40,6 +40,7 @@ from onnx import numpy_helper
 from penumbra import op_registry
 from penumbra.layers import Activation, Conv2d, Layer, Linear, Pool
 from penumbra.model import Model
+from penumbra.quantization.activations import activation_fn
 
 
 class UnsupportedModelError(ValueError):
@@ -330,8 +331,10 @@ def _lower_chain(
             layers.append(_lower_conv(node, consts, shapes, act_in))
         elif node.op_type in ("Gemm", "MatMul"):
             layers.append(_lower_linear(node, consts, act_in))
-        elif cat == op_registry.CAT_ACTIVATION:  # Relu
-            layers.append(Activation(lambda v: max(v, 0.0)))
+        elif cat == op_registry.CAT_ACTIVATION:
+            if node.op_type == "Sigmoid" and is_last:
+                break  # terminal sigmoid is argmax-invariant — dropped, as in Phase 6
+            layers.append(Activation(activation_fn(node.op_type, _attrs(node))))
         elif cat == op_registry.CAT_POOL:
             layers.append(_lower_pool(node, shapes, act_in))
         else:  # pragma: no cover - registry/loader drift guard
