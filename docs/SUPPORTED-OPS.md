@@ -13,6 +13,7 @@ runtime's `OpSpec` enum in sync.
 The op vocabulary is **the same for every backend** — a scheme never gets an op of its own.
 What differs is how each op is realized and what it costs; see
 [Backend support](#backend-support) below and [`docs/BACKENDS.md`](./BACKENDS.md).
+Validated end-to-end models: [`docs/MODEL-ZOO.md`](./MODEL-ZOO.md).
 
 Notation (**TFHE backend**, the reference): a value is carried as a **signed radix integer**
 of `num_blocks` blocks; under the default profile each block holds `MESSAGE_BITS = 2` bits, so
@@ -51,7 +52,7 @@ and bit-width columns in the tables below describe this backend specifically.
 |---|---|---|---|
 | `Conv2d` | convolutional layers in CNNs | `Σ (ciphertext × plaintext kernel weight) + bias` at every spatial position — scalar-mul + adds, **no PBS** (the `Linear` pattern shared across positions) | `max(sum_bits, bias_bits) + 2` with fan-in `N = in_channels·kernel_h·kernel_w` (same form as `Linear`) |
 | `Requant` | rescale a wide accumulator → small int (enables multi-layer models) | `clamp(((max(x, clamp_lo)·mult + round_bias) >> shift) + zero_point, 0, 2^out_bits-1)`: signed floor (`clamp_lo`, default `0` = fused ReLU) + fixed-point multiply-then-round-shift + activation domain offset (`zero_point`, default `0`) + radix-level saturate, then a single-block **PBS** (resets noise). `mult`/`round_bias` (default `1`/`0` = legacy pure shift) approximate an arbitrary scale ratio `mult/2^shift`; the multiply is a cheap plaintext scalar-mul (no extra PBS). **Per-channel (IR 0.6.0):** an optional `mults`/`shifts`/`round_biases` + `channel_size` overlay applies a distinct rescale per output channel (flat element `idx` → channel `idx/channel_size`) for per-channel weight quantization; the shared `clamp_lut`/`out_bits` are unchanged, so PBS count is identical. **Signed floor + offset (IR 0.8.0):** `clamp_lo ≤ 0` and `zero_point ≥ 0` allow signed accumulators to narrow into the single-block LUT domain with sign intact. | output: `out_bits` (≤ `MESSAGE_BITS`); internal peak `(max(pos_max·mult + round_bias, neg_mag·mult))` checked against radix capacity |
-| `Pool` | average / max pooling in CNNs | per-channel window reduction over the flat map: `avg` = sum (`add_parallelized`, **no PBS**); `max` = pairwise `max` (comparison PBSs, expensive) | `avg`: `input_bits + ceil(log2 k)` (k = window size); `max`: `input_bits` (selection never grows magnitude) |
+| `Pool` | average / max pooling in CNNs | per-channel window reduction over the flat map: `avg` = sum (`add_parallelized`, **no PBS**); `max` = pairwise `max` (comparison PBSs, expensive); optional symmetric `padding` (IR 0.10.0): out-of-range taps skipped — `avg` sums in-bounds taps, `max` ignores padded taps | `avg`: `input_bits + ceil(log2 k)` (k = window size); `max`: `input_bits` (selection never grows magnitude) |
 | `Add` | residuals / skip connections | element-wise ciphertext addition of **two** input tensors — `add_parallelized`, **no PBS** | `max(a_bits, b_bits) + 1` (one carry; the wider operand's sign bit covers the result) |
 
 ### Notes — Phase 4
@@ -76,9 +77,11 @@ and bit-width columns in the tables below describe this backend specifically.
   `[out_channels][in_channels*kernel_h*kernel_w]` (one flattened kernel per output channel)
   and its zero padding is *virtual* (padded taps contribute nothing, no ciphertext zeros are
   materialized).
-- **`Pool` `avg` mode emits the window sum** and leaves the `1/k` to the next `Requant`'s
-  shift, keeping pooling PBS-free; the headline CNN uses `avg`. `Pool` has no padding in
-  Phase 4.
+- **`Pool` `avg` emits the integer window sum.** The float layer is the true mean, and the
+  `1/k` is carried in the output tensor's quantization scale. It folds into the next layer's
+  weight/bias quantization, so pooling stays PBS-free. As of IR 0.10.0 `Pool` supports symmetric
+  virtual `padding` (`padding < window`). `count_include_pad=0` with padding is rejected at load,
+  because border windows would need a per-position divisor.
 - **`Add` is the first multi-input op.** Its node carries **two** entries in `inputs`; the
   list order is the merge order (addition is commutative, so order is immaterial to the
   result, but the contract is uniform with future multi-input ops). The eval loop resolves a
@@ -90,8 +93,7 @@ and bit-width columns in the tables below describe this backend specifically.
 | Op | Covers | TFHE realization | Bit-width rule (`output_bits`) |
 |---|---|---|---|
 | `Compare` | decision trees, random forests, XGBoost | `out[i] = (x[indices[i]] >= thresholds[i]) ? 1 : 0` via `scalar_ge_parallelized` | `1` bit regardless of input width |
-| `Concat` | channel-axis merge in branching DAGs | ciphertext moves, **no PBS** | `max(input_bits)` |
-| `Split` | channel-axis segmentation in branching DAGs | contiguous segmentation, **no PBS** | `input_bits` (preserves input width across all outputs) |
+
 ### 4-stage tree ensemble lowering
 
 Tree ensembles lower through `penumbra.adapters.from_sklearn` and `from_xgboost` without ciphertext × ciphertext multiplies:
@@ -108,6 +110,36 @@ Tree ensembles lower through `penumbra.adapters.from_sklearn` and `from_xgboost`
 Given per-feature scale $s_j$ and client-side $x_{\text{int}} = \text{clip}(\text{round}(x / s_j), 0, 2^{\text{input\_bits}} - 1)$, continuous thresholds are converted and clamped into $[0, 2^{\text{input\_bits}}]$:
 - scikit-learn ($x > t$): $T = \lfloor t / s_j \rfloor + 1$
 - XGBoost ($x \ge c$): $T = \lceil c / s_j \rceil$
+
+## Phase 8 — branching graphs (`Concat`, `Split`)
+
+| Op | Covers | TFHE realization | Bit-width rule (`output_bits`) |
+|---|---|---|---|
+| `Concat` | channel-axis merge in branching DAGs | ciphertext moves, **no PBS** | `max(input_bits)` |
+| `Split` | channel-axis segmentation in branching DAGs | contiguous segmentation, **no PBS** | `input_bits` (preserves input width across all outputs) |
+
+## Phase 8 — pooling (padding, global average pool)
+
+- **Global average pooling (`GlobalAveragePool`)** lowers directly to `Pool(avg)` with a spatial window covering the full feature map (`pool_h = in_h, pool_w = in_w, stride = 1`).
+- **Symmetric virtual padding (IR 0.10.0):** `Pool` supports symmetric padding `padding < min(pool_h, pool_w)`. Out-of-range taps are skipped: `avg` sums the in-bounds taps, while `max` ignores padded taps (matching $-\infty$ padding). The window must fit the padded input (`pool_h <= in_h + 2*padding`).
+- **Quantization scale rule:** `Pool(avg)` integer op emits the window sum; the float layer is the true mean. The `1/k` factor ($k = \text{pool\_h} \times \text{pool\_w}$) is carried in the output tensor's quantization scale (`out_scale = in_scale / k`) and folds into downstream weight/bias quantization, keeping pooling PBS-free.
+- **`Pool(max)` with padding** is implemented on the TFHE backend (`cmp_pbs_ops`); max pooling remains unsupported on CKKS.
+- **Bit-width growth rule is unchanged:** at most $k$ taps are summed, so `avg` produces $\text{input\_bits} + \lceil \log_2(k) \rceil$, and `max` preserves $\text{input\_bits}$.
+
+## Phase 8 — per-op coverage
+
+Every Phase 8 op/feature is tracked end-to-end across the stack:
+
+| Op / feature | Registry / entry point | TFHE | CKKS | Bit-width rule | Golden tests |
+|---|---|---|---|---|---|
+| `Compare` | `python/penumbra/adapters/trees.py` (`from_sklearn`, `from_xgboost`) | `crates/penumbra-tfhe/src/ops/compare.rs` | `crates/penumbra-ckks/src/ops/mod.rs` `Compare` (tree graphs rejected by the depth budget) | `1` | `runtime/tests/golden_trees.rs`, `ckks_golden_ops.rs::ckks_fhe_compare_matches_cleartext`, `ckks_unsupported_ops.rs::tree_ensemble_chained_compares_rejected_by_depth_budget` |
+| `Activation` (Tanh, LeakyRelu, HardSwish, Gelu, Elu, HardSigmoid, Sigmoid) | `op_registry.py` entries | `crates/penumbra-tfhe/src/ops/activation.rs` | `crates/penumbra-ckks/src/ops/polymap.rs` `fit_activation` | table `output_bits` | `golden_tanh_mlp.rs`, `ckks_golden_tanh_mlp.rs`, `ckks_golden_ops.rs::ckks_fhe_activation_lut_matches_cleartext`, `tests/test_activation_lut.py` |
+| Signed `Requant` (`clamp_lo`, `zero_point`) | `Model.quantize` | `ops/requant.rs` | `polymap.rs` `fit_requant` | `out_bits` + internal peak | `runtime/tests/golden_requant_signed.rs`, `ckks_golden_ops.rs::ckks_fhe_requant_non_identity_clamp_lut_matches_reference` |
+| `Concat` | registry `Concat` | `ops/concat.rs` | `ops/mod.rs` `Concat` | `max(input_bits)` | `golden_branch_mlp.rs`, `ckks_golden_branch_mlp.rs` |
+| `Split` | registry `Split` | `ops/split.rs` | `ops/mod.rs` `Split` | `input_bits` | same as `Concat` |
+| Residual `Add` | registry `Add` | `ops/add.rs` | `ops/add.rs` | `max(a,b)+1` | `runtime/tests/golden_add.rs`, `golden_branch_mlp.rs`, `ckks_golden_ops.rs::ckks_fhe_add_matches_cleartext` |
+| `BatchNormalization` (load-time fold) | `python/penumbra/quantization/batchnorm.py` | no runtime op | no runtime op | n/a | `tests/test_batchnorm_fold.py`, `golden_bn_cnn.rs`, `ckks_golden_bn_cnn.rs` |
+| `Pool` padding + GAP | registry `MaxPool` / `AveragePool` / `GlobalAveragePool` | `ops/pool.rs` | `ops/matvec.rs` `avg_pool_matrix` (max rejected) | unchanged | `golden_pool.rs` padded tests, `golden_gap_cnn.rs`, `ckks_golden_ops.rs::ckks_fhe_padded_pool_avg_matches_cleartext`, `ckks_golden_gap_cnn.rs` |
 
 ## ONNX front door (Phase 6)
 
@@ -194,7 +226,7 @@ approximated, and the vocabulary never forks per backend (`AGENTS.md` §1.2).
 |---|---|---|---|
 | `Linear` | ✅ exact, no PBS | ✅ approximate within declared bound | BSGS diagonal transform + plaintext adds; spends one level (`log_delta` bits) |
 | `Conv2d` | ✅ exact, no PBS | ✅ approximate within declared bound | lowered to plaintext im2col matrix; evaluated via BSGS diagonal transform |
-| `Pool` (`avg`) | ✅ exact, no PBS | ✅ approximate within declared bound | lowered to 0/1 window sum matrix; evaluated via BSGS diagonal transform |
+| `Pool` (`avg`) | ✅ exact, no PBS | ✅ approximate within declared bound | 0/1 matrix over in-bounds taps (padding skipped); BSGS diagonal transform |
 | `Pool` (`max`) | ✅ exact, comparison PBS | ❌ rejected at load time | polynomial sign approximation depth exceeds level budget; use Pool(avg) or TFHE backend |
 | `Add` | ✅ exact, no PBS | ✅ approximate within declared bound | native ciphertext-ciphertext add (zero depth) |
 | `Activation` | ✅ exact, one PBS | ✅ approximate within declared bound | exact Chebyshev interpolating polynomial over LUT domain; zero fit error on integer inputs |
@@ -202,6 +234,7 @@ approximated, and the vocabulary never forks per backend (`AGENTS.md` §1.2).
 | `Compare` | ✅ exact, comparison PBS | ⚠️ op implemented; chained sharp steps exceed level budget for tree graph (needs 360 bits vs 330 budget capacity) | plaintext linear map (gather - threshold) + continuous smoothed step polynomial approximation |
 | `Concat` | ✅ exact, no PBS | ✅ approximate within declared bound | 0/1 selection linear map per segment, summed (spends one level) |
 | `Split` | ✅ exact, no PBS | ✅ approximate within declared bound | 0/1 window linear map per segment (spends one level) |
+
 Two notes that explain the whole column:
 
 - **CKKS has no lookup table and no programmable bootstrap.** Every op marked *approximate*
@@ -217,5 +250,4 @@ Two notes that explain the whole column:
 
 | Op | Phase | Notes |
 |---|---|---|
-
 | `>2`-class `Argmax` (in-FHE) | later | pairwise `max`/`gt` over a score vector; Phase 4 decrypts the logits and argmaxes client-side |

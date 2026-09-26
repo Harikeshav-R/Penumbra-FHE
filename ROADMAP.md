@@ -382,9 +382,12 @@ that unlock new model classes, each via the same add-an-op discipline.
 - [x] **Batch norm folding:** fold BN into preceding conv/linear at quantization time (common
       ONNX pattern) so it costs nothing at runtime.
       *Note:* Delivered in Phase 8 Step 4 via load-time BatchNorm folding (`penumbra.quantization.fold_batchnorm`) into preceding Conv2d/Linear weights and bias, and committed fixture `phase8_bn_cnn_fixture.json`.
-- [ ] **Additional pooling / global average pool.**
-- [ ] For each new op: registry entry + Rust impl + bit-width rule + golden test.
-- [ ] Expand `docs/SUPPORTED-OPS.md` and add a model-zoo of validated examples.
+- [x] **Additional pooling / global average pool.**
+      *Note:* Delivered via symmetric virtual `padding` on `Pool` (IR schema 0.10.0), avg-pool `1/k` carried in the output quantization scale (fixes ONNX AveragePool/GlobalAveragePool lowering fidelity), and committed fixture `phase8_gap_cnn_fixture.json` (padded AvgPool + GlobalAveragePool, TFHE + CKKS goldens).
+- [x] For each new op: registry entry + Rust impl + bit-width rule + golden test.
+      *Note:* Audited in `docs/SUPPORTED-OPS.md` § "Phase 8 — per-op coverage".
+- [x] Expand `docs/SUPPORTED-OPS.md` and add a model-zoo of validated examples.
+      *Note:* `docs/MODEL-ZOO.md`, drift-guarded by `tests/test_model_zoo_doc.py`.
 
 ### Exit Criteria
 

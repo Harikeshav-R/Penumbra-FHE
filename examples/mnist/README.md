@@ -54,6 +54,7 @@ fast Python self-consistency test.
 | `phase6_sklearn_fixture.json` | `sklearn_export.py` | `Linear` | a second framework (`skl2onnx`) through the same waist |
 | `phase8_tanh_fixture.json` | `tanh_mlp_export.py` | `Linear → Requant → Activation → Linear` | signed-accumulator `Requant` + affine-domain `Activation` LUT |
 
+Complete list with goldens and accuracies: [`docs/MODEL-ZOO.md`](../../docs/MODEL-ZOO.md).
 The Phase-5/6 generators need the optional `ml` extra (torch + sklearn + brevitas); see
 `docs/BENCHMARKS.md` for the exact commands. Their FHE golden tests are `#[ignore]`d because
 they run minutes per sample.
