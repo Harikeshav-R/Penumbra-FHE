@@ -92,3 +92,7 @@ required-features = ["ckks"]
 [[test]]
 name = "cost_model"
 required-features = ["ckks"]
+
+[[test]]
+name = "ckks_golden_tanh_mlp"
+required-features = ["ckks"]

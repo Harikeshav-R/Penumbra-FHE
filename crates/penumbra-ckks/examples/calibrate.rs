@@ -115,6 +115,12 @@ fn main() {
             "logits",
             bounds::PHASE7_FACES,
         ),
+        (
+            "Phase 8 tanh",
+            "examples/mnist/phase8_tanh_fixture.json",
+            "logits",
+            bounds::PHASE8_TANH,
+        ),
     ];
 
     let ctx = EvalCtx::new(&sk, 8);

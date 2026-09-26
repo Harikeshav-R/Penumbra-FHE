@@ -119,30 +119,6 @@ def test_activation_without_accumulator_fails():
         model.quantize(np.random.default_rng(0).uniform(0, 16, size=(8, 4)), n_bits=4)
 
 
-def test_non_relu_activation_fusion_rejected():
-    """A non-ReLU activation after an accumulator fails loudly — the Requant only fuses a ReLU.
-
-    Guard for the silent-wrong-function bug: the fused Requant applies max(x, 0), so a sigmoid
-    would be computed as a ReLU. `Model.quantize` verifies the activation is ReLU-like and raises.
-    """
-    rng = np.random.default_rng(11)
-
-    def _sigmoid(x: float) -> float:
-        return 1.0 / (1.0 + np.exp(-x))
-
-    model = Model(
-        [
-            Linear(weight=rng.normal(size=(8, 8)), bias=rng.normal(size=8)),
-            Activation(_sigmoid),
-            Linear(weight=rng.normal(size=(10, 8)), bias=rng.normal(size=10)),
-        ],
-        input_bits=4,
-    )
-    cal = rng.uniform(0.0, 16.0, size=(32, 8))
-    with pytest.raises(ValueError, match="not a ReLU"):
-        model.quantize(cal, n_bits=4, act_bits=2)
-
-
 def test_terminal_relu_fusion_rejected():
     """A trailing ReLU on the final accumulator fails loudly — it has no Requant to fuse into.
 
@@ -381,3 +357,71 @@ def test_quantize_per_layer_weight_bits():
     # < 1 bit raises
     with pytest.raises(ValueError, match="must be >= 1"):
         model.quantize(cal, n_bits=[6, 0])
+
+
+def test_quantize_tanh_model_signed_path():
+    """Model with Tanh quantizes via signed Requant + affine Activation."""
+    import math
+
+    rng = np.random.default_rng(42)
+    w1 = rng.normal(scale=0.1, size=(4, 6))
+    b1 = rng.normal(scale=0.1, size=4)
+    w2 = rng.normal(scale=0.1, size=(2, 4))
+    b2 = rng.normal(scale=0.1, size=2)
+    model = Model(
+        [
+            Linear(weight=w1, bias=b1),
+            Activation(math.tanh),
+            Linear(weight=w2, bias=b2),
+        ],
+        input_bits=4,
+    )
+    cal = rng.uniform(0.0, 16.0, size=(32, 6))
+    graph = model.quantize(cal, n_bits=5, act_bits=2, calibration="minmax")
+
+    op_types = [n.op.op_type for n in graph.nodes]
+    assert op_types == ["Linear", "Requant", "Activation", "Linear"]
+
+    rq_op = graph.nodes[1].op
+    assert rq_op.clamp_lo < 0, f"expected clamp_lo < 0, got {rq_op.clamp_lo}"
+    assert rq_op.zero_point > 0, f"expected zero_point > 0, got {rq_op.zero_point}"
+
+    check_bit_width_budget(graph)
+
+    # evaluate_graph_int runs clean
+    xq = (cal[0] / model.input_scale).round().astype(int).tolist()
+    out = evaluate_graph_int(graph, {"x": xq})
+    assert len(out[graph.outputs[0]]) == 2
+
+
+def test_non_relu_activation_errors():
+    """Loud errors: terminal activation, standalone activation, and non-accumulator consumer."""
+    import math
+
+    rng = np.random.default_rng(0)
+    w = rng.normal(size=(4, 6))
+    b = rng.normal(size=4)
+    cal = rng.uniform(0.0, 16.0, size=(16, 6))
+
+    # 1. Terminal activation:
+    m_term = Model([Linear(weight=w, bias=b), Activation(math.tanh)], input_bits=4)
+    with pytest.raises(ValueError, match="terminal activation at layer 1 cannot be lowered"):
+        m_term.quantize(cal, n_bits=4)
+
+    # 2. Activation not preceded by an accumulator:
+    m_alone = Model([Activation(math.tanh), Linear(weight=w, bias=b)], input_bits=4)
+    with pytest.raises(ValueError, match="does not follow an accumulator"):
+        m_alone.quantize(cal, n_bits=4)
+
+    # 3. Activation consumed by a Pool:
+    m_pool = Model(
+        [
+            Conv2d(weight=rng.normal(size=(2, 1, 3, 3)), in_h=6, in_w=6, in_channels=1),
+            Activation(math.tanh),
+            Pool("avg", in_h=4, in_w=4, channels=2, pool_h=2, pool_w=2, stride=2),
+            Linear(weight=rng.normal(size=(2, 8)), bias=rng.normal(size=2)),
+        ],
+        input_bits=4,
+    )
+    with pytest.raises(ValueError, match=r"consumed by Pool.*must feed a Conv2d/Linear"):
+        m_pool.quantize(rng.uniform(0.0, 16.0, size=(16, 36)), n_bits=4)

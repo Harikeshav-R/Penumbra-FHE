@@ -6,12 +6,12 @@
 use penumbra_ckks::backend::check_graph_depth_budget;
 use penumbra_ckks::params::DEFAULT_PARAMS;
 use penumbra_ckks::CkksBackend;
-use penumbra_core::ir::{Graph, Node, OpSpec};
+use penumbra_core::ir::{Graph, Node, OpSpec, SCHEMA_VERSION};
 
 #[test]
 fn pool_max_rejected_loudly_at_load_time() {
     let graph = Graph {
-        schema_version: "0.7.0".to_string(),
+        schema_version: SCHEMA_VERSION.to_string(),
         num_blocks: 4,
         input_bits: 4,
         inputs: vec!["x".to_string()],

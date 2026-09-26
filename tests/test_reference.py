@@ -225,3 +225,41 @@ def test_compare_reference_oracle():
     # Out-of-range index raises ValueError
     with pytest.raises(ValueError, match="out of range"):
         evaluate_graph_int(g, {"x": [3, 9]})  # length 2, but indices[0]=2 needs index 2
+
+
+def test_requant_signed_floor_and_zero_point():
+    """Requant: clamp_lo < 0 and zero_point > 0 evaluate exact signed floor + offset arithmetic."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=6,
+        input_bits=8,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[
+            Node(
+                name="rq",
+                inputs=["x"],
+                outputs=["y"],
+                op=RequantSpec(
+                    shift=3,
+                    mult=1,
+                    round_bias=4,
+                    clamp_lo=-16,
+                    zero_point=2,
+                    out_bits=2,
+                    clamp_lut=[0, 1, 2, 3],
+                ),
+            )
+        ],
+    )
+    inputs = [-50, -16, -10, -4, 4, 12, 100]
+    # -50: t=max(-50, -16)=-16, u=(-16+4)>>3 = -2, u+zero_point = 0 -> clamped to 0
+    # -16: t=-16, u=-2, u+zero_point = 0
+    # -10: t=-10, u=(-10+4)>>3 = -1, u+zero_point = 1
+    #  -4: t=-4,  u=(-4+4)>>3 = 0,  u+zero_point = 2
+    #   4: t=4,   u=(4+4)>>3 = 1,   u+zero_point = 3
+    #  12: t=12,  u=(12+4)>>3 = 2,  u+zero_point = 4 -> clamped to 3
+    # 100: positive saturation -> clamped to 3
+    expected = [0, 0, 1, 2, 3, 3, 3]
+    out = evaluate_graph_int(g, {"x": inputs})
+    assert out["y"] == expected

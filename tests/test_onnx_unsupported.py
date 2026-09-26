@@ -41,7 +41,7 @@ def _f32(arr, name):
 
 
 def test_lists_all_unsupported_problems_at_once(tmp_path):
-    """A model with BatchNorm + a non-ReLU activation + a residual Add reports all three at once."""
+    """A model with BatchNorm + a residual Add reports both at once (Tanh is supported)."""
     rng = np.random.default_rng(0)
     w = rng.normal(size=(4, 4))
     scale = np.ones(4)
@@ -62,12 +62,35 @@ def test_lists_all_unsupported_problems_at_once(tmp_path):
     with pytest.raises(UnsupportedModelError) as exc:
         fhe.load_onnx(path)
     problems = exc.value.problems
-    # All three offenders named in one report, each actionable.
+    # Two offenders named in one report, each actionable (Tanh is supported).
     joined = "\n".join(problems)
     assert "BatchNormalization" in joined and "'bn1'" in joined
-    assert "Tanh" in joined and "'tanh1'" in joined
     assert "Add" in joined and "'res'" in joined
-    assert len(problems) == 3
+    assert len(problems) == 2
+
+
+def test_mid_graph_sigmoid_is_supported_in_problem_list(tmp_path):
+    """A mid-graph Sigmoid is a supported activation; it does not appear in the problem list."""
+    rng = np.random.default_rng(0)
+    w = rng.normal(size=(4, 4))
+    nodes = [
+        helper.make_node("MatMul", ["x", "w"], ["h"], name="mm"),
+        helper.make_node("Sigmoid", ["h"], ["s"], name="sig1"),
+        helper.make_node("BatchNormalization", ["s", "scale", "b", "m", "v"], ["y"], name="bn1"),
+    ]
+    scale = np.ones(4)
+    b = np.zeros(4)
+    mean = np.zeros(4)
+    var = np.ones(4)
+    inits = [_f32(w, "w"), _f32(scale, "scale"), _f32(b, "b"), _f32(mean, "m"), _f32(var, "v")]
+    path = _model(nodes, inits, [_vi("x", [1, 4])], [_vi("y", [1, 4])], tmp_path)
+
+    with pytest.raises(UnsupportedModelError) as exc:
+        fhe.load_onnx(path)
+    problems = exc.value.problems
+    assert len(problems) == 1
+    assert "BatchNormalization" in problems[0] and "'bn1'" in problems[0]
+    assert "Sigmoid" not in "\n".join(problems)
 
 
 def test_branching_graph_fails_loudly(tmp_path):

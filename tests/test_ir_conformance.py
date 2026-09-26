@@ -280,6 +280,63 @@ def test_requant_spec_per_channel_rejects_inconsistent():
         )
 
 
+def test_requant_signed_fields_round_trip():
+    """RequantSpec with clamp_lo < 0 and zero_point > 0 round-trips and emits fields in order."""
+    op = RequantSpec(
+        shift=3,
+        mult=1,
+        round_bias=4,
+        clamp_lo=-16,
+        zero_point=2,
+        out_bits=2,
+        clamp_lut=[0, 1, 2, 3],
+    )
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=6,
+        input_bits=8,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[Node(name="rq", inputs=["x"], outputs=["y"], op=op)],
+    )
+    restored = Graph.from_json(g.to_json())
+    assert restored == g
+    assert restored.nodes[0].op.to_dict() == {
+        "op_type": "Requant",
+        "shift": 3,
+        "mult": 1,
+        "round_bias": 4,
+        "clamp_lo": -16,
+        "zero_point": 2,
+        "out_bits": 2,
+        "clamp_lut": [0, 1, 2, 3],
+    }
+
+
+def test_requant_zero_floor_and_zero_point_omits_fields():
+    """A (0, 0) Requant emits neither clamp_lo nor zero_point — byte-identical to 0.7.0."""
+    d = RequantSpec(shift=4, out_bits=2, clamp_lut=[0, 1, 2, 3], clamp_lo=0, zero_point=0).to_dict()
+    assert "clamp_lo" not in d
+    assert "zero_point" not in d
+
+
+def test_requant_spec_rejects_positive_clamp_lo_or_uncovered_floor():
+    """clamp_lo > 0 and zero_point + u_min < 0 are rejected at construction."""
+    with pytest.raises(ValueError, match="clamp_lo must be <= 0"):
+        RequantSpec(shift=1, out_bits=2, clamp_lut=[0, 1, 2, 3], clamp_lo=1)
+    with pytest.raises(ValueError, match="does not cover the floor image"):
+        # (-16 * 1 + 4) >> 3 = -2; zero_point=1 gives 1 + (-2) = -1 < 0
+        RequantSpec(
+            shift=3,
+            mult=1,
+            round_bias=4,
+            clamp_lo=-16,
+            zero_point=1,
+            out_bits=2,
+            clamp_lut=[0, 1, 2, 3],
+        )
+
+
 def test_compare_spec_round_trips():
     """The ``Compare`` op (indices + thresholds) round-trips through ir.py."""
     g = Graph(

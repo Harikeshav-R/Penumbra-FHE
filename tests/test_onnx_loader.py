@@ -26,9 +26,9 @@ from penumbra.reference import evaluate_graph_int
 OPSET = 13
 
 
-def _save(nodes, inits, inputs, outputs, tmp_path, name="m.onnx") -> str:
+def _save(nodes, inits, inputs, outputs, tmp_path, name="m.onnx", opset: int = OPSET) -> str:
     graph = helper.make_graph(nodes, "g", inputs, outputs, inits)
-    model = helper.make_model(graph, opset_imports=[helper.make_operatorsetid("", OPSET)])
+    model = helper.make_model(graph, opset_imports=[helper.make_operatorsetid("", opset)])
     onnx.checker.check_model(model)
     path = str(tmp_path / name)
     onnx.save(model, path)
@@ -318,3 +318,93 @@ def test_input_bits_override(tmp_path):
     path = _save(nodes, [_f32(w, "w")], [_vi("x", [1, 3])], [_vi("y", [1, 3])], tmp_path)
     assert fhe.load_onnx(path).input_bits == 4
     assert fhe.load_onnx(path, input_bits=6).input_bits == 6
+
+
+def test_all_seven_activations_lower_accurately(tmp_path):
+    """Each of the seven non-ReLU activations lowers to exact Activation.fn."""
+    import math
+
+    from penumbra.quantization import activations as ref_act
+
+    probes = [-3.0, -1.0, 0.0, 0.5, 2.0]
+    test_cases = [
+        ("Tanh", {}, ref_act.tanh, 13),
+        ("LeakyRelu", {"alpha": 0.05}, ref_act.activation_fn("LeakyRelu", {"alpha": 0.05}), 13),
+        ("HardSwish", {}, ref_act.hardswish, 14),
+        ("Gelu", {"approximate": b"none"}, ref_act.gelu, 20),
+        (
+            "Gelu",
+            {"approximate": b"tanh"},
+            ref_act.activation_fn("Gelu", {"approximate": "tanh"}),
+            20,
+        ),
+        ("Elu", {"alpha": 1.5}, ref_act.activation_fn("Elu", {"alpha": 1.5}), 13),
+        (
+            "HardSigmoid",
+            {"alpha": 0.15, "beta": 0.6},
+            ref_act.activation_fn("HardSigmoid", {"alpha": 0.15, "beta": 0.6}),
+            13,
+        ),
+        ("Sigmoid", {}, ref_act.sigmoid, 13),
+    ]
+
+    w = np.eye(3)
+    for idx, (op_name, attrs, expected_fn, op_opset) in enumerate(test_cases):
+        nodes = [
+            helper.make_node("Gemm", ["x", "w"], ["h"], name="fc1", transB=1),
+            helper.make_node(op_name, ["h"], ["r"], name=f"act_{idx}", **attrs),
+            helper.make_node("Gemm", ["r", "w"], ["y"], name="fc2", transB=1),
+        ]
+        path = _save(
+            nodes,
+            [_f32(w, "w")],
+            [_vi("x", [1, 3])],
+            [_vi("y", [1, 3])],
+            tmp_path,
+            name=f"act_{idx}.onnx",
+            opset=op_opset,
+        )
+        model = fhe.load_onnx(path)
+        assert len(model.layers) == 3
+        act_layer = model.layers[1]
+        assert isinstance(act_layer, Activation)
+        for p in probes:
+            assert math.isclose(act_layer.fn(p), expected_fn(p), rel_tol=1e-5, abs_tol=1e-7)
+
+
+def test_terminal_sigmoid_is_dropped_mid_graph_lowers(tmp_path):
+    """A terminal Sigmoid is dropped; a mid-graph Sigmoid lowers to Activation."""
+    w = np.eye(3)
+    # Terminal Sigmoid: Gemm -> Sigmoid
+    nodes_term = [
+        helper.make_node("Gemm", ["x", "w"], ["h"], name="fc", transB=1),
+        helper.make_node("Sigmoid", ["h"], ["y"], name="sig_term"),
+    ]
+    path_term = _save(
+        nodes_term,
+        [_f32(w, "w")],
+        [_vi("x", [1, 3])],
+        [_vi("y", [1, 3])],
+        tmp_path,
+        name="term_sig.onnx",
+    )
+    m_term = fhe.load_onnx(path_term)
+    assert len(m_term.layers) == 1, "terminal Sigmoid should be dropped"
+
+    # Mid-graph Sigmoid: Gemm -> Sigmoid -> Gemm
+    nodes_mid = [
+        helper.make_node("Gemm", ["x", "w"], ["h"], name="fc1", transB=1),
+        helper.make_node("Sigmoid", ["h"], ["s"], name="sig_mid"),
+        helper.make_node("Gemm", ["s", "w"], ["y"], name="fc2", transB=1),
+    ]
+    path_mid = _save(
+        nodes_mid,
+        [_f32(w, "w")],
+        [_vi("x", [1, 3])],
+        [_vi("y", [1, 3])],
+        tmp_path,
+        name="mid_sig.onnx",
+    )
+    m_mid = fhe.load_onnx(path_mid)
+    assert len(m_mid.layers) == 3
+    assert isinstance(m_mid.layers[1], Activation)
