@@ -93,6 +93,8 @@ fn step_fuse(g: &Graph) -> Result<Option<Graph>, String> {
                 shift,
                 mult,
                 round_bias,
+                clamp_lo,
+                zero_point,
                 out_bits,
                 clamp_lut,
                 mults,
@@ -125,6 +127,8 @@ fn step_fuse(g: &Graph) -> Result<Option<Graph>, String> {
                         shift: *shift,
                         mult: *mult,
                         round_bias: *round_bias,
+                        clamp_lo: *clamp_lo,
+                        zero_point: *zero_point,
                         out_bits: *out_bits,
                         clamp_lut: composed,
                         mults: mults.clone(),
@@ -194,6 +198,8 @@ fn step_fuse(g: &Graph) -> Result<Option<Graph>, String> {
                 shift: shift1,
                 mult: mult1,
                 round_bias: round_bias1,
+                clamp_lo: clamp_lo1,
+                zero_point: zero_point1,
                 out_bits: out_bits1,
                 clamp_lut: clamp_lut1,
                 mults: mults1,
@@ -205,6 +211,8 @@ fn step_fuse(g: &Graph) -> Result<Option<Graph>, String> {
                 shift: shift2,
                 mult: mult2,
                 round_bias: round_bias2,
+                clamp_lo: clamp_lo2,
+                zero_point: zero_point2,
                 out_bits: out_bits2,
                 clamp_lut: clamp_lut2,
                 mults: mults2,
@@ -214,7 +222,12 @@ fn step_fuse(g: &Graph) -> Result<Option<Graph>, String> {
             },
         ) = (&producer.op, &consumer.op)
         {
-            if mults2.is_empty() && shifts2.is_empty() && round_biases2.is_empty() {
+            if mults2.is_empty()
+                && shifts2.is_empty()
+                && round_biases2.is_empty()
+                && *clamp_lo2 == 0
+                && *zero_point2 == 0
+            {
                 let max_sat = (1u64 << *out_bits2) - 1;
                 let mut composed = Vec::with_capacity(clamp_lut1.len());
                 let mut valid = true;
@@ -240,6 +253,8 @@ fn step_fuse(g: &Graph) -> Result<Option<Graph>, String> {
                             shift: *shift1,
                             mult: *mult1,
                             round_bias: *round_bias1,
+                            clamp_lo: *clamp_lo1,
+                            zero_point: *zero_point1,
                             out_bits: *out_bits1,
                             clamp_lut: composed,
                             mults: mults1.clone(),
@@ -292,6 +307,8 @@ mod tests {
                         shift: 2,
                         mult: 1,
                         round_bias: 2,
+                        clamp_lo: 0,
+                        zero_point: 0,
                         out_bits: 2,
                         clamp_lut: vec![0, 1, 2, 3],
                         mults: vec![],
@@ -360,6 +377,8 @@ mod tests {
                         shift: 2,
                         mult: 1,
                         round_bias: 2,
+                        clamp_lo: 0,
+                        zero_point: 0,
                         out_bits: 2,
                         clamp_lut: vec![0, 1, 2, 3],
                         mults: vec![],
@@ -407,6 +426,8 @@ mod tests {
                         shift: 2,
                         mult: 1,
                         round_bias: 2,
+                        clamp_lo: 0,
+                        zero_point: 0,
                         out_bits: 2,
                         clamp_lut: vec![0, 1, 2, 3],
                         mults: vec![],
@@ -495,6 +516,8 @@ mod tests {
                         shift: 0,
                         mult: 1,
                         round_bias: 0,
+                        clamp_lo: 0,
+                        zero_point: 0,
                         out_bits: 2,
                         clamp_lut: vec![0, 1, 2, 3],
                         mults: vec![],
@@ -511,6 +534,8 @@ mod tests {
                         shift: 1,
                         mult: 1,
                         round_bias: 0,
+                        clamp_lo: 0,
+                        zero_point: 0,
                         out_bits: 2,
                         clamp_lut: vec![0, 2, 1, 3],
                         mults: vec![],
@@ -569,6 +594,8 @@ mod tests {
                         shift: 0,
                         mult: 1,
                         round_bias: 0,
+                        clamp_lo: 0,
+                        zero_point: 0,
                         out_bits: 2,
                         clamp_lut: vec![0, 1, 2, 3],
                         mults: vec![],
@@ -585,6 +612,8 @@ mod tests {
                         shift: 0,
                         mult: 1,
                         round_bias: 0,
+                        clamp_lo: 0,
+                        zero_point: 0,
                         out_bits: 2,
                         clamp_lut: vec![0, 1, 2, 3],
                         mults: vec![],
@@ -619,6 +648,119 @@ mod tests {
             }
             Cow::Borrowed(_) => panic!("expected fusion"),
         }
+    }
+
+    #[test]
+    fn test_rule_r1_preserves_signed_clamp_and_zero_point() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 4,
+            input_bits: 4,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["z".to_string()],
+            nodes: vec![
+                Node {
+                    name: "rq".to_string(),
+                    inputs: vec!["x".to_string()],
+                    outputs: vec!["y".to_string()],
+                    op: OpSpec::Requant {
+                        shift: 2,
+                        mult: 1,
+                        round_bias: 2,
+                        clamp_lo: -16,
+                        zero_point: 4,
+                        out_bits: 2,
+                        clamp_lut: vec![0, 1, 2, 3],
+                        mults: vec![],
+                        shifts: vec![],
+                        round_biases: vec![],
+                        channel_size: None,
+                    },
+                },
+                Node {
+                    name: "act".to_string(),
+                    inputs: vec!["y".to_string()],
+                    outputs: vec!["z".to_string()],
+                    op: OpSpec::Activation {
+                        lut: vec![0, 2, 1, 3],
+                        output_bits: 2,
+                    },
+                },
+            ],
+        };
+
+        let opt = optimize_graph(&graph).expect("optimization succeeds");
+        match opt {
+            Cow::Owned(g) => {
+                assert_eq!(g.nodes.len(), 1);
+                if let OpSpec::Requant {
+                    clamp_lo,
+                    zero_point,
+                    clamp_lut,
+                    ..
+                } = &g.nodes[0].op
+                {
+                    assert_eq!(*clamp_lo, -16);
+                    assert_eq!(*zero_point, 4);
+                    assert_eq!(*clamp_lut, vec![0, 2, 1, 3]);
+                } else {
+                    panic!("fused node should be Requant");
+                }
+            }
+            Cow::Borrowed(_) => panic!("expected fusion"),
+        }
+    }
+
+    #[test]
+    fn test_rule_r3_declines_when_consumer_has_signed_clamp_or_zero_point() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 4,
+            input_bits: 4,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["z".to_string()],
+            nodes: vec![
+                Node {
+                    name: "rq1".to_string(),
+                    inputs: vec!["x".to_string()],
+                    outputs: vec!["y".to_string()],
+                    op: OpSpec::Requant {
+                        shift: 0,
+                        mult: 1,
+                        round_bias: 0,
+                        clamp_lo: 0,
+                        zero_point: 0,
+                        out_bits: 2,
+                        clamp_lut: vec![0, 1, 2, 3],
+                        mults: vec![],
+                        shifts: vec![],
+                        round_biases: vec![],
+                        channel_size: None,
+                    },
+                },
+                Node {
+                    name: "rq2".to_string(),
+                    inputs: vec!["y".to_string()],
+                    outputs: vec!["z".to_string()],
+                    op: OpSpec::Requant {
+                        shift: 1,
+                        mult: 1,
+                        round_bias: 0,
+                        clamp_lo: -4,
+                        zero_point: 1,
+                        out_bits: 2,
+                        clamp_lut: vec![0, 2, 1, 3],
+                        mults: vec![],
+                        shifts: vec![],
+                        round_biases: vec![],
+                        channel_size: None,
+                    },
+                },
+            ],
+        };
+
+        let opt = optimize_graph(&graph).expect("success");
+        assert!(matches!(opt, Cow::Borrowed(_)));
     }
 
     #[test]
