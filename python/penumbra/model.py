@@ -31,14 +31,16 @@ scale math** (quantization is a library service — ``PROJECT.md`` §8, §12). I
    evaluates, catching a scale/wiring bug *inside* ``quantize`` rather than three test files
    later (``AGENTS.md`` §1.1, §1.4).
 
-A note on scope: the float ``Activation`` must be a **ReLU** (the fused-requant path); a
-non-ReLU activation after a Requant (a standalone ``Activation`` LUT node) is a follow-on. A
-terminal ``Linear`` head is left wide — its logits are decrypted and argmaxed on the client
-(``PROJECT.md`` §11), so they never need to be LUT-narrow.
+Activations: a ReLU is fused into the preceding ``Requant``. A non-ReLU activation (tanh,
+GELU, leaky ReLU, hardswish, elu, hard sigmoid, sigmoid) is materialized as a signed
+``Requant`` + standalone affine ``Activation`` LUT node, folding its output zero-point into the
+downstream ``Conv2d``/``Linear``'s bias. A terminal ``Linear`` head is left wide — its logits are
+decrypted and argmaxed on the client (``PROJECT.md`` §11), so they never need to be LUT-narrow.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import replace
 
@@ -50,13 +52,18 @@ from penumbra.bitwidth import (
 )
 from penumbra.client import CryptoProfile, KeySet, run_encrypted
 from penumbra.compile import RequantChannelParams, insert_requants
-from penumbra.ir import SCHEMA_VERSION, ArgmaxSpec, Graph
+from penumbra.ir import SCHEMA_VERSION, ActivationSpec, ArgmaxSpec, Graph, Node
 from penumbra.layers import Activation, Conv2d, Layer, LayerContext, Linear, QuantConfig
 from penumbra.quantization.calibration import (
     MinMaxObserver,
     MSEObserver,
     Observer,
     PercentileObserver,
+)
+from penumbra.quantization.lut import (
+    affine_activation_codomain,
+    lut_output_bits,
+    make_affine_activation_lut,
 )
 from penumbra.quantization.ptq import choose_requant_params
 from penumbra.quantization.spec import QuantSpec, symmetric_spec
@@ -125,22 +132,21 @@ class Model:
 
     def _calibrate_accumulators(
         self, x: np.ndarray, observer_cls: type[Observer], act_bits: int
-    ) -> dict[int, float]:
-        """Observe each accumulator layer's post-ReLU output magnitude over the calibration batch.
+    ) -> tuple[dict[int, float], dict[int, tuple[float, float]]]:
+        """Observe each accumulator layer's output range over the calibration batch.
 
-        Returns ``{layer_index: clip_magnitude}`` — the clipping magnitude the layer's following
-        Requant should map to the top of the activation domain (the calibrated magnitude, not the
-        worst-case bit-width — ``penumbra.compile`` docstring). ``observer_cls`` selects the
-        strategy: :class:`MinMaxObserver` (the peak, no clipping — reproducible default),
-        :class:`PercentileObserver`, or :class:`MSEObserver` (both clip outliers, which helps when
-        activations are heavy-tailed). The magnitude is read at ``act_bits`` (MSE's optimal clip
-        is bit-width dependent); a signed=False spec matches the non-negative post-ReLU domain.
+        Returns ``(peaks, ranges)``:
+        - ``peaks``: ``{layer_index: clip_magnitude}`` for the fused-ReLU path.
+        - ``ranges``: ``{layer_index: (min, max)}`` of raw pre-activation outputs for the
+          signed-activation path.
         """
         peaks: dict[int, float] = {}
+        ranges: dict[int, tuple[float, float]] = {}
         acts = x
         for i, layer in enumerate(self.layers):
             out = layer.forward(acts)
             if isinstance(layer, _ACCUMULATOR_LAYERS):
+                ranges[i] = (float(np.min(out)), float(np.max(out)))
                 obs = observer_cls()
                 # Post-ReLU magnitude: the Requant fuses a ReLU, so only non-negative values
                 # survive to the activation domain. Observe max(out, 0).
@@ -151,7 +157,7 @@ class Model:
                 obs.spec(act_bits, signed=False)
                 peaks[i] = obs.magnitude()
             acts = out
-        return peaks
+        return peaks, ranges
 
     # -- quantization ----------------------------------------------------------------------
 
@@ -223,7 +229,7 @@ class Model:
             x = x[None, :]
 
         self.input_scale = self._calibrate_input(x)
-        acc_peaks = self._calibrate_accumulators(x, observer_cls, cfg.act_bits)
+        acc_peaks, acc_ranges = self._calibrate_accumulators(x, observer_cls, cfg.act_bits)
 
         # Walk layers, emitting natural IR nodes (no Requant yet). An accumulator (Conv2d/Linear)
         # immediately followed by a ReLU Activation is **requantized**: the fused-ReLU Requant
@@ -237,6 +243,8 @@ class Model:
         shifts: dict[str, int] = {}
         mults: dict[str, int] = {}
         round_biases: dict[str, int] = {}
+        clamp_los: dict[str, int] = {}
+        zero_points: dict[str, int] = {}
         per_channel_params: dict[str, RequantChannelParams] = {}
         act_ceiling = (1 << cfg.act_bits) - 1
 
@@ -247,11 +255,12 @@ class Model:
             ctx.index = i
 
             if isinstance(layer, Activation):
-                # Reached standalone: an accumulator+ReLU pair is consumed together below (i += 2),
-                # so hitting an Activation here means it does not follow an accumulator.
+                # Reached standalone: an accumulator+activation pair is consumed
+                # together below (i += 2), so hitting an Activation here means it does
+                # not follow an accumulator.
                 raise ValueError(
                     f"Activation at layer {i} does not follow an accumulator (Conv2d/Linear); "
-                    "a standalone post-Requant Activation LUT is not yet supported by Model"
+                    "a standalone Activation without a preceding accumulator is not supported"
                 )
             if isinstance(layer, _ACCUMULATOR_LAYERS):
                 ctx.config = replace(cfg, n_bits=layer_bits[acc_indices.index(i)])
@@ -260,6 +269,7 @@ class Model:
             nodes.extend(layer_nodes)
             ctx.tensor = layer_nodes[-1].outputs[0]
             ctx.scale = out_scale
+            ctx.zero_point = 0  # consumed by this layer's bias fold
 
             followed_by_activation = (
                 isinstance(layer, _ACCUMULATOR_LAYERS)
@@ -267,72 +277,149 @@ class Model:
                 and isinstance(self.layers[i + 1], Activation)
             )
             if followed_by_activation:
-                # The fused-requant path realizes the Activation as the Requant's hard max(x, 0)
-                # (`runtime/src/ops/requant.rs`), so it is only correct for a ReLU. Verify the
-                # activation behaves like a ReLU before fusing — a sigmoid/tanh would otherwise be
-                # silently replaced by a ReLU (`AGENTS.md` §1.4). See `_is_relu_like`.
                 act = self.layers[i + 1]
                 assert isinstance(act, Activation)
-                if not _is_relu_like(act.fn):
-                    raise ValueError(
-                        f"Activation at layer {i + 1} (following the accumulator at layer {i}) is "
-                        "not a ReLU. Model only supports fusing a ReLU into the preceding layer's "
-                        "Requant (it applies max(x, 0)); a non-ReLU activation would be silently "
-                        "computed as a ReLU. Use a ReLU here, or drop the activation."
-                    )
-                # A ReLU on the *terminal* accumulator cannot be fused: the head is left wide (its
-                # accumulator output is a graph output, so `insert_requants` inserts no Requant —
-                # logits are decrypted and argmaxed client-side, `PROJECT.md` §11). Fusing here
-                # would need a terminal Requant that narrows the logits to act_bits, which is wrong
-                # for a classification head. Rather than silently drop the ReLU, fail loudly
-                # (`AGENTS.md` §1.4): the ReLU has nowhere to go.
-                if i + 2 >= n_layers:
-                    raise ValueError(
-                        f"the terminal ReLU at layer {i + 1} cannot be fused: it follows the final "
-                        f"accumulator (layer {i}), whose output is the model's wide logit head "
-                        "(left un-narrowed for client-side argmax, `PROJECT.md` §11). A trailing "
-                        "ReLU has no Requant to fuse into — drop it (argmax is unaffected by a "
-                        "monotonic ReLU on the logits), or add a layer after it."
-                    )
-                # This accumulator will be requantized (fused ReLU). Choose the rescale that maps
-                # the calibrated post-ReLU peak to the top of the act_bits domain, and thread the
-                # post-Requant activation scale to the downstream layer. The activation scale is
-                # shared across channels (one activation domain / clamp LUT).
-                acc_scale = out_scale
-                peak = acc_peaks.get(i, 0.0)
-                act_scale = (peak / act_ceiling) if peak > 0 else acc_scale
-                acc_name = layer_nodes[-1].name
-                if ch_scales is not None:
-                    # Per-channel: each output channel has its own accumulator scale, so each gets
-                    # its own fixed-point multiplier M_i = acc_scale_i / act_scale. This is the fix
-                    # for the max-scale rescale bug — non-max channels are no longer mis-rescaled.
-                    ch_mults, ch_shifts, ch_rbs = [], [], []
-                    for acc_scale_i in ch_scales:
-                        m_i, s_i, rb_i = choose_requant_params(
-                            acc_scale_i,
+                if _is_relu_like(act.fn):
+                    # Fused ReLU path
+                    if i + 2 >= n_layers:
+                        raise ValueError(
+                            f"the terminal ReLU at layer {i + 1} cannot be fused: it follows the "
+                            f"final accumulator (layer {i}), whose output is the model's wide "
+                            "logit head (left un-narrowed for client-side argmax, `PROJECT.md` "
+                            "§11). A trailing ReLU has no Requant to fuse into — drop it (argmax "
+                            "is unaffected by a monotonic ReLU on the logits), or add a layer "
+                            "after it."
+                        )
+                    acc_scale = out_scale
+                    peak = acc_peaks.get(i, 0.0)
+                    act_scale = (peak / act_ceiling) if peak > 0 else acc_scale
+                    acc_name = layer_nodes[-1].name
+                    if ch_scales is not None:
+                        ch_mults, ch_shifts, ch_rbs = [], [], []
+                        for acc_scale_i in ch_scales:
+                            m_i, s_i, rb_i = choose_requant_params(
+                                acc_scale_i,
+                                act_scale,
+                                out_bits=cfg.act_bits,
+                                max_mult_bits=cfg.max_mult_bits,
+                            )
+                            ch_mults.append(m_i)
+                            ch_shifts.append(s_i)
+                            ch_rbs.append(rb_i)
+                        per_channel_params[acc_name] = RequantChannelParams(
+                            mults=ch_mults, shifts=ch_shifts, round_biases=ch_rbs
+                        )
+                    else:
+                        mult, shift, round_bias = choose_requant_params(
+                            acc_scale,
                             act_scale,
                             out_bits=cfg.act_bits,
                             max_mult_bits=cfg.max_mult_bits,
                         )
-                        ch_mults.append(m_i)
-                        ch_shifts.append(s_i)
-                        ch_rbs.append(rb_i)
-                    per_channel_params[acc_name] = RequantChannelParams(
-                        mults=ch_mults, shifts=ch_shifts, round_biases=ch_rbs
-                    )
+                        shifts[acc_name] = shift
+                        mults[acc_name] = mult
+                        round_biases[acc_name] = round_bias
+                    ctx.scale = act_scale  # downstream reads post-Requant activations
+                    ctx.zero_point = 0
+                    i += 2
+                    continue
                 else:
-                    mult, shift, round_bias = choose_requant_params(
-                        acc_scale,
-                        act_scale,
-                        out_bits=cfg.act_bits,
-                        max_mult_bits=cfg.max_mult_bits,
+                    # Non-ReLU signed activation path
+                    if i + 2 >= n_layers:
+                        raise ValueError(
+                            f"the terminal activation at layer {i + 1} cannot be lowered: it "
+                            f"follows the final accumulator (layer {i}), whose output is the "
+                            "model's wide logit head (left un-narrowed for client-side argmax, "
+                            "`PROJECT.md` §11). A trailing activation has nowhere to go — "
+                            "drop it, or add a layer after it."
+                        )
+                    next_layer = self.layers[i + 2]
+                    if not isinstance(next_layer, _ACCUMULATOR_LAYERS):
+                        raise ValueError(
+                            f"the activation at layer {i + 1} is consumed by "
+                            f"{type(next_layer).__name__}; a non-ReLU activation must feed a "
+                            "Conv2d/Linear (its output zero-point folds into that layer's bias). "
+                            "Pool/other consumers are not supported."
+                        )
+                    lo, hi = acc_ranges[i]
+                    lo = min(lo, 0.0)
+                    hi = max(hi, 0.0)
+                    levels = 1 << cfg.act_bits
+                    act_scale = (hi - lo) / (levels - 1) if hi > lo else 1.0
+                    acc_name = layer_nodes[-1].name
+
+                    if ch_scales is not None:
+                        clamp_lo = min(0, min(math.floor(lo / s) for s in ch_scales))
+                        ch_mults, ch_shifts, ch_rbs = [], [], []
+                        for acc_scale_i in ch_scales:
+                            m_i, s_i, rb_i = choose_requant_params(
+                                acc_scale_i,
+                                act_scale,
+                                out_bits=cfg.act_bits,
+                                max_mult_bits=cfg.max_mult_bits,
+                                clamp_lo=clamp_lo,
+                            )
+                            ch_mults.append(m_i)
+                            ch_shifts.append(s_i)
+                            ch_rbs.append(rb_i)
+                        per_channel_params[acc_name] = RequantChannelParams(
+                            mults=ch_mults, shifts=ch_shifts, round_biases=ch_rbs
+                        )
+                        u_min = min(
+                            (clamp_lo * m + rb) >> s
+                            for m, s, rb in zip(ch_mults, ch_shifts, ch_rbs, strict=True)
+                        )
+                        zero_point = max(0, -u_min)
+                        clamp_los[acc_name] = clamp_lo
+                        zero_points[acc_name] = zero_point
+                    else:
+                        acc_scale = out_scale
+                        clamp_lo = min(0, math.floor(lo / acc_scale))
+                        mult, shift, round_bias = choose_requant_params(
+                            acc_scale,
+                            act_scale,
+                            out_bits=cfg.act_bits,
+                            max_mult_bits=cfg.max_mult_bits,
+                            clamp_lo=clamp_lo,
+                        )
+                        u_min = (clamp_lo * mult + round_bias) >> shift
+                        zero_point = max(0, -u_min)
+                        shifts[acc_name] = shift
+                        mults[acc_name] = mult
+                        round_biases[acc_name] = round_bias
+                        clamp_los[acc_name] = clamp_lo
+                        zero_points[acc_name] = zero_point
+
+                    out_scale, out_zp = affine_activation_codomain(
+                        act.fn,
+                        in_scale=act_scale,
+                        in_zero_point=zero_point,
+                        act_bits=cfg.act_bits,
                     )
-                    shifts[acc_name] = shift
-                    mults[acc_name] = mult
-                    round_biases[acc_name] = round_bias
-                ctx.scale = act_scale  # downstream reads post-Requant activations
-                i += 2  # consume the fused ReLU Activation with its accumulator
-                continue
+                    lut = make_affine_activation_lut(
+                        act.fn,
+                        in_scale=act_scale,
+                        in_zero_point=zero_point,
+                        out_scale=out_scale,
+                        out_zero_point=out_zp,
+                        out_bits=cfg.act_bits,
+                    )
+                    acc_out_tensor = layer_nodes[-1].outputs[0]
+                    act_name = f"act{i + 1}"
+                    act_out_tensor = f"act{i + 1}_out"
+                    nodes.append(
+                        Node(
+                            name=act_name,
+                            inputs=[acc_out_tensor],
+                            outputs=[act_out_tensor],
+                            op=ActivationSpec(lut=lut, output_bits=lut_output_bits(lut)),
+                        )
+                    )
+                    ctx.tensor = act_out_tensor
+                    ctx.scale = out_scale
+                    ctx.zero_point = out_zp
+                    i += 2
+                    continue
             i += 1
 
         outputs = [nodes[-1].outputs[0]]
@@ -352,6 +439,8 @@ class Model:
             shifts=shifts,
             mults=mults,
             round_biases=round_biases,
+            clamp_los=clamp_los,
+            zero_points=zero_points,
             per_channel=per_channel_params,
             out_bits=cfg.act_bits,
         )
@@ -369,10 +458,11 @@ class Model:
             shifts=shifts,
             mults=mults,
             round_biases=round_biases,
+            clamp_los=clamp_los,
+            zero_points=zero_points,
             per_channel=per_channel_params,
             out_bits=cfg.act_bits,
         )
-
         if verify:
             self._self_verify(graph, x)
 
