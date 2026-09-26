@@ -428,9 +428,10 @@ def test_non_relu_activation_errors():
 
 
 @pytest.mark.parametrize("mode", ["avg", "max"])
-def test_pool_output_dequantizes_to_float_forward(mode: str):
+@pytest.mark.parametrize("padding", [0, 1])
+def test_pool_output_dequantizes_to_float_forward(mode: str, padding: int):
     """Pool output dequantizes (out_scale * int_oracle) to the float layer's forward pass."""
-    pool = Pool(mode, in_h=4, in_w=4, channels=2, pool_h=2, pool_w=2, stride=2)
+    pool = Pool(mode, in_h=4, in_w=4, channels=2, pool_h=2, pool_w=2, stride=2, padding=padding)
     s = 0.25
     q = np.random.default_rng(0).integers(0, 4, size=32)
     x = s * q
@@ -447,4 +448,4 @@ def test_pool_output_dequantizes_to_float_forward(mode: str):
     )
     ints = evaluate_graph_int(graph, {"t": q.tolist()})[nodes[0].outputs[0]]
     assert np.allclose(pool.forward(x[None, :])[0], out_scale * np.asarray(ints))
-    assert out_len == 8
+    assert out_len == (18 if padding else 8)

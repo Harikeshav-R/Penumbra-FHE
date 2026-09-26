@@ -213,7 +213,10 @@ REGISTRY: dict[str, OnnxOpRule] = {
             "Max pooling is a per-channel window reduction realized as pairwise ciphertext max "
             "(comparison PBS) — `Pool` mode 'max'."
         ),
-        attribute_constraints="pads=0; ceil_mode=0; dilations=[1,1]; uniform kernel/stride.",
+        attribute_constraints=(
+            "symmetric pads [p,p,p,p] with p < kernel (padded taps ignored); no auto_pad; "
+            "ceil_mode=0; dilations=[1,1]; uniform kernel/stride."
+        ),
     ),
     "AveragePool": OnnxOpRule(
         onnx_op="AveragePool",
@@ -224,7 +227,8 @@ REGISTRY: dict[str, OnnxOpRule] = {
             "is carried in the output quantization scale — `Pool` mode 'avg'."
         ),
         attribute_constraints=(
-            "pads=0; ceil_mode=0; count_include_pad moot (pads=0); uniform kernel/stride."
+            "symmetric pads [p,p,p,p] with p < kernel; count_include_pad=1 when p > 0; "
+            "no auto_pad; ceil_mode=0; uniform kernel/stride."
         ),
     ),
     "GlobalAveragePool": OnnxOpRule(
@@ -453,11 +457,28 @@ def check_attributes(op_type: str, attrs: dict[str, object], node_name: str) -> 
         if abs(float(beta) - 1.0) > 1e-6:
             problems.append(f"Gemm (node {node_name!r}): beta={beta} not supported (only 1.0)")
     elif op_type in ("MaxPool", "AveragePool"):
+        kernel = [int(k) for k in attrs.get("kernel_shape", [])]
         pads = attrs.get("pads")
-        if pads is not None and any(p != 0 for p in pads):
+        pad = 0
+        if pads is not None:
+            pads = [int(p) for p in pads]
+            if len(pads) != 4 or len(set(pads)) != 1:
+                problems.append(
+                    f"{op_type} (node {node_name!r}): pads={pads} not supported (only symmetric "
+                    "equal padding on all sides, e.g. [p, p, p, p])"
+                )
+            else:
+                pad = pads[0]
+                if len(kernel) == 2 and pad >= min(kernel):
+                    problems.append(
+                        f"{op_type} (node {node_name!r}): pads={pads} must be smaller than "
+                        f"kernel_shape={kernel} (every window must cover at least one real input)"
+                    )
+        auto_pad = attrs.get("auto_pad", b"NOTSET")
+        if _as_str(auto_pad) not in ("NOTSET", ""):
             problems.append(
-                f"{op_type} (node {node_name!r}): pads={list(pads)} not supported (only pads=0; "
-                "padded pooling is Phase 8)"
+                f"{op_type} (node {node_name!r}): auto_pad={_as_str(auto_pad)!r} not supported "
+                "(use explicit symmetric pads)"
             )
         ceil_mode = attrs.get("ceil_mode", 0)
         if ceil_mode != 0:
@@ -472,9 +493,16 @@ def check_attributes(op_type: str, attrs: dict[str, object], node_name: str) -> 
             )
         if op_type == "AveragePool":
             cip = attrs.get("count_include_pad", 0)
-            if cip not in (0, 1):  # value is irrelevant with pads=0, but reject a garbage value
+            if cip not in (0, 1):
                 problems.append(
                     f"AveragePool (node {node_name!r}): count_include_pad={cip} not understood"
+                )
+            elif pad > 0 and cip != 1:
+                problems.append(
+                    f"AveragePool (node {node_name!r}): count_include_pad={cip} with pads={pads} "
+                    "not supported (border windows would divide by a per-position count, which "
+                    "no single quantization scale can carry); export with count_include_pad=1 "
+                    "(PyTorch's default)"
                 )
     elif op_type == "Cast":
         # A Cast folds away only if it preserves the represented value. Casting to a float type is

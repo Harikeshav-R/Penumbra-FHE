@@ -247,3 +247,56 @@ def test_perm_less_transpose_on_dynamic_batch_fails_loudly(tmp_path):
     path = _model(nodes, inits, [_vi("x", [None, 4, 6])], [_vi("y", [None, 4])], tmp_path)
     with pytest.raises(UnsupportedModelError, match="reorders the flat"):
         fhe.load_onnx(path)
+
+
+@pytest.mark.parametrize(
+    ("op_type", "attrs", "match"),
+    [
+        (
+            "AveragePool",
+            {"kernel_shape": [2, 2], "strides": [2, 2], "pads": [0, 1, 0, 1]},
+            "only symmetric equal padding",
+        ),
+        (
+            "MaxPool",
+            {"kernel_shape": [2, 2], "strides": [2, 2], "pads": [2, 2, 2, 2]},
+            "must be smaller than kernel_shape",
+        ),
+        (
+            "AveragePool",
+            {
+                "kernel_shape": [3, 3],
+                "strides": [1, 1],
+                "pads": [1, 1, 1, 1],
+                "count_include_pad": 0,
+            },
+            "count_include_pad=0",
+        ),
+        (
+            "MaxPool",
+            {"kernel_shape": [2, 2], "strides": [2, 2], "auto_pad": "SAME_UPPER"},
+            "auto_pad",
+        ),
+    ],
+)
+def test_pool_padding_constraints_fail_loudly(tmp_path, op_type, attrs, match):
+    rng = np.random.default_rng(0)
+    wc = rng.normal(size=(2, 1, 3, 3)).astype(np.float32)
+    wg = rng.normal(size=(4, 32)).astype(np.float32)
+    nodes = [
+        helper.make_node("Conv", ["x", "wc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node(op_type, ["c"], ["p"], name="pool", **attrs),
+        helper.make_node("Flatten", ["p"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg"], ["y"], name="gemm", transB=1),
+    ]
+    inits = [_f32(wc, "wc"), _f32(wg, "wg")]
+    path = _model(
+        nodes,
+        inits,
+        [_vi("x", [1, 1, 6, 6])],
+        [_vi("y", [1, 4])],
+        tmp_path,
+        check=False,
+    )
+    with pytest.raises(UnsupportedModelError, match=match):
+        fhe.load_onnx(path)

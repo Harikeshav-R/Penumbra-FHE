@@ -137,9 +137,9 @@ equals `op_registry.supported_onnx_ops()` exactly, so doc and validator never dr
 | `Elu` | `Activation` | `alpha` (default 1.0); must follow an accumulator and feed one |
 | `HardSigmoid` | `Activation` | `alpha` (default 0.2), `beta` (default 0.5); must follow an accumulator and feed one |
 | `Sigmoid` | `Activation` | none; terminal Sigmoid is dropped (argmax-invariant), mid-graph lowers to `Activation` LUT |
-| `MaxPool` | `Pool` (`max`) | `pads=0`; `ceil_mode=0`; uniform 2-D kernel/stride |
-| `AveragePool` | `Pool` (`avg`) | `pads=0`; `ceil_mode=0`; uniform 2-D kernel/stride (emits window **sum**) |
-| `GlobalAveragePool` | `Pool` (`avg`) | kernel = full spatial size (emits window **sum**) |
+| `MaxPool` | `Pool` (`max`) | symmetric pads `[p,p,p,p]` with `p < kernel` (padded taps ignored); no `auto_pad`; `ceil_mode=0`; `dilations=[1,1]`; uniform 2-D kernel/stride |
+| `AveragePool` | `Pool` (`avg`) | symmetric pads `[p,p,p,p]` with `p < kernel`; `count_include_pad=1` when `p > 0`; no `auto_pad`; `ceil_mode=0`; uniform 2-D kernel/stride (IR emits the window sum; `1/k` carried in the scale) |
+| `GlobalAveragePool` | `Pool` (`avg`) | kernel = full spatial size (IR emits the window sum; `1/k` carried in the scale) |
 | `Add` | `Add / Linear bias fold` | constant add folds into preceding accumulator bias; residual add (both activations) lowers to internal `Add` |
 | `Concat` | `Concat` | `axis=1` (or resolves to 1); non-concatenated dimensions must match |
 | `Split` | `Split` | `axis=1` (or resolves to 1); sizes from attribute, constant input, or equal division |

@@ -687,7 +687,7 @@ def _lower_pool(
     mode = "max" if node.op_type == "MaxPool" else "avg"
 
     if node.op_type == "GlobalAveragePool":
-        pool_h, pool_w, stride = in_h, in_w, 1  # whole-map window -> 1x1 output
+        pool_h, pool_w, stride, padding = in_h, in_w, 1, 0  # whole-map window -> 1x1 output
     else:
         attrs = _attrs(node)
         kernel = list(attrs.get("kernel_shape", []))
@@ -708,6 +708,8 @@ def _lower_pool(
                 ]
             )
         stride = int(strides[0])
+        pads = list(attrs.get("pads", [0, 0, 0, 0]))
+        padding = int(pads[0]) if pads else 0
     return Pool(
         mode=mode,
         in_h=in_h,
@@ -716,6 +718,7 @@ def _lower_pool(
         pool_h=pool_h,
         pool_w=pool_w,
         stride=stride,
+        padding=padding,
     )
 
 

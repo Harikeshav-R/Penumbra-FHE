@@ -608,3 +608,144 @@ def test_global_average_pool_lowering_matches_true_mean(tmp_path):
     flat_out = pool_out.reshape(3, 3)
     ref = flat_out @ wg.T + bg
     assert np.allclose(acts, ref, atol=1e-9)
+
+
+def test_lowers_padded_average_pool(tmp_path):
+    """AveragePool with symmetric padding lowers with padding, matches numpy, and quantizes."""
+    rng = np.random.default_rng(0)
+    wc = rng.normal(size=(2, 1, 3, 3)).astype(np.float32)
+    bc = rng.normal(size=2).astype(np.float32)
+    # Conv 1->2 on 6x6 -> 2x4x4. AvgPool 3x3 s1 pad 1 -> 2x4x4 = 32 features.
+    wg = rng.normal(size=(4, 32)).astype(np.float32)
+    bg = (rng.normal(size=4) * 2.0).astype(np.float32)
+
+    nodes = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node(
+            "AveragePool",
+            ["c"],
+            ["p"],
+            name="pool",
+            kernel_shape=[3, 3],
+            strides=[1, 1],
+            pads=[1, 1, 1, 1],
+            count_include_pad=1,
+        ),
+        helper.make_node("Flatten", ["p"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg", "bg"], ["y"], name="gemm", transB=1),
+    ]
+    inits = [_f32(wc, "wc"), _f32(bc, "bc"), _f32(wg, "wg"), _f32(bg, "bg")]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 6, 6])], [_vi("y", [1, 4])], tmp_path)
+
+    model = fhe.load_onnx(path)
+    pool_layer = model.layers[1]
+    assert isinstance(pool_layer, Pool)
+    assert pool_layer.padding == 1
+    assert pool_layer.pool_h == 3
+    assert pool_layer.pool_w == 3
+    assert pool_layer.stride == 1
+    assert pool_layer.mode == "avg"
+
+    x = rng.uniform(0.0, 1.0, size=(3, 36))
+    acts = x
+    for layer in model.layers:
+        acts = layer.forward(acts)
+
+    # Independent numpy reference:
+    xr = x.reshape(3, 1, 6, 6)
+    conv_out = np.zeros((3, 2, 4, 4), dtype=np.float64)
+    for c_out in range(2):
+        for oy in range(4):
+            for ox in range(4):
+                conv_out[:, c_out, oy, ox] = (
+                    xr[:, 0, oy : oy + 3, ox : ox + 3] * wc[c_out, 0]
+                ).sum(axis=(1, 2)) + bc[c_out]
+    padded = np.pad(conv_out, ((0, 0), (0, 0), (1, 1), (1, 1)), constant_values=0.0)
+    pool_out = np.zeros((3, 2, 4, 4), dtype=np.float64)
+    for oy in range(4):
+        for ox in range(4):
+            pool_out[:, :, oy, ox] = padded[:, :, oy : oy + 3, ox : ox + 3].mean(axis=(2, 3))
+    flat_out = pool_out.reshape(3, 32)
+    ref = flat_out @ wg.T + bg
+    assert np.allclose(acts, ref, atol=1e-9)
+
+    cal = rng.uniform(0.0, 1.0, size=(16, 36))
+    graph = model.quantize(cal, n_bits=4)
+    pool_specs = [n.op for n in graph.nodes if n.op.op_type == "Pool"]
+    assert len(pool_specs) == 1
+    assert pool_specs[0].padding == 1
+
+    xq = _quantize_input(model, x[0])
+    out = evaluate_graph_int(graph, {"x": xq})
+    assert len(out[graph.outputs[0]]) == 4
+
+
+def test_lowers_padded_max_pool(tmp_path):
+    """MaxPool with symmetric padding lowers with padding, matches numpy, and quantizes."""
+    rng = np.random.default_rng(1)
+    wc = rng.normal(size=(2, 1, 3, 3)).astype(np.float32)
+    bc = rng.normal(size=2).astype(np.float32)
+    # Conv 1->2 on 6x6 -> 2x4x4. MaxPool 2x2 s2 pad 1 -> (4+2-2)//2 + 1 = 3 -> 2x3x3 = 18 features.
+    wg = rng.normal(size=(4, 18)).astype(np.float32)
+    bg = (rng.normal(size=4) * 2.0).astype(np.float32)
+
+    nodes = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node(
+            "MaxPool",
+            ["c"],
+            ["p"],
+            name="pool",
+            kernel_shape=[2, 2],
+            strides=[2, 2],
+            pads=[1, 1, 1, 1],
+        ),
+        helper.make_node("Flatten", ["p"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg", "bg"], ["y"], name="gemm", transB=1),
+    ]
+    inits = [_f32(wc, "wc"), _f32(bc, "bc"), _f32(wg, "wg"), _f32(bg, "bg")]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 6, 6])], [_vi("y", [1, 4])], tmp_path)
+
+    model = fhe.load_onnx(path)
+    pool_layer = model.layers[1]
+    assert isinstance(pool_layer, Pool)
+    assert pool_layer.padding == 1
+    assert pool_layer.pool_h == 2
+    assert pool_layer.pool_w == 2
+    assert pool_layer.stride == 2
+    assert pool_layer.mode == "max"
+
+    x = rng.uniform(0.0, 1.0, size=(3, 36))
+    acts = x
+    for layer in model.layers:
+        acts = layer.forward(acts)
+
+    # Independent numpy reference:
+    xr = x.reshape(3, 1, 6, 6)
+    conv_out = np.zeros((3, 2, 4, 4), dtype=np.float64)
+    for c_out in range(2):
+        for oy in range(4):
+            for ox in range(4):
+                conv_out[:, c_out, oy, ox] = (
+                    xr[:, 0, oy : oy + 3, ox : ox + 3] * wc[c_out, 0]
+                ).sum(axis=(1, 2)) + bc[c_out]
+    padded = np.pad(conv_out, ((0, 0), (0, 0), (1, 1), (1, 1)), constant_values=-np.inf)
+    pool_out = np.zeros((3, 2, 3, 3), dtype=np.float64)
+    for oy in range(3):
+        for ox in range(3):
+            pool_out[:, :, oy, ox] = padded[:, :, oy * 2 : oy * 2 + 2, ox * 2 : ox * 2 + 2].max(
+                axis=(2, 3)
+            )
+    flat_out = pool_out.reshape(3, 18)
+    ref = flat_out @ wg.T + bg
+    assert np.allclose(acts, ref, atol=1e-9)
+
+    cal = rng.uniform(0.0, 1.0, size=(16, 36))
+    graph = model.quantize(cal, n_bits=4)
+    pool_specs = [n.op for n in graph.nodes if n.op.op_type == "Pool"]
+    assert len(pool_specs) == 1
+    assert pool_specs[0].padding == 1
+
+    xq = _quantize_input(model, x[0])
+    out = evaluate_graph_int(graph, {"x": xq})
+    assert len(out[graph.outputs[0]]) == 4

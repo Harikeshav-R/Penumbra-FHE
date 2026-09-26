@@ -232,12 +232,17 @@ class Pool(Layer):
     pool_h: int
     pool_w: int
     stride: int
+    padding: int = 0
 
     def forward(self, x: np.ndarray) -> np.ndarray:
         n = x.shape[0]
         xr = x.reshape(n, self.channels, self.in_h, self.in_w)
-        out_h = (self.in_h - self.pool_h) // self.stride + 1
-        out_w = (self.in_w - self.pool_w) // self.stride + 1
+        if self.padding:
+            fill = 0.0 if self.mode == "avg" else -np.inf
+            p = self.padding
+            xr = np.pad(xr, ((0, 0), (0, 0), (p, p), (p, p)), constant_values=fill)
+        out_h = (self.in_h + 2 * self.padding - self.pool_h) // self.stride + 1
+        out_w = (self.in_w + 2 * self.padding - self.pool_w) // self.stride + 1
         out = np.zeros((n, self.channels, out_h, out_w), dtype=np.float64)
         for oy in range(out_h):
             for ox in range(out_w):
@@ -255,8 +260,8 @@ class Pool(Layer):
         return out.reshape(n, -1)
 
     def quantize(self, ctx: LayerContext) -> tuple[list[Node], float, int, list[float] | None]:
-        out_h = (self.in_h - self.pool_h) // self.stride + 1
-        out_w = (self.in_w - self.pool_w) // self.stride + 1
+        out_h = (self.in_h + 2 * self.padding - self.pool_h) // self.stride + 1
+        out_w = (self.in_w + 2 * self.padding - self.pool_w) // self.stride + 1
         name = f"pool{ctx.index}"
         node = Node(
             name=name,
@@ -270,6 +275,7 @@ class Pool(Layer):
                 pool_h=self.pool_h,
                 pool_w=self.pool_w,
                 stride=self.stride,
+                padding=self.padding,
             ),
         )
         # avg: the IR op emits the integer window SUM of k = pool_h*pool_w taps, so float
