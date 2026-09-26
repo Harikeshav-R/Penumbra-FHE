@@ -23,6 +23,12 @@ use crate::ops::polymap::{eval_polymap, fit_activation, fit_per_channel_requant,
 use crate::ops::{Activation, Add, Argmax, Compare, Conv2d, Linear, PoolAvg, Requant, RequantKind};
 use crate::params::{CkksParams, DEFAULT_PARAMS};
 
+fn is_identity_clamp(lut: &[u64], out_bits: usize) -> bool {
+    let ceil = (1u64 << out_bits) - 1;
+    lut.iter()
+        .enumerate()
+        .all(|(i, &e)| e == (i as u64).min(ceil))
+}
 pub struct CkksBackend {
     pub params: CkksParams,
     pub(crate) host_module: Module<HostBytesBackend>,
@@ -184,15 +190,23 @@ impl Backend for CkksBackend {
                 shift,
                 mult,
                 round_bias,
+                clamp_lo,
+                zero_point,
                 out_bits,
+                clamp_lut,
                 mults,
                 shifts,
                 round_biases,
                 channel_size,
-                ..
             } => {
                 let max_depth = (self.params.log_budget() / self.params.log_delta.max(1)).max(1);
                 let input_bits = 14;
+                let post = if is_identity_clamp(clamp_lut, *out_bits) {
+                    None
+                } else {
+                    let lut_i64: Vec<i64> = clamp_lut.iter().map(|&v| v as i64).collect();
+                    Some(fit_activation(&self.host_module, &self.params, &lut_i64)?)
+                };
                 if mults.is_empty() {
                     let pm = fit_requant(
                         &self.host_module,
@@ -200,6 +214,8 @@ impl Backend for CkksBackend {
                         *mult as i64,
                         *shift as usize,
                         *round_bias as i64,
+                        *clamp_lo,
+                        *zero_point as i64,
                         *out_bits,
                         input_bits,
                         max_depth,
@@ -207,6 +223,7 @@ impl Backend for CkksBackend {
                     Ok(Box::new(Requant {
                         kind: RequantKind::PerTensor(pm),
                         out_bits: *out_bits,
+                        post,
                     }))
                 } else {
                     let ch_size = channel_size.unwrap_or(1);
@@ -221,6 +238,8 @@ impl Backend for CkksBackend {
                         &mults_i64,
                         &shifts_usize,
                         &round_biases_i64,
+                        *clamp_lo,
+                        *zero_point as i64,
                         ch_size,
                         *out_bits,
                         input_bits,
@@ -230,6 +249,7 @@ impl Backend for CkksBackend {
                     Ok(Box::new(Requant {
                         kind: RequantKind::PerChannel(map),
                         out_bits: *out_bits,
+                        post,
                     }))
                 }
             }
@@ -376,8 +396,19 @@ impl Backend for CkksBackend {
         _scalar: i64,
     ) -> Self::Ciphertext {
         let max_depth = (sk.params.log_budget() / sk.params.log_delta.max(1)).max(1);
-        let pm = fit_requant(&sk.host_module, &sk.params, 1, 0, 0, 16, 16, max_depth)
-            .expect("scalar_max fit failed");
+        let pm = fit_requant(
+            &sk.host_module,
+            &sk.params,
+            1,
+            0,
+            0,
+            _scalar,
+            0,
+            16,
+            16,
+            max_depth,
+        )
+        .expect("scalar_max fit failed");
         eval_polymap(sk, a, &pm).expect("scalar_max eval failed")
     }
 
@@ -388,8 +419,19 @@ impl Backend for CkksBackend {
         _scalar: i64,
     ) -> Self::Ciphertext {
         let max_depth = (sk.params.log_budget() / sk.params.log_delta.max(1)).max(1);
-        let pm = fit_requant(&sk.host_module, &sk.params, 1, 0, 0, 16, 16, max_depth)
-            .expect("scalar_min fit failed");
+        let pm = fit_requant(
+            &sk.host_module,
+            &sk.params,
+            1,
+            0,
+            0,
+            0,
+            0,
+            16,
+            16,
+            max_depth,
+        )
+        .expect("scalar_min fit failed");
         eval_polymap(sk, a, &pm).expect("scalar_min eval failed")
     }
 
@@ -491,14 +533,27 @@ pub fn check_graph_depth_budget(backend: &CkksBackend, graph: &Graph) -> Result<
                     0
                 }
             }
-            OpSpec::Requant { mults, .. } => {
+            OpSpec::Requant {
+                mults,
+                clamp_lut,
+                out_bits,
+                ..
+            } => {
                 // If per-channel, +1 ct x pt multiply level for the channel mask
                 let mult_level = if mults.is_empty() { 0 } else { 1 };
                 let poly_depth = poulpy_core::layouts::bsgs_eval_depth(
                     backend.params.max_poly_degree,
                     poulpy_ckks::polynomial::SplitStrategy::MinDepth,
                 );
-                (poly_depth + mult_level) * backend.params.log_delta
+                let post_depth = if is_identity_clamp(clamp_lut, *out_bits) {
+                    0
+                } else {
+                    poulpy_core::layouts::bsgs_eval_depth(
+                        clamp_lut.len().saturating_sub(1),
+                        poulpy_ckks::polynomial::SplitStrategy::MinDepth,
+                    )
+                };
+                (poly_depth + mult_level + post_depth) * backend.params.log_delta
             }
             OpSpec::Activation { lut, .. } => {
                 let poly_depth = poulpy_core::layouts::bsgs_eval_depth(

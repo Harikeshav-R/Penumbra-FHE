@@ -196,6 +196,7 @@ pub enum RequantKind {
 pub struct Requant {
     pub(crate) kind: RequantKind,
     pub(crate) out_bits: usize,
+    pub(crate) post: Option<PolyMap>,
 }
 
 impl CoreOp<CkksBackend> for Requant {
@@ -211,32 +212,32 @@ impl CoreOp<CkksBackend> for Requant {
             RequantKind::PerChannel(map) => eval_per_channel_requant(ctx.sk, &inputs[0], map)
                 .expect("eval_per_channel_requant failed in Requant::eval"),
         };
+        let out = if let Some(post) = &self.post {
+            eval_polymap(ctx.sk, &out, post).expect("eval_polymap post failed in Requant::eval")
+        } else {
+            out
+        };
         vec![out]
     }
-
     fn output_bits(&self, _input_bits: usize) -> usize {
         self.out_bits
     }
 
     fn cost(&self, _input_lens: &[usize]) -> Vec<(&'static str, u64)> {
-        match &self.kind {
-            RequantKind::PerTensor(pm) => {
-                let depth = pm.depth() as u64;
-                vec![
-                    ("poly_evals", 1),
-                    ("rescales", depth),
-                    ("depth_levels", depth),
-                ]
-            }
-            RequantKind::PerChannel(map) => {
-                let depth = map.depth() as u64;
-                vec![
-                    ("poly_evals", map.branches.len() as u64),
-                    ("rescales", depth),
-                    ("depth_levels", depth),
-                ]
-            }
-        }
+        let (poly_evals, depth) = match &self.kind {
+            RequantKind::PerTensor(pm) => (1, pm.depth() as u64),
+            RequantKind::PerChannel(map) => (map.branches.len() as u64, map.depth() as u64),
+        };
+        let (poly_evals, depth) = if let Some(post) = &self.post {
+            (poly_evals + 1, depth + post.depth() as u64)
+        } else {
+            (poly_evals, depth)
+        };
+        vec![
+            ("poly_evals", poly_evals),
+            ("rescales", depth),
+            ("depth_levels", depth),
+        ]
     }
 }
 

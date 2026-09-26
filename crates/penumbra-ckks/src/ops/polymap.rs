@@ -38,6 +38,8 @@ pub fn fit_requant(
     mult: i64,
     shift: usize,
     round_bias: i64,
+    clamp_lo: i64,
+    zero_point: i64,
     out_bits: usize,
     input_bits: usize,
     max_depth: usize,
@@ -61,8 +63,9 @@ pub fn fit_requant(
     // the identity/ReLU fit `Backend::scalar_max`/`scalar_min` rely on.
     let floor_midpoint = 0.5 * (1.0 - 1.0 / divisor);
     let f = move |t: f64| -> f64 {
-        let relu = t.max(0.0);
-        let scaled = (relu * (mult as f64) + (round_bias as f64)) / divisor - floor_midpoint;
+        let floored = t.max(clamp_lo as f64);
+        let scaled = (floored * (mult as f64) + (round_bias as f64)) / divisor - floor_midpoint
+            + (zero_point as f64);
         scaled.clamp(0.0, max_val)
     };
 
@@ -202,6 +205,8 @@ pub fn fit_per_channel_requant(
     mults: &[i64],
     shifts: &[usize],
     round_biases: &[i64],
+    clamp_lo: i64,
+    zero_point: i64,
     channel_size: usize,
     out_bits: usize,
     input_bits: usize,
@@ -231,6 +236,8 @@ pub fn fit_per_channel_requant(
             m,
             s,
             rb,
+            clamp_lo,
+            zero_point,
             out_bits,
             input_bits,
             max_depth,
