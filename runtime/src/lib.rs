@@ -23,7 +23,7 @@ pub use penumbra_tfhe::keys::{
     DEFAULT_PARAMS, MESSAGE_BITS, SCHEME_TFHE,
 };
 pub use penumbra_tfhe::ops::{
-    Activation, Add, Argmax, Compare, Conv2d, EvalCtx, Linear, Op, Pool, Requant,
+    Activation, Add, Argmax, Compare, Concat, Conv2d, EvalCtx, Linear, Op, Pool, Requant, Split,
 };
 pub use penumbra_tfhe::{evaluate, evaluate_graph};
 

@@ -8,7 +8,7 @@ use penumbra_core::ops::Op;
 use tfhe::integer::{IntegerCiphertext, RadixClientKey, ServerKey, SignedRadixCiphertext};
 use tfhe::shortint::Ciphertext;
 
-use crate::ops::{Activation, Add, Argmax, Compare, Conv2d, Linear, Pool, Requant};
+use crate::ops::{Activation, Add, Argmax, Compare, Concat, Conv2d, Linear, Pool, Requant, Split};
 
 /// The concrete TFHE / CGGI backend.
 #[derive(Debug, Clone, Copy, Default)]
@@ -139,10 +139,12 @@ impl Backend for TfheBackend {
                 indices: indices.clone(),
                 thresholds: thresholds.clone(),
             })),
-            OpSpec::Concat { .. } | OpSpec::Split { .. } => Err(format!(
-                "operator {} is not yet supported on backend 'tfhe'",
-                spec.op_type()
-            )),
+            OpSpec::Concat { sizes } => Ok(Box::new(Concat {
+                sizes: sizes.clone(),
+            })),
+            OpSpec::Split { sizes } => Ok(Box::new(Split {
+                sizes: sizes.clone(),
+            })),
         }
     }
 

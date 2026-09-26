@@ -125,3 +125,15 @@ fn test_tfhe_requant_zero_multipliers_and_biases() {
     assert_eq!(cost.get("scalar_mul"), None);
     assert_eq!(cost.get("scalar_add"), None);
 }
+
+#[test]
+fn test_tfhe_concat_and_split_zero_cost() {
+    let backend = TfheBackend::default();
+    let concat_spec = OpSpec::Concat { sizes: vec![4, 4] };
+    let op_c = backend.build_op(&concat_spec).expect("build concat");
+    assert!(op_c.cost(&[4, 4]).is_empty(), "Concat has zero PBS cost");
+
+    let split_spec = OpSpec::Split { sizes: vec![4, 4] };
+    let op_s = backend.build_op(&split_spec).expect("build split");
+    assert!(op_s.cost(&[8]).is_empty(), "Split has zero PBS cost");
+}
