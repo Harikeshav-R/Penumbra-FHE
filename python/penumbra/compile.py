@@ -39,6 +39,7 @@ from dataclasses import dataclass, field, replace
 from penumbra.bitwidth import (
     MESSAGE_BITS,
     check_bit_width_budget,
+    output_bits_multi,
     propagate_bit_widths,
     radix_capacity_bits,
 )
@@ -193,9 +194,10 @@ def insert_requants(
             already_requantized.update(node.inputs)
     graph_outputs = set(graph.outputs)
 
-    # Per-tensor widths of the *input* graph, to size each inserted requant's shift.
-    widths = propagate_bit_widths(graph)
+    # Per-tensor widths of the *input* graph, to validate input graph.
+    _ = propagate_bit_widths(graph)
     capacity = radix_capacity_bits(graph.num_blocks)
+    running_widths: dict[str, int] = {name: graph.input_bits for name in graph.inputs}
 
     new_nodes: list[Node] = []
     # Map a producer's original output tensor name -> the requantized tensor downstream nodes
@@ -214,6 +216,11 @@ def insert_requants(
             node = replace(node, inputs=[rewire.get(name, name) for name in node.inputs])
         new_nodes.append(node)
 
+        in_bits = [running_widths[inp] for inp in node.inputs]
+        out_w = output_bits_multi(node.op, in_bits)
+        for out_n, w in zip(node.outputs, out_w, strict=True):
+            running_widths[out_n] = w
+
         if not isinstance(node.op, _ACCUMULATOR_OPS):
             continue
         out_name = node.outputs[0]
@@ -224,7 +231,7 @@ def insert_requants(
         if not feeds_narrow or out_name in already_requantized:
             continue
 
-        incoming_bits = widths[out_name]
+        incoming_bits = running_widths[out_name]
         # A single accumulator wider than the radix can't be narrowed after the fact — the wide
         # value itself overflowed. Fail loudly naming the layer (`AGENTS.md` §1.4).
         if incoming_bits > capacity:
@@ -277,6 +284,7 @@ def insert_requants(
         new_nodes.append(
             Node(name=f"{node.name}__requant", inputs=[out_name], outputs=[rq_name], op=rq_op)
         )
+        running_widths[rq_name] = out_bits
         rewire[out_name] = rq_name
 
     # Graph outputs that were requantized would change name; in our placement the requantized
