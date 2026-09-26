@@ -131,6 +131,8 @@ def insert_requants(
     shifts: dict[str, int] | None = None,
     mults: dict[str, int] | None = None,
     round_biases: dict[str, int] | None = None,
+    clamp_los: dict[str, int] | None = None,
+    zero_points: dict[str, int] | None = None,
     per_channel: dict[str, RequantChannelParams] | None = None,
     out_bits: int = MESSAGE_BITS,
 ) -> Graph:
@@ -144,6 +146,8 @@ def insert_requants(
       ``max(0, producer_output_bits - out_bits)`` (exactness-safe but coarse).
     - ``mults[name]`` — the fixed-point multiplier (numerator of the rescale); default ``1``.
     - ``round_biases[name]`` — the round-to-nearest bias; default ``0`` (truncation).
+    - ``clamp_los[name]`` — signed floor before rescale; default ``0`` (the fused ReLU).
+    - ``zero_points[name]`` — non-negative activation domain offset; default ``0``.
     - ``per_channel[name]`` — a :class:`RequantChannelParams` for a per-channel-quantized
       accumulator: one ``(mult, shift, round_bias)`` per output channel. When present it takes
       precedence over the scalar ``shifts``/``mults``/``round_biases`` for that node, and the
@@ -162,7 +166,8 @@ def insert_requants(
     mults = mults or {}
     per_channel = per_channel or {}
     round_biases = round_biases or {}
-
+    clamp_los = clamp_los or {}
+    zero_points = zero_points or {}
     # Which tensors are consumed at all, which are graph outputs, and which are *already* read
     # by a Requant. The last makes the pass idempotent: a producer whose output already feeds a
     # Requant must not get a second one (re-running, or a hand-authored graph, is left as-is).
@@ -238,6 +243,8 @@ def insert_requants(
                 shift=0,
                 mult=1,
                 round_bias=0,
+                clamp_lo=clamp_los.get(node.name, 0),
+                zero_point=zero_points.get(node.name, 0),
                 out_bits=out_bits,
                 clamp_lut=_clamp_lut(out_bits),
                 mults=list(pc.mults),
@@ -253,6 +260,8 @@ def insert_requants(
                 shift=shift,
                 mult=mult,
                 round_bias=round_bias,
+                clamp_lo=clamp_los.get(node.name, 0),
+                zero_point=zero_points.get(node.name, 0),
                 out_bits=out_bits,
                 clamp_lut=_clamp_lut(out_bits),
             )

@@ -64,6 +64,7 @@ class LayerContext:
     scale: float  # quantization scale of the current tensor (float = scale * int)
     config: QuantConfig
     index: int = 0  # layer index, for unique node names
+    zero_point: int = 0  # incoming tensor's integer offset (for affine activation LUTs)
 
 
 class Layer:
@@ -104,7 +105,12 @@ class Linear(Layer):
     def quantize(self, ctx: LayerContext) -> tuple[list[Node], float, int, list[float] | None]:
         cfg = ctx.config
         w_q, b_q, spec = quantize_linear(
-            self.weight, self.bias, ctx.scale, bits=cfg.n_bits, per_channel=cfg.per_channel
+            self.weight,
+            self.bias,
+            ctx.scale,
+            bits=cfg.n_bits,
+            per_channel=cfg.per_channel,
+            in_zero_point=ctx.zero_point,
         )
         # Per-channel returns one scale per output row; each row's accumulator lives in its own
         # units (in_scale * row_scale). We surface those per-channel accumulator scales so the
@@ -171,9 +177,10 @@ class Conv2d(Layer):
         w_q, b_q, spec = quantize_conv(
             w,
             bits=cfg.n_bits,
-            in_scale=ctx.scale if self.bias is not None else None,
+            in_scale=ctx.scale if (self.bias is not None or ctx.zero_point != 0) else None,
             b_f=self.bias,
             per_channel=cfg.per_channel,
+            in_zero_point=ctx.zero_point,
         )
         # Per-channel: one scale per output channel; surface each channel's accumulator scale for
         # a per-channel Requant. `out_scale` (the max row scale) is the nominal downstream scale.
@@ -266,11 +273,11 @@ class Pool(Layer):
 
 @dataclass
 class Activation(Layer):
-    """Single-input activation realized as a LUT (ReLU, sigmoid, ...).
+    """Single-input activation (ReLU, tanh, GELU, leaky ReLU, hardswish, elu, ...).
 
-    Holds the float function ``fn``; its LUT is generated at quantize time over the narrow
-    post-Requant block domain. The preceding accumulator layer's Requant narrows the value into
-    that domain first, so an ``Activation`` always follows a ``Requant`` in the emitted graph.
+    Holds the float function ``fn``. Realized either as a fused ReLU inside ``Requant``,
+    or as a standalone affine ``Activation`` LUT whose input and output zero-points are
+    handled by the signed ``Requant`` and folded into the downstream consumer's bias.
     """
 
     fn: Callable[[float], float]

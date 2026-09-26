@@ -133,6 +133,62 @@ def make_activation_lut(
     return lut
 
 
+def affine_activation_codomain(
+    fn: Callable[[float], float],
+    *,
+    in_scale: float,
+    in_zero_point: int,
+    act_bits: int,
+) -> tuple[float, int]:
+    """Return (out_scale, out_zero_point) for fn over the encoded input domain.
+
+    Formula from §Context:
+        y_v       = fn((v - in_zero_point) * in_scale) for v in range(2**act_bits)
+        out_lo    = min(min_v y_v, 0.0)
+        out_hi    = max(max_v y_v, 0.0)
+        out_scale = (out_hi - out_lo) / (2**act_bits - 1)  # 1.0 if out_hi == out_lo
+        out_zp    = clamp(round(-out_lo / out_scale), 0, 2**act_bits - 1)
+    """
+    levels = 1 << act_bits
+    if levels < 2:
+        raise ValueError(f"act_bits must be >= 1, got {act_bits}")
+    y_vals = [fn((v - in_zero_point) * in_scale) for v in range(levels)]
+    out_lo = min(min(y_vals), 0.0)
+    out_hi = max(max(y_vals), 0.0)
+    if out_hi == out_lo:
+        out_scale = 1.0
+        out_zp = 0
+    else:
+        out_scale = (out_hi - out_lo) / (levels - 1)
+        out_zp = int(min(max(round(-out_lo / out_scale), 0), levels - 1))
+    return out_scale, out_zp
+
+
+def make_affine_activation_lut(
+    fn: Callable[[float], float],
+    *,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+    out_bits: int = MESSAGE_BITS,
+) -> list[int]:
+    """lut[v] = clamp(round(fn(...) / out_scale) + out_zero_point, 0, 2**out_bits - 1).
+
+    Generates a single-block LUT of length 2**MESSAGE_BITS for an affine-domain activation.
+    """
+    max_val = (1 << out_bits) - 1
+    lut: list[int] = []
+    for v in range(_MESSAGE_SPACE):
+        x = (v - in_zero_point) * in_scale
+        y = fn(x)
+        code = int(round(y / out_scale)) + out_zero_point
+        clamped = max(0, min(code, max_val))
+        lut.append(clamped)
+    validate_lut(lut)
+    return lut
+
+
 def identity_clamp_lut(out_bits: int) -> list[int]:
     """The ``Requant`` clamp table: ``min(v, 2**out_bits - 1)`` over the message space.
 

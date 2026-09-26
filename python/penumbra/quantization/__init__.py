@@ -37,6 +37,17 @@ from penumbra.quantization.accuracy import (
     layer_sqnr_report,
     sqnr_db,
 )
+from penumbra.quantization.activations import (
+    activation_fn,
+    elu,
+    gelu,
+    hard_sigmoid,
+    hardswish,
+    leaky_relu,
+    relu,
+    sigmoid,
+    tanh,
+)
 from penumbra.quantization.calibration import (
     Calibrator,
     MinMaxObserver,
@@ -45,9 +56,11 @@ from penumbra.quantization.calibration import (
     PercentileObserver,
 )
 from penumbra.quantization.lut import (
+    affine_activation_codomain,
     identity_clamp_lut,
     lut_output_bits,
     make_activation_lut,
+    make_affine_activation_lut,
     validate_lut,
 )
 from penumbra.quantization.ptq import (
@@ -81,7 +94,19 @@ __all__ = [
     "quantize_linear_integer_input",
     "choose_requant_params",
     # LUT generation (lut.py)
+    # Float activations + dispatch (activations.py)
+    "activation_fn",
+    "relu",
+    "tanh",
+    "sigmoid",
+    "leaky_relu",
+    "elu",
+    "hard_sigmoid",
+    "hardswish",
+    "gelu",
     "make_activation_lut",
+    "make_affine_activation_lut",
+    "affine_activation_codomain",
     "identity_clamp_lut",
     "validate_lut",
     "lut_output_bits",

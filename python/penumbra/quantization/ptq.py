@@ -58,6 +58,7 @@ def quantize_linear(
     *,
     bits: int,
     per_channel: bool = False,
+    in_zero_point: int = 0,
 ) -> tuple[np.ndarray, np.ndarray, QuantSpec | list[QuantSpec]]:
     """Quantize a ``Linear`` layer's weights and bias against a known input scale.
 
@@ -95,19 +96,22 @@ def quantize_linear(
         raise ValueError(
             f"bias shape {b_f.shape} does not match n_out={n_out} from weights {w_f.shape}"
         )
+    # An input zero-point offset folds into the bias:
+    # b_eff = b_f - in_scale * in_zero_point * rowsum(w_f)
+    b_eff = b_f if in_zero_point == 0 else b_f - in_scale * in_zero_point * w_f.sum(axis=1)
 
     if not per_channel:
         w_spec = symmetric_spec(w_f, bits, signed=True)
         w_q = w_spec.quantize(w_f)
         acc_scale = in_scale * w_spec.scale
-        b_q = _quantize_bias_acc(b_f, acc_scale)
+        b_q = _quantize_bias_acc(b_eff, acc_scale)
         return w_q, b_q, w_spec
 
     # Per-channel: one spec per output row; quantize and bias-scale each row with its own scale.
     specs = symmetric_spec_per_channel(w_f, bits, signed=True, axis=0)
     w_q = np.stack([specs[i].quantize(w_f[i]) for i in range(n_out)])
     b_q = np.array(
-        [_quantize_bias_acc(b_f[i], in_scale * specs[i].scale) for i in range(n_out)],
+        [_quantize_bias_acc(b_eff[i], in_scale * specs[i].scale) for i in range(n_out)],
         dtype=np.int64,
     )
     return w_q, b_q, specs
@@ -120,9 +124,9 @@ def quantize_conv(
     in_scale: float | None = None,
     b_f: np.ndarray | None = None,
     per_channel: bool = False,
+    in_zero_point: int = 0,
 ) -> tuple[np.ndarray, np.ndarray | None, QuantSpec | list[QuantSpec]]:
     """Quantize a ``Conv2d`` layer's weights (and optional bias) to the IR's flat layout.
-
     Mirrors ``cnn_export.py``'s conv weight quantization (``symmetric_spec(CONV_FILTERS, ...,
     signed=True)`` then flatten). ``w_f`` has shape ``(out_ch, in_ch, kh, kw)`` and ``w_q`` is
     returned **flattened to ``(out_ch, in_ch*kh*kw)``** row-major — exactly the
@@ -153,18 +157,29 @@ def quantize_conv(
     out_ch = w_f.shape[0]
     w_flat = w_f.reshape(out_ch, -1)  # [out_ch][in_ch*kh*kw], in-channel/row/col fastest
 
-    if b_f is not None and in_scale is None:
+    if (b_f is not None or in_zero_point != 0) and in_scale is None:
         raise ValueError("quantize_conv needs in_scale to quantize a bias into accumulator units")
 
+    b_eff: np.ndarray | None = None
+    if b_f is not None or in_zero_point != 0:
+        base_b = (
+            np.zeros(out_ch, dtype=np.float64) if b_f is None else np.asarray(b_f, dtype=np.float64)
+        )
+        if base_b.shape != (out_ch,):
+            raise ValueError(f"conv bias shape {base_b.shape} does not match out_ch={out_ch}")
+        if in_zero_point != 0:
+            assert in_scale is not None
+            offset = in_scale * in_zero_point * w_flat.sum(axis=1)
+            b_eff = base_b - offset
+        else:
+            b_eff = base_b
     if not per_channel:
         w_spec = symmetric_spec(w_f, bits, signed=True)
         w_q = w_spec.quantize(w_flat)
         b_q = None
-        if b_f is not None:
-            b_f = np.asarray(b_f, dtype=np.float64)
-            if b_f.shape != (out_ch,):
-                raise ValueError(f"conv bias shape {b_f.shape} does not match out_ch={out_ch}")
-            b_q = _quantize_bias_acc(b_f, in_scale * w_spec.scale)  # type: ignore[arg-type]
+        if b_eff is not None:
+            assert in_scale is not None
+            b_q = _quantize_bias_acc(b_eff, in_scale * w_spec.scale)
         return w_q, b_q, w_spec
 
     # Per-channel: one spec per output channel (computed on the full 4-D kernel, axis 0), applied
@@ -172,12 +187,10 @@ def quantize_conv(
     specs = symmetric_spec_per_channel(w_f, bits, signed=True, axis=0)
     w_q = np.stack([specs[i].quantize(w_flat[i]) for i in range(out_ch)])
     b_q = None
-    if b_f is not None:
-        b_f = np.asarray(b_f, dtype=np.float64)
-        if b_f.shape != (out_ch,):
-            raise ValueError(f"conv bias shape {b_f.shape} does not match out_ch={out_ch}")
+    if b_eff is not None:
+        assert in_scale is not None
         b_q = np.array(
-            [_quantize_bias_acc(b_f[i], in_scale * specs[i].scale) for i in range(out_ch)],  # type: ignore[operator]
+            [_quantize_bias_acc(b_eff[i], in_scale * specs[i].scale) for i in range(out_ch)],
             dtype=np.int64,
         )
     return w_q, b_q, specs
@@ -213,6 +226,7 @@ def choose_requant_params(
     max_mult_bits: int = 5,
     input_bits: int | None = None,
     radix_capacity_bits: int | None = None,
+    clamp_lo: int = 0,
 ) -> tuple[int, int, int]:
     """Approximate the real rescale ``M = acc_scale / out_scale`` as ``(mult, shift)`` + round bias.
 
@@ -281,7 +295,7 @@ def choose_requant_params(
     # Optional loud budget check: the transient peak max(x,0)*mult + round_bias must fit the
     # radix even though the output is tiny (the whole point of the internal-peak rule).
     if input_bits is not None and radix_capacity_bits is not None:
-        peak = requant_internal_bits(input_bits, mult, round_bias)
+        peak = requant_internal_bits(input_bits, mult, round_bias, clamp_lo=clamp_lo)
         if peak > radix_capacity_bits:
             raise ValueError(
                 f"chosen Requant multiplier {mult} needs {peak} transient bits for a "
