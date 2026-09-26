@@ -48,7 +48,7 @@ pub fn fit_requant(
         .next_power_of_two()
         .max(512);
     let cap = (1i64 << (input_bits.saturating_sub(1).max(1))) as f64;
-    let x_max = (t_sat as f64).min(cap).max(512.0);
+    let x_max = (t_sat as f64).min(cap).max(512.0) + 1.0;
     let lo = -x_max;
     let hi = x_max;
     let divisor = (1u64 << shift) as f64;
@@ -134,23 +134,26 @@ pub fn fit_activation(
 
 pub fn eval_polymap(sk: &CkksServerKey, x: &CkksCt, pm: &PolyMap) -> Result<CkksCt, String> {
     let log_delta = x.ct.log_delta();
-    let (scale, _offset) = pm.poly.change_of_basis();
-    let affine_shift = if scale > 0.0 && scale.is_finite() && scale < 1.0 {
-        (-scale.log2()).round() as usize
-    } else {
-        0
-    };
-    let poly_consumed_bits = pm.depth * log_delta;
-    let coeff_budget =
-        x.ct.log_budget()
-            .saturating_sub(affine_shift)
-            .saturating_sub(poly_consumed_bits);
-    let coeff_meta = poulpy_ckks::CoeffsMeta::from_delta_budget(log_delta, coeff_budget);
+    // 1. Initial pass with nominal meta to compile the BSGS structure and learn exact consumed_bits
+    let approx_initial = PolynomialApproximation::from_polynomial(
+        &pm.poly,
+        Base2K(sk.params.base2k as u32),
+        sk.params.coeffs_meta(),
+        poulpy_ckks::polynomial::SplitStrategy::MinDepth,
+        &sk.host_module,
+    )
+    .map_err(|e| format!("cannot prepare polynomial approximation: {e}"))?;
+
+    let consumed = approx_initial.consumed_bits(log_delta);
+    let max_k = (x.ct.log_budget() + log_delta).saturating_sub(consumed);
+    let aligned_k = (max_k / sk.params.base2k) * sk.params.base2k;
+    let coeff_budget = aligned_k.saturating_sub(log_delta);
+    let final_meta = poulpy_ckks::CoeffsMeta::from_delta_budget(log_delta, coeff_budget);
 
     let approx = PolynomialApproximation::from_polynomial(
         &pm.poly,
         Base2K(sk.params.base2k as u32),
-        coeff_meta,
+        final_meta,
         poulpy_ckks::polynomial::SplitStrategy::MinDepth,
         &sk.host_module,
     )

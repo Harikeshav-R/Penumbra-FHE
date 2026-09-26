@@ -121,6 +121,18 @@ fn main() {
             "logits",
             bounds::PHASE8_TANH,
         ),
+        (
+            "Phase 8 branch",
+            "examples/mnist/phase8_branch_fixture.json",
+            "logits",
+            bounds::PHASE8_BRANCH,
+        ),
+        (
+            "Phase 8 bn cnn",
+            "examples/mnist/phase8_bn_cnn_fixture.json",
+            "logits",
+            bounds::PHASE8_BN_CNN,
+        ),
     ];
 
     let ctx = EvalCtx::new(&sk, 8);

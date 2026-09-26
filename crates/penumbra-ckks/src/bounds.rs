@@ -12,3 +12,5 @@ pub const PHASE6_ONNX: f64 = 60.0;
 pub const PHASE6_SKLEARN: f64 = 5e-4;
 pub const PHASE7_FACES: f64 = 120.0;
 pub const PHASE8_TANH: f64 = 35.0;
+pub const PHASE8_BRANCH: f64 = 66.0;
+pub const PHASE8_BN_CNN: f64 = 28.0;
