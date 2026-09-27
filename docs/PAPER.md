@@ -74,10 +74,12 @@ digits 222.3 s (TFHE) vs 1.37 s (CKKS); faces 370.6 s vs 2.30 s. TFHE is faster 
 0.521 s vs 0.647 s, **but see defect 2 below**.
 
 Accuracy: TFHE is bit-exact everywhere. CKKS max |err| after the floor-midpoint fix
-(`docs/results/phase12-4-comparison.json`): cnn 4.0, QAT 10, digits/ONNX 38, faces 74, in
-quantized-integer logit units.
+(commit `7d04993`), on the Phase-10 minimized fixtures (`docs/results/phase10-final-sweep.json`):
+cnn 4.0, QAT 10, digits/ONNX 38, faces 74, in quantized-integer logit units. On the older
+fixtures (`docs/results/phase12-4-comparison.json`) the post-fix values are cnn 3, QAT 28,
+digits/ONNX 35, faces 74.
 
-Keys: TFHE server key 114.84 MB; CKKS server key 1.78 GB.
+Keys: TFHE server key 114.84 MiB; CKKS server key 1,782.50 MiB (1.74 GiB).
 
 ### 2.3 Defects found in the evidence (fixed by Phase 13 onward)
 
@@ -91,7 +93,7 @@ Keys: TFHE server key 114.84 MB; CKKS server key 1.78 GB.
      (`docs/COMPARISON.md:204`) rests on the weaker path. The cause is not yet known.
 3. **Stale CKKS error numbers** in `docs/NOTES-ckks.md`: digits 188, faces 105, cnn 15.3. These
    predate the floor-midpoint fix in `crates/penumbra-ckks/src/ops/polymap.rs` (commit
-   `3f6bd689`). Current values are in §2.2.
+   `7d04993`; `3f6bd68`, recorded as the CKKS rerun HEAD in `phase12-4-comparison.json`, is its docs-only parent). Current values are in §2.2.
 4. **Wrong prose in `docs/COMPARISON.md:180`.** It says TFHE linear layers have "0 bootstraps";
    the measured counters show tens of thousands. It also quotes 338 s / 287 s for digits
    Conv2d/Linear, from a different run than Table B's 149.2 s / 51.5 s.
