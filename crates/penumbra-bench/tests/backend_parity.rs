@@ -31,15 +31,33 @@ fn test_op_set_parity_every_committed_fixture_no_crypto() {
         // 2. CKKS budget check and build_op for every node
         #[cfg(feature = "ckks")]
         {
-            ckks.check_graph_budget(&loaded.graph)
-                .unwrap_or_else(|e| panic!("CKKS budget check failed for '{}': {e}", fixture.key));
-            for node in &loaded.graph.nodes {
-                ckks.build_op(&node.op).unwrap_or_else(|e| {
-                    panic!(
-                        "CKKS build_op failed for node '{}' in '{}': {e}",
-                        node.name, fixture.key
-                    )
+            if fixture.key == "phase8_trees" {
+                assert!(
+                    ckks.check_graph_budget(&loaded.graph).is_err(),
+                    "CKKS must reject phase8_trees by depth budget"
+                );
+            } else {
+                let branch_backend;
+                let b = if fixture.key == "phase8_branch" {
+                    let p = penumbra_ckks::params::DEFAULT_PARAMS
+                        .with_max_poly_degree(3)
+                        .unwrap();
+                    branch_backend = penumbra_ckks::CkksBackend::new(p);
+                    &branch_backend
+                } else {
+                    &ckks
+                };
+                b.check_graph_budget(&loaded.graph).unwrap_or_else(|e| {
+                    panic!("CKKS budget check failed for '{}': {e}", fixture.key)
                 });
+                for node in &loaded.graph.nodes {
+                    b.build_op(&node.op).unwrap_or_else(|e| {
+                        panic!(
+                            "CKKS build_op failed for node '{}' in '{}': {e}",
+                            node.name, fixture.key
+                        )
+                    });
+                }
             }
         }
     }

@@ -109,17 +109,53 @@ pub fn op_spec_output_bits_n(spec: &OpSpec, input_bits: &[usize]) -> usize {
             assert_eq!(input_bits.len(), 1, "Argmax is a single-input op");
             1
         }
+        OpSpec::Compare { .. } => {
+            assert_eq!(input_bits.len(), 1, "Compare is a single-input op");
+            1
+        }
+        OpSpec::Concat { sizes } => {
+            assert_eq!(
+                input_bits.len(),
+                sizes.len(),
+                "Concat takes one input per declared segment"
+            );
+            input_bits.iter().copied().max().unwrap_or(0)
+        }
+        OpSpec::Split { .. } => {
+            assert_eq!(input_bits.len(), 1, "Split is a single-input op");
+            input_bits[0]
+        }
+    }
+}
+
+/// Bit-widths of every output tensor. Only `Split` produces more than one.
+pub fn op_spec_output_bits_multi(spec: &OpSpec, input_bits: &[usize]) -> Vec<usize> {
+    match spec {
+        OpSpec::Split { sizes } => vec![input_bits[0]; sizes.len()],
+        _ => vec![op_spec_output_bits_n(spec, input_bits)],
     }
 }
 
 /// Peak internal bit-width the rescale needs before the shift narrows it.
-pub fn requant_internal_bits(input_bits: usize, mult: u64, round_bias: u64) -> usize {
-    let relu_max: u128 = if input_bits >= 1 {
+pub fn requant_internal_bits(
+    input_bits: usize,
+    mult: u64,
+    round_bias: u64,
+    clamp_lo: i64,
+) -> usize {
+    let pos_max: u128 = if input_bits >= 1 {
         (1u128 << (input_bits - 1)) - 1
     } else {
         0
     };
-    let intermediate_max = relu_max * mult as u128 + round_bias as u128;
+    let floor_cap: u128 = if input_bits >= 1 {
+        1u128 << (input_bits - 1)
+    } else {
+        0
+    };
+    let neg_mag: u128 = (clamp_lo.unsigned_abs() as u128).min(floor_cap);
+    let intermediate_max =
+        (pos_max * mult as u128 + round_bias as u128).max(neg_mag * mult as u128);
     let magnitude = (u128::BITS - intermediate_max.leading_zeros()) as usize;
     (magnitude + 1).max(input_bits)
 }
@@ -130,18 +166,19 @@ pub fn op_spec_internal_bits_n(spec: &OpSpec, input_bits: &[usize]) -> usize {
         OpSpec::Requant {
             mult,
             round_bias,
+            clamp_lo,
             mults,
             round_biases,
             ..
         } => {
             assert_eq!(input_bits.len(), 1, "Requant is a single-input op");
             if mults.is_empty() {
-                requant_internal_bits(input_bits[0], *mult, *round_bias)
+                requant_internal_bits(input_bits[0], *mult, *round_bias, *clamp_lo)
             } else {
                 mults
                     .iter()
                     .zip(round_biases)
-                    .map(|(&m, &rb)| requant_internal_bits(input_bits[0], m, rb))
+                    .map(|(&m, &rb)| requant_internal_bits(input_bits[0], m, rb, *clamp_lo))
                     .max()
                     .expect("per-channel Requant has at least one channel")
             }
@@ -158,11 +195,13 @@ pub fn propagate_bit_widths(graph: &Graph) -> Result<HashMap<String, usize>, Str
         .map(|name| (name.clone(), graph.input_bits))
         .collect();
 
-    for node in &graph.nodes {
+    let order = crate::ir::topological_order(graph)?;
+    for &idx in &order {
+        let node = &graph.nodes[idx];
         node.op.validate()?;
-        if node.inputs.is_empty() || node.outputs.len() != 1 {
+        if node.inputs.is_empty() || node.outputs.is_empty() {
             return Err(format!(
-                "node '{}' ({}) must have at least one input and exactly one output",
+                "node '{}' ({}) must have at least one input and at least one output",
                 node.name,
                 node.op.op_type()
             ));
@@ -181,16 +220,26 @@ pub fn propagate_bit_widths(graph: &Graph) -> Result<HashMap<String, usize>, Str
             })
             .collect::<Result<_, _>>()?;
 
-        let out_bits = op_spec_output_bits_n(&node.op, &in_bits);
-        let output_name = &node.outputs[0];
-        if widths.contains_key(output_name) {
+        let out_bits = op_spec_output_bits_multi(&node.op, &in_bits);
+        if node.outputs.len() != out_bits.len() {
             return Err(format!(
-                "node '{}' writes tensor '{output_name}', which already exists — tensor names \
-                 must be unique",
-                node.name
+                "node '{}' ({}) declares {} output(s) but produces {}",
+                node.name,
+                node.op.op_type(),
+                node.outputs.len(),
+                out_bits.len()
             ));
         }
-        widths.insert(output_name.clone(), out_bits);
+        for (output_name, bits) in node.outputs.iter().zip(out_bits) {
+            if widths.contains_key(output_name) {
+                return Err(format!(
+                    "node '{}' writes tensor '{output_name}', which already exists — tensor names \
+                     must be unique",
+                    node.name
+                ));
+            }
+            widths.insert(output_name.clone(), bits);
+        }
     }
     Ok(widths)
 }
@@ -202,17 +251,17 @@ pub fn check_graph_bit_width_budget(graph: &Graph) -> Result<(), String> {
     let widths = propagate_bit_widths(graph)?;
 
     for node in &graph.nodes {
-        let name = &node.outputs[0];
-        let bits = widths[name];
-        if bits > capacity {
-            return Err(format!(
-                "bit-width budget exceeded at node '{}' (tensor '{name}'): requires {bits} bits \
-                 but the radix holds only {capacity} ({} blocks × {} bits). Reduce precision or \
-                 widen num_blocks (a Requant here is Phase 4).",
-                node.name, graph.num_blocks, MESSAGE_BITS
-            ));
+        for name in &node.outputs {
+            let bits = widths[name];
+            if bits > capacity {
+                return Err(format!(
+                    "bit-width budget exceeded at node '{}' (tensor '{name}'): requires {bits} bits \
+                     but the radix holds only {capacity} ({} blocks × {} bits). Reduce precision or \
+                     widen num_blocks (a Requant here is Phase 4).",
+                    node.name, graph.num_blocks, MESSAGE_BITS
+                ));
+            }
         }
-
         let in_bits: Vec<usize> = node.inputs.iter().map(|n| widths[n]).collect();
         let internal = op_spec_internal_bits_n(&node.op, &in_bits);
         if internal > capacity {

@@ -203,6 +203,6 @@ jobs:
       - name: Benchmark regression gate
         run: |
           cargo run -p penumbra-bench --release --bin penumbra-bench-report -- \
-            --models "${{ inputs.bench_models || 'phase2_logreg,phase4_cnn,phase6_sklearn' }}" \
+            --models "${{ inputs.bench_models || 'phase2_logreg,phase4_cnn,phase6_sklearn,phase8_trees' }}" \
             --backends tfhe --samples 1 \
             --baseline crates/penumbra-bench/baselines/tfhe-classic.json

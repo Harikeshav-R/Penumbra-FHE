@@ -39,10 +39,19 @@ from dataclasses import dataclass, field, replace
 from penumbra.bitwidth import (
     MESSAGE_BITS,
     check_bit_width_budget,
+    output_bits_multi,
     propagate_bit_widths,
     radix_capacity_bits,
 )
-from penumbra.ir import ArgmaxSpec, Conv2dSpec, Graph, LinearSpec, Node, RequantSpec
+from penumbra.ir import (
+    ArgmaxSpec,
+    Conv2dSpec,
+    Graph,
+    LinearSpec,
+    Node,
+    RequantSpec,
+    topological_nodes,
+)
 from penumbra.quantization.lut import identity_clamp_lut
 
 
@@ -131,6 +140,8 @@ def insert_requants(
     shifts: dict[str, int] | None = None,
     mults: dict[str, int] | None = None,
     round_biases: dict[str, int] | None = None,
+    clamp_los: dict[str, int] | None = None,
+    zero_points: dict[str, int] | None = None,
     per_channel: dict[str, RequantChannelParams] | None = None,
     out_bits: int = MESSAGE_BITS,
 ) -> Graph:
@@ -144,6 +155,8 @@ def insert_requants(
       ``max(0, producer_output_bits - out_bits)`` (exactness-safe but coarse).
     - ``mults[name]`` — the fixed-point multiplier (numerator of the rescale); default ``1``.
     - ``round_biases[name]`` — the round-to-nearest bias; default ``0`` (truncation).
+    - ``clamp_los[name]`` — signed floor before rescale; default ``0`` (the fused ReLU).
+    - ``zero_points[name]`` — non-negative activation domain offset; default ``0``.
     - ``per_channel[name]`` — a :class:`RequantChannelParams` for a per-channel-quantized
       accumulator: one ``(mult, shift, round_bias)`` per output channel. When present it takes
       precedence over the scalar ``shifts``/``mults``/``round_biases`` for that node, and the
@@ -162,7 +175,8 @@ def insert_requants(
     mults = mults or {}
     per_channel = per_channel or {}
     round_biases = round_biases or {}
-
+    clamp_los = clamp_los or {}
+    zero_points = zero_points or {}
     # Which tensors are consumed at all, which are graph outputs, and which are *already* read
     # by a Requant. The last makes the pass idempotent: a producer whose output already feeds a
     # Requant must not get a second one (re-running, or a hand-authored graph, is left as-is).
@@ -180,16 +194,17 @@ def insert_requants(
             already_requantized.update(node.inputs)
     graph_outputs = set(graph.outputs)
 
-    # Per-tensor widths of the *input* graph, to size each inserted requant's shift.
-    widths = propagate_bit_widths(graph)
+    # Per-tensor widths of the *input* graph, to validate input graph.
+    _ = propagate_bit_widths(graph)
     capacity = radix_capacity_bits(graph.num_blocks)
+    running_widths: dict[str, int] = {name: graph.input_bits for name in graph.inputs}
 
     new_nodes: list[Node] = []
     # Map a producer's original output tensor name -> the requantized tensor downstream nodes
     # should read instead. Built as we insert; consumers are rewired below.
     rewire: dict[str, str] = {}
 
-    for node in graph.nodes:
+    for node in topological_nodes(graph):
         # Rewire this node's inputs to any requantized upstream tensors — but ONLY for narrow-input
         # ops. A wide-input op (Argmax) must keep reading the original *wide* logit even when the
         # producer fans out to a narrow consumer that triggered a Requant: rewiring it to the
@@ -201,16 +216,22 @@ def insert_requants(
             node = replace(node, inputs=[rewire.get(name, name) for name in node.inputs])
         new_nodes.append(node)
 
+        in_bits = [running_widths[inp] for inp in node.inputs]
+        out_w = output_bits_multi(node.op, in_bits)
+        for out_n, w in zip(node.outputs, out_w, strict=True):
+            running_widths[out_n] = w
+
+        if not isinstance(node.op, _ACCUMULATOR_OPS):
+            continue
         out_name = node.outputs[0]
-        is_accumulator = isinstance(node.op, _ACCUMULATOR_OPS)
         # Only requant when the output feeds a *narrow-input* op (not just any consumer): a
         # terminal accumulator, or one feeding only wide-input ops like Argmax, stays wide.
         feeds_narrow = out_name in consumed_by_narrow and out_name not in graph_outputs
         # Skip if already requantized (idempotency) — see `already_requantized` above.
-        if not (is_accumulator and feeds_narrow) or out_name in already_requantized:
+        if not feeds_narrow or out_name in already_requantized:
             continue
 
-        incoming_bits = widths[out_name]
+        incoming_bits = running_widths[out_name]
         # A single accumulator wider than the radix can't be narrowed after the fact — the wide
         # value itself overflowed. Fail loudly naming the layer (`AGENTS.md` §1.4).
         if incoming_bits > capacity:
@@ -238,6 +259,8 @@ def insert_requants(
                 shift=0,
                 mult=1,
                 round_bias=0,
+                clamp_lo=clamp_los.get(node.name, 0),
+                zero_point=zero_points.get(node.name, 0),
                 out_bits=out_bits,
                 clamp_lut=_clamp_lut(out_bits),
                 mults=list(pc.mults),
@@ -253,12 +276,15 @@ def insert_requants(
                 shift=shift,
                 mult=mult,
                 round_bias=round_bias,
+                clamp_lo=clamp_los.get(node.name, 0),
+                zero_point=zero_points.get(node.name, 0),
                 out_bits=out_bits,
                 clamp_lut=_clamp_lut(out_bits),
             )
         new_nodes.append(
             Node(name=f"{node.name}__requant", inputs=[out_name], outputs=[rq_name], op=rq_op)
         )
+        running_widths[rq_name] = out_bits
         rewire[out_name] = rq_name
 
     # Graph outputs that were requantized would change name; in our placement the requantized

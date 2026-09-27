@@ -107,7 +107,9 @@ fn cleartext_logits(graph: &Graph, input: &[i64]) -> Vec<i64> {
                 pool_h,
                 pool_w,
                 stride,
+                padding,
             } => {
+                assert_eq!(*padding, 0, "phase4_cnn pools are unpadded");
                 let out_h = (in_h - pool_h) / stride + 1;
                 let out_w = (in_w - pool_w) / stride + 1;
                 let mut o = Vec::new();

@@ -26,9 +26,9 @@ from penumbra.reference import evaluate_graph_int
 OPSET = 13
 
 
-def _save(nodes, inits, inputs, outputs, tmp_path, name="m.onnx") -> str:
+def _save(nodes, inits, inputs, outputs, tmp_path, name="m.onnx", opset: int = OPSET) -> str:
     graph = helper.make_graph(nodes, "g", inputs, outputs, inits)
-    model = helper.make_model(graph, opset_imports=[helper.make_operatorsetid("", OPSET)])
+    model = helper.make_model(graph, opset_imports=[helper.make_operatorsetid("", opset)])
     onnx.checker.check_model(model)
     path = str(tmp_path / name)
     onnx.save(model, path)
@@ -318,3 +318,434 @@ def test_input_bits_override(tmp_path):
     path = _save(nodes, [_f32(w, "w")], [_vi("x", [1, 3])], [_vi("y", [1, 3])], tmp_path)
     assert fhe.load_onnx(path).input_bits == 4
     assert fhe.load_onnx(path, input_bits=6).input_bits == 6
+
+
+def test_all_seven_activations_lower_accurately(tmp_path):
+    """Each of the seven non-ReLU activations lowers to exact Activation.fn."""
+    import math
+
+    from penumbra.quantization import activations as ref_act
+
+    probes = [-3.0, -1.0, 0.0, 0.5, 2.0]
+    test_cases = [
+        ("Tanh", {}, ref_act.tanh, 13),
+        ("LeakyRelu", {"alpha": 0.05}, ref_act.activation_fn("LeakyRelu", {"alpha": 0.05}), 13),
+        ("HardSwish", {}, ref_act.hardswish, 14),
+        ("Gelu", {"approximate": b"none"}, ref_act.gelu, 20),
+        (
+            "Gelu",
+            {"approximate": b"tanh"},
+            ref_act.activation_fn("Gelu", {"approximate": "tanh"}),
+            20,
+        ),
+        ("Elu", {"alpha": 1.5}, ref_act.activation_fn("Elu", {"alpha": 1.5}), 13),
+        (
+            "HardSigmoid",
+            {"alpha": 0.15, "beta": 0.6},
+            ref_act.activation_fn("HardSigmoid", {"alpha": 0.15, "beta": 0.6}),
+            13,
+        ),
+        ("Sigmoid", {}, ref_act.sigmoid, 13),
+    ]
+
+    w = np.eye(3)
+    for idx, (op_name, attrs, expected_fn, op_opset) in enumerate(test_cases):
+        nodes = [
+            helper.make_node("Gemm", ["x", "w"], ["h"], name="fc1", transB=1),
+            helper.make_node(op_name, ["h"], ["r"], name=f"act_{idx}", **attrs),
+            helper.make_node("Gemm", ["r", "w"], ["y"], name="fc2", transB=1),
+        ]
+        path = _save(
+            nodes,
+            [_f32(w, "w")],
+            [_vi("x", [1, 3])],
+            [_vi("y", [1, 3])],
+            tmp_path,
+            name=f"act_{idx}.onnx",
+            opset=op_opset,
+        )
+        model = fhe.load_onnx(path)
+        assert len(model.layers) == 3
+        act_layer = model.layers[1]
+        assert isinstance(act_layer, Activation)
+        for p in probes:
+            assert math.isclose(act_layer.fn(p), expected_fn(p), rel_tol=1e-5, abs_tol=1e-7)
+
+
+def test_terminal_sigmoid_is_dropped_mid_graph_lowers(tmp_path):
+    """A terminal Sigmoid is dropped; a mid-graph Sigmoid lowers to Activation."""
+    w = np.eye(3)
+    # Terminal Sigmoid: Gemm -> Sigmoid
+    nodes_term = [
+        helper.make_node("Gemm", ["x", "w"], ["h"], name="fc", transB=1),
+        helper.make_node("Sigmoid", ["h"], ["y"], name="sig_term"),
+    ]
+    path_term = _save(
+        nodes_term,
+        [_f32(w, "w")],
+        [_vi("x", [1, 3])],
+        [_vi("y", [1, 3])],
+        tmp_path,
+        name="term_sig.onnx",
+    )
+    m_term = fhe.load_onnx(path_term)
+    assert len(m_term.layers) == 1, "terminal Sigmoid should be dropped"
+
+    # Mid-graph Sigmoid: Gemm -> Sigmoid -> Gemm
+    nodes_mid = [
+        helper.make_node("Gemm", ["x", "w"], ["h"], name="fc1", transB=1),
+        helper.make_node("Sigmoid", ["h"], ["s"], name="sig_mid"),
+        helper.make_node("Gemm", ["s", "w"], ["y"], name="fc2", transB=1),
+    ]
+    path_mid = _save(
+        nodes_mid,
+        [_f32(w, "w")],
+        [_vi("x", [1, 3])],
+        [_vi("y", [1, 3])],
+        tmp_path,
+        name="mid_sig.onnx",
+    )
+    m_mid = fhe.load_onnx(path_mid)
+    assert len(m_mid.layers) == 3
+    assert isinstance(m_mid.layers[1], Activation)
+
+
+def test_residual_add_lowers_to_add_layer(tmp_path):
+    """Residual Add (both inputs activations) lowers to a layers.Add node."""
+    w1 = np.eye(4)
+    w2 = np.eye(4)
+    nodes = [
+        helper.make_node("Gemm", ["x", "w1"], ["a"], name="ga", transB=1),
+        helper.make_node("Gemm", ["x", "w2"], ["b"], name="gb", transB=1),
+        helper.make_node("Add", ["a", "b"], ["y"], name="res"),
+    ]
+    inits = [_f32(w1, "w1"), _f32(w2, "w2")]
+    path = _save(nodes, inits, [_vi("x", [1, 4])], [_vi("y", [1, 4])], tmp_path)
+    model = fhe.load_onnx(path)
+    assert len(model.nodes) == 3
+    add_node = next(n for n in model.nodes if n.name == "res")
+    assert isinstance(add_node.layer, fhe.layers.Add)
+    assert add_node.inputs == ["a", "b"]
+    assert add_node.outputs == ["y"]
+
+
+def test_concat_lowers_with_right_flat_sizes(tmp_path):
+    """Concat along axis=1 lowers to layers.Concat."""
+    w1 = np.eye(3)
+    w2 = np.eye(5)
+    nodes = [
+        helper.make_node("Gemm", ["x", "w1"], ["a"], name="ga", transB=1),
+        helper.make_node("Gemm", ["x", "w2"], ["b"], name="gb", transB=1),
+        helper.make_node("Concat", ["a", "b"], ["y"], name="cat", axis=1),
+    ]
+    inits = [_f32(w1, "w1"), _f32(w2, "w2")]
+    path = _save(nodes, inits, [_vi("x", [1, 4])], [_vi("y", [1, 8])], tmp_path)
+    model = fhe.load_onnx(path)
+    cat_node = next(n for n in model.nodes if n.name == "cat")
+    assert isinstance(cat_node.layer, fhe.layers.Concat)
+    assert cat_node.inputs == ["a", "b"]
+    assert cat_node.outputs == ["y"]
+
+
+def test_split_lowers_with_channel_to_flat_sizes_rank4(tmp_path):
+    """Split along channel axis converts channel counts to flat element counts on rank-4."""
+    wc = np.ones((4, 1, 3, 3))
+    sp_split = numpy_helper.from_array(np.array([2, 2], dtype=np.int64), "sp_split")
+    nodes = [
+        helper.make_node("Conv", ["x", "wc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node("Split", ["c", "sp_split"], ["s0", "s1"], name="sp", axis=1),
+        helper.make_node("Concat", ["s0", "s1"], ["y"], name="cat", axis=1),
+    ]
+    inits = [_f32(wc, "wc"), sp_split]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 8, 8])], [_vi("y", [1, 4, 6, 6])], tmp_path)
+    model = fhe.load_onnx(path)
+    split_node = next(n for n in model.nodes if n.name == "sp")
+    assert isinstance(split_node.layer, fhe.layers.Split)
+    assert split_node.layer.sizes == [72, 72]
+    assert split_node.outputs == ["s0", "s1"]
+
+
+def test_batchnorm_folds_into_preceding_conv(tmp_path):
+    """BatchNorm immediately following Conv folds into Conv weights/bias with no extra layer."""
+    rng = np.random.default_rng(42)
+    wc = rng.normal(size=(4, 1, 3, 3))
+    bc = rng.normal(size=4)
+    scale = rng.uniform(0.5, 2.0, size=4)
+    b = rng.normal(size=4)
+    mean = rng.normal(size=4)
+    var = rng.uniform(0.1, 3.0, size=4)
+    eps = 1e-5
+
+    nodes = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node(
+            "BatchNormalization",
+            ["c", "scale", "b", "mean", "var"],
+            ["y"],
+            name="bn",
+            epsilon=eps,
+        ),
+    ]
+    inits = [
+        _f32(wc, "wc"),
+        _f32(bc, "bc"),
+        _f32(scale, "scale"),
+        _f32(b, "b"),
+        _f32(mean, "mean"),
+        _f32(var, "var"),
+    ]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 8, 8])], [_vi("y", [1, 4, 6, 6])], tmp_path)
+    model = fhe.load_onnx(path)
+
+    assert len(model.nodes) == 1
+    assert model.nodes[0].name == "conv"
+    conv_layer = model.nodes[0].layer
+    assert isinstance(conv_layer, Conv2d)
+
+    s = scale / np.sqrt(var + eps)
+    expected_w = s[:, None, None, None] * wc
+    expected_b = (bc - mean) * s + b
+    np.testing.assert_allclose(conv_layer.weight, expected_w, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(conv_layer.bias, expected_b, rtol=1e-6, atol=1e-6)
+
+
+def test_fanout_tensor_lowers_without_error(tmp_path):
+    """A fan-out tensor read by two downstream nodes lowers cleanly in the DAG."""
+    w1 = np.eye(3)
+    w2 = np.eye(3)
+    nodes = [
+        helper.make_node("Gemm", ["x", "w1"], ["h"], name="fc1", transB=1),
+        helper.make_node("Gemm", ["h", "w2"], ["a"], name="branch_a", transB=1),
+        helper.make_node("Gemm", ["h", "w2"], ["b"], name="branch_b", transB=1),
+        helper.make_node("Add", ["a", "b"], ["y"], name="add"),
+    ]
+    inits = [_f32(w1, "w1"), _f32(w2, "w2")]
+    path = _save(nodes, inits, [_vi("x", [1, 3])], [_vi("y", [1, 3])], tmp_path)
+    model = fhe.load_onnx(path)
+    assert len(model.nodes) == 4
+    assert [n.name for n in model.nodes] == ["fc1", "branch_a", "branch_b", "add"]
+
+
+def test_avg_pool_lowering_matches_true_mean(tmp_path):
+    """AveragePool lowers to Pool(avg) whose float forward emits the true mean."""
+    rng = np.random.default_rng(0)
+    wc = rng.normal(size=(3, 1, 3, 3)).astype(np.float32)
+    bc = rng.normal(size=3).astype(np.float32)
+    # Conv on 6x6 with 3x3 s1 -> 4x4. AvgPool 2x2 s2 -> 2x2. Flatten -> 3*2*2 = 12.
+    wg = rng.normal(size=(4, 12)).astype(np.float32)
+    bg = (rng.normal(size=4) * 5.0).astype(np.float32)
+
+    nodes = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node("Relu", ["c"], ["r"], name="relu"),
+        helper.make_node(
+            "AveragePool", ["r"], ["p"], name="pool", kernel_shape=[2, 2], strides=[2, 2]
+        ),
+        helper.make_node("Flatten", ["p"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg", "bg"], ["y"], name="gemm", transB=1),
+    ]
+    inits = [_f32(wc, "wc"), _f32(bc, "bc"), _f32(wg, "wg"), _f32(bg, "bg")]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 6, 6])], [_vi("y", [1, 4])], tmp_path)
+
+    model = fhe.load_onnx(path)
+    x = rng.uniform(0.0, 1.0, size=(3, 36))
+    acts = x
+    for layer in model.layers:
+        acts = layer.forward(acts)
+
+    # Independent numpy reference:
+    xr = x.reshape(3, 1, 6, 6)
+    conv_out = np.zeros((3, 3, 4, 4), dtype=np.float64)
+    for c_out in range(3):
+        for oy in range(4):
+            for ox in range(4):
+                conv_out[:, c_out, oy, ox] = (
+                    xr[:, 0, oy : oy + 3, ox : ox + 3] * wc[c_out, 0]
+                ).sum(axis=(1, 2)) + bc[c_out]
+    relu_out = np.maximum(conv_out, 0.0)
+    pool_out = relu_out.reshape(3, 3, 2, 2, 2, 2).mean(axis=(3, 5))
+    flat_out = pool_out.reshape(3, 12)
+    ref = flat_out @ wg.T + bg
+    assert np.allclose(acts, ref, atol=1e-9)
+
+
+def test_global_average_pool_lowering_matches_true_mean(tmp_path):
+    """GlobalAveragePool lowers to Pool(avg) whose float forward emits the true mean."""
+    rng = np.random.default_rng(0)
+    wc = rng.normal(size=(3, 1, 3, 3)).astype(np.float32)
+    bc = rng.normal(size=3).astype(np.float32)
+    # Conv on 6x6 with 3x3 s1 -> 4x4. GlobalAveragePool -> 1x1. Flatten -> 3*1*1 = 3.
+    wg = rng.normal(size=(4, 3)).astype(np.float32)
+    bg = (rng.normal(size=4) * 5.0).astype(np.float32)
+
+    nodes = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node("Relu", ["c"], ["r"], name="relu"),
+        helper.make_node("GlobalAveragePool", ["r"], ["p"], name="gap"),
+        helper.make_node("Flatten", ["p"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg", "bg"], ["y"], name="gemm", transB=1),
+    ]
+    inits = [_f32(wc, "wc"), _f32(bc, "bc"), _f32(wg, "wg"), _f32(bg, "bg")]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 6, 6])], [_vi("y", [1, 4])], tmp_path)
+
+    model = fhe.load_onnx(path)
+    x = rng.uniform(0.0, 1.0, size=(3, 36))
+    acts = x
+    for layer in model.layers:
+        acts = layer.forward(acts)
+
+    # Independent numpy reference:
+    xr = x.reshape(3, 1, 6, 6)
+    conv_out = np.zeros((3, 3, 4, 4), dtype=np.float64)
+    for c_out in range(3):
+        for oy in range(4):
+            for ox in range(4):
+                conv_out[:, c_out, oy, ox] = (
+                    xr[:, 0, oy : oy + 3, ox : ox + 3] * wc[c_out, 0]
+                ).sum(axis=(1, 2)) + bc[c_out]
+    relu_out = np.maximum(conv_out, 0.0)
+    pool_out = relu_out.mean(axis=(2, 3))
+    flat_out = pool_out.reshape(3, 3)
+    ref = flat_out @ wg.T + bg
+    assert np.allclose(acts, ref, atol=1e-9)
+
+
+def test_lowers_padded_average_pool(tmp_path):
+    """AveragePool with symmetric padding lowers with padding, matches numpy, and quantizes."""
+    rng = np.random.default_rng(0)
+    wc = rng.normal(size=(2, 1, 3, 3)).astype(np.float32)
+    bc = rng.normal(size=2).astype(np.float32)
+    # Conv 1->2 on 6x6 -> 2x4x4. AvgPool 3x3 s1 pad 1 -> 2x4x4 = 32 features.
+    wg = rng.normal(size=(4, 32)).astype(np.float32)
+    bg = (rng.normal(size=4) * 2.0).astype(np.float32)
+
+    nodes = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node(
+            "AveragePool",
+            ["c"],
+            ["p"],
+            name="pool",
+            kernel_shape=[3, 3],
+            strides=[1, 1],
+            pads=[1, 1, 1, 1],
+            count_include_pad=1,
+        ),
+        helper.make_node("Flatten", ["p"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg", "bg"], ["y"], name="gemm", transB=1),
+    ]
+    inits = [_f32(wc, "wc"), _f32(bc, "bc"), _f32(wg, "wg"), _f32(bg, "bg")]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 6, 6])], [_vi("y", [1, 4])], tmp_path)
+
+    model = fhe.load_onnx(path)
+    pool_layer = model.layers[1]
+    assert isinstance(pool_layer, Pool)
+    assert pool_layer.padding == 1
+    assert pool_layer.pool_h == 3
+    assert pool_layer.pool_w == 3
+    assert pool_layer.stride == 1
+    assert pool_layer.mode == "avg"
+
+    x = rng.uniform(0.0, 1.0, size=(3, 36))
+    acts = x
+    for layer in model.layers:
+        acts = layer.forward(acts)
+
+    # Independent numpy reference:
+    xr = x.reshape(3, 1, 6, 6)
+    conv_out = np.zeros((3, 2, 4, 4), dtype=np.float64)
+    for c_out in range(2):
+        for oy in range(4):
+            for ox in range(4):
+                conv_out[:, c_out, oy, ox] = (
+                    xr[:, 0, oy : oy + 3, ox : ox + 3] * wc[c_out, 0]
+                ).sum(axis=(1, 2)) + bc[c_out]
+    padded = np.pad(conv_out, ((0, 0), (0, 0), (1, 1), (1, 1)), constant_values=0.0)
+    pool_out = np.zeros((3, 2, 4, 4), dtype=np.float64)
+    for oy in range(4):
+        for ox in range(4):
+            pool_out[:, :, oy, ox] = padded[:, :, oy : oy + 3, ox : ox + 3].mean(axis=(2, 3))
+    flat_out = pool_out.reshape(3, 32)
+    ref = flat_out @ wg.T + bg
+    assert np.allclose(acts, ref, atol=1e-9)
+
+    cal = rng.uniform(0.0, 1.0, size=(16, 36))
+    graph = model.quantize(cal, n_bits=4)
+    pool_specs = [n.op for n in graph.nodes if n.op.op_type == "Pool"]
+    assert len(pool_specs) == 1
+    assert pool_specs[0].padding == 1
+
+    xq = _quantize_input(model, x[0])
+    out = evaluate_graph_int(graph, {"x": xq})
+    assert len(out[graph.outputs[0]]) == 4
+
+
+def test_lowers_padded_max_pool(tmp_path):
+    """MaxPool with symmetric padding lowers with padding, matches numpy, and quantizes."""
+    rng = np.random.default_rng(1)
+    wc = rng.normal(size=(2, 1, 3, 3)).astype(np.float32)
+    bc = rng.normal(size=2).astype(np.float32)
+    # Conv 1->2 on 6x6 -> 2x4x4. MaxPool 2x2 s2 pad 1 -> (4+2-2)//2 + 1 = 3 -> 2x3x3 = 18 features.
+    wg = rng.normal(size=(4, 18)).astype(np.float32)
+    bg = (rng.normal(size=4) * 2.0).astype(np.float32)
+
+    nodes = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node(
+            "MaxPool",
+            ["c"],
+            ["p"],
+            name="pool",
+            kernel_shape=[2, 2],
+            strides=[2, 2],
+            pads=[1, 1, 1, 1],
+        ),
+        helper.make_node("Flatten", ["p"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg", "bg"], ["y"], name="gemm", transB=1),
+    ]
+    inits = [_f32(wc, "wc"), _f32(bc, "bc"), _f32(wg, "wg"), _f32(bg, "bg")]
+    path = _save(nodes, inits, [_vi("x", [1, 1, 6, 6])], [_vi("y", [1, 4])], tmp_path)
+
+    model = fhe.load_onnx(path)
+    pool_layer = model.layers[1]
+    assert isinstance(pool_layer, Pool)
+    assert pool_layer.padding == 1
+    assert pool_layer.pool_h == 2
+    assert pool_layer.pool_w == 2
+    assert pool_layer.stride == 2
+    assert pool_layer.mode == "max"
+
+    x = rng.uniform(0.0, 1.0, size=(3, 36))
+    acts = x
+    for layer in model.layers:
+        acts = layer.forward(acts)
+
+    # Independent numpy reference:
+    xr = x.reshape(3, 1, 6, 6)
+    conv_out = np.zeros((3, 2, 4, 4), dtype=np.float64)
+    for c_out in range(2):
+        for oy in range(4):
+            for ox in range(4):
+                conv_out[:, c_out, oy, ox] = (
+                    xr[:, 0, oy : oy + 3, ox : ox + 3] * wc[c_out, 0]
+                ).sum(axis=(1, 2)) + bc[c_out]
+    padded = np.pad(conv_out, ((0, 0), (0, 0), (1, 1), (1, 1)), constant_values=-np.inf)
+    pool_out = np.zeros((3, 2, 3, 3), dtype=np.float64)
+    for oy in range(3):
+        for ox in range(3):
+            pool_out[:, :, oy, ox] = padded[:, :, oy * 2 : oy * 2 + 2, ox * 2 : ox * 2 + 2].max(
+                axis=(2, 3)
+            )
+    flat_out = pool_out.reshape(3, 18)
+    ref = flat_out @ wg.T + bg
+    assert np.allclose(acts, ref, atol=1e-9)
+
+    cal = rng.uniform(0.0, 1.0, size=(16, 36))
+    graph = model.quantize(cal, n_bits=4)
+    pool_specs = [n.op for n in graph.nodes if n.op.op_type == "Pool"]
+    assert len(pool_specs) == 1
+    assert pool_specs[0].padding == 1
+
+    xq = _quantize_input(model, x[0])
+    out = evaluate_graph_int(graph, {"x": xq})
+    assert len(out[graph.outputs[0]]) == 4

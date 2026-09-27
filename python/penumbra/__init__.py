@@ -34,6 +34,7 @@ from penumbra.bitwidth import (
     check_bit_width_budget,
     minimal_num_blocks,
     output_bits,
+    output_bits_multi,
     propagate_bit_widths,
     radix_capacity_bits,
 )
@@ -44,6 +45,8 @@ from penumbra.ir import (
     ActivationSpec,
     AddSpec,
     ArgmaxSpec,
+    CompareSpec,
+    ConcatSpec,
     Conv2dSpec,
     Graph,
     LinearSpec,
@@ -51,9 +54,21 @@ from penumbra.ir import (
     OpSpec,
     PoolSpec,
     RequantSpec,
+    SplitSpec,
     build_linear_argmax_graph,
+    topological_nodes,
 )
-from penumbra.layers import Activation, Conv2d, Linear, Pool, QuantConfig
+from penumbra.layers import (
+    Activation,
+    Add,
+    Concat,
+    Conv2d,
+    LayerNode,
+    Linear,
+    Pool,
+    QuantConfig,
+    Split,
+)
 from penumbra.model import Model
 from penumbra.onnx_loader import UnsupportedModelError, load_onnx
 from penumbra.reference import evaluate_graph_int
@@ -71,12 +86,17 @@ __all__ = [
     "Conv2dSpec",
     "ActivationSpec",
     "ArgmaxSpec",
+    "CompareSpec",
     "RequantSpec",
     "PoolSpec",
     "AddSpec",
+    "ConcatSpec",
+    "SplitSpec",
     "build_linear_argmax_graph",
+    "topological_nodes",
     # Bit-width tracking + compile pass (Phase 4, PROJECT.md §9)
     "output_bits",
+    "output_bits_multi",
     "propagate_bit_widths",
     "minimal_num_blocks",
     "check_bit_width_budget",
@@ -90,6 +110,10 @@ __all__ = [
     "Pool",
     "Activation",
     "QuantConfig",
+    "Add",
+    "Concat",
+    "Split",
+    "LayerNode",
     "evaluate_graph_int",
     # ONNX front door: parse + validate + lower a .onnx to a Model (Phase 6, PROJECT.md §10)
     "load_onnx",

@@ -1,7 +1,7 @@
 {
   "_comment": "Phase-6 SECOND-FRAMEWORK example: a scikit-learn linear digit classifier (MLPRegressor with no hidden layer, trained on one-hot targets) exported to digit_linear_sklearn.onnx with skl2onnx, then loaded THROUGH THE ONNX FRONT DOOR (penumbra.load_onnx) and quantized via penumbra.Model.quantize. The leading Cast(to=FLOAT) skl2onnx emits folds away; the graph is a single Linear whose 10 logits are the graph output, and the client argmaxes them. FHE output must equal these quantized-cleartext logits/labels bit-for-bit. Together with the torch CNN (phase6_onnx_fixture.json) this is the 'train anywhere, two frameworks' proof (ROADMAP Phase 6).",
   "graph": {
-    "schema_version": "0.6.0",
+    "schema_version": "0.10.0",
     "num_blocks": 10,
     "input_bits": 4,
     "inputs": [

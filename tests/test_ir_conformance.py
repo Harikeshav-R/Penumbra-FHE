@@ -27,6 +27,8 @@ from penumbra.ir import (
     SCHEMA_VERSION,
     AddSpec,
     ArgmaxSpec,
+    CompareSpec,
+    ConcatSpec,
     Conv2dSpec,
     Graph,
     LinearSpec,
@@ -34,6 +36,7 @@ from penumbra.ir import (
     OpSpec,
     PoolSpec,
     RequantSpec,
+    SplitSpec,
 )
 
 FIXTURE = Path(__file__).resolve().parent.parent / "examples" / "mnist" / "phase2_fixture.json"
@@ -122,6 +125,36 @@ def test_add_spec_round_trips():
     assert restored == g
     assert restored.nodes[0].op.to_dict() == {"op_type": "Add"}
     assert restored.nodes[0].inputs == ["a", "b"], "Add carries two operands (merge order)"
+
+
+def test_concat_spec_round_trips():
+    """The multi-input ``Concat`` op round-trips through ir.py."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=4,
+        input_bits=4,
+        inputs=["a", "b"],
+        outputs=["c"],
+        nodes=[Node(name="cat", inputs=["a", "b"], outputs=["c"], op=ConcatSpec(sizes=[2, 3]))],
+    )
+    restored = Graph.from_json(g.to_json())
+    assert restored == g
+    assert restored.nodes[0].op.to_dict() == {"op_type": "Concat", "sizes": [2, 3]}
+
+
+def test_split_spec_round_trips():
+    """The multi-output ``Split`` op round-trips through ir.py."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=4,
+        input_bits=4,
+        inputs=["x"],
+        outputs=["s0", "s1"],
+        nodes=[Node(name="split", inputs=["x"], outputs=["s0", "s1"], op=SplitSpec(sizes=[2, 2]))],
+    )
+    restored = Graph.from_json(g.to_json())
+    assert restored == g
+    assert restored.nodes[0].op.to_dict() == {"op_type": "Split", "sizes": [2, 2]}
 
 
 def test_requant_spec_round_trips():
@@ -279,6 +312,127 @@ def test_requant_spec_per_channel_rejects_inconsistent():
         )
 
 
+def test_requant_signed_fields_round_trip():
+    """RequantSpec with clamp_lo < 0 and zero_point > 0 round-trips and emits fields in order."""
+    op = RequantSpec(
+        shift=3,
+        mult=1,
+        round_bias=4,
+        clamp_lo=-16,
+        zero_point=2,
+        out_bits=2,
+        clamp_lut=[0, 1, 2, 3],
+    )
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=6,
+        input_bits=8,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[Node(name="rq", inputs=["x"], outputs=["y"], op=op)],
+    )
+    restored = Graph.from_json(g.to_json())
+    assert restored == g
+    assert restored.nodes[0].op.to_dict() == {
+        "op_type": "Requant",
+        "shift": 3,
+        "mult": 1,
+        "round_bias": 4,
+        "clamp_lo": -16,
+        "zero_point": 2,
+        "out_bits": 2,
+        "clamp_lut": [0, 1, 2, 3],
+    }
+
+
+def test_requant_zero_floor_and_zero_point_omits_fields():
+    """A (0, 0) Requant emits neither clamp_lo nor zero_point — byte-identical to 0.7.0."""
+    d = RequantSpec(shift=4, out_bits=2, clamp_lut=[0, 1, 2, 3], clamp_lo=0, zero_point=0).to_dict()
+    assert "clamp_lo" not in d
+    assert "zero_point" not in d
+
+
+def test_requant_spec_rejects_positive_clamp_lo_or_uncovered_floor():
+    """clamp_lo > 0 and zero_point + u_min < 0 are rejected at construction."""
+    with pytest.raises(ValueError, match="clamp_lo must be <= 0"):
+        RequantSpec(shift=1, out_bits=2, clamp_lut=[0, 1, 2, 3], clamp_lo=1)
+    with pytest.raises(ValueError, match="does not cover the floor image"):
+        # (-16 * 1 + 4) >> 3 = -2; zero_point=1 gives 1 + (-2) = -1 < 0
+        RequantSpec(
+            shift=3,
+            mult=1,
+            round_bias=4,
+            clamp_lo=-16,
+            zero_point=1,
+            out_bits=2,
+            clamp_lut=[0, 1, 2, 3],
+        )
+
+
+def test_compare_spec_round_trips():
+    """The ``Compare`` op (indices + thresholds) round-trips through ir.py."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=6,
+        input_bits=8,
+        inputs=["x"],
+        outputs=["y2"],
+        nodes=[
+            Node(
+                name="cmp1",
+                inputs=["x"],
+                outputs=["y1"],
+                op=CompareSpec(indices=[0, 2], thresholds=[5, 10]),
+            ),
+            Node(
+                name="cmp2",
+                inputs=["y1"],
+                outputs=["y2"],
+                op=CompareSpec(indices=[0], thresholds=[1]),
+            ),
+        ],
+    )
+    restored = Graph.from_json(g.to_json())
+    assert restored == g
+    assert restored.nodes[0].op.to_dict() == {
+        "op_type": "Compare",
+        "indices": [0, 2],
+        "thresholds": [5, 10],
+    }
+
+
+def test_compare_spec_rejects_invalid():
+    """CompareSpec fails loudly at construction on empty thresholds or bad indices."""
+    with pytest.raises(ValueError, match="needs at least one threshold"):
+        CompareSpec(indices=[], thresholds=[])
+    with pytest.raises(ValueError, match="threshold"):
+        CompareSpec(indices=[0], thresholds=[])
+    with pytest.raises(ValueError, match="need one input index per threshold"):
+        CompareSpec(indices=[0, 1], thresholds=[5])
+    with pytest.raises(ValueError, match="non-negative"):
+        CompareSpec(indices=[-1], thresholds=[5])
+
+
+def test_concat_spec_rejects_invalid():
+    """ConcatSpec fails loudly at construction on fewer than 2 segments or non-positive sizes."""
+    with pytest.raises(ValueError, match="at least 2 input segments"):
+        ConcatSpec(sizes=[4])
+    with pytest.raises(ValueError, match="positive"):
+        ConcatSpec(sizes=[2, 0])
+    with pytest.raises(ValueError, match="positive"):
+        ConcatSpec(sizes=[2, -1])
+
+
+def test_split_spec_rejects_invalid():
+    """SplitSpec fails loudly at construction on fewer than 2 segments or non-positive sizes."""
+    with pytest.raises(ValueError, match="at least 2 output segments"):
+        SplitSpec(sizes=[4])
+    with pytest.raises(ValueError, match="positive"):
+        SplitSpec(sizes=[2, 0])
+    with pytest.raises(ValueError, match="positive"):
+        SplitSpec(sizes=[2, -1])
+
+
 def test_pool_spec_round_trips():
     """The ``Pool`` op round-trips, and invalid modes/windows fail at construction."""
     g = Graph(
@@ -302,6 +456,37 @@ def test_pool_spec_round_trips():
         PoolSpec(mode="median", in_h=4, in_w=4, channels=1, pool_h=2, pool_w=2, stride=2)
     with pytest.raises(ValueError, match="must fit"):
         PoolSpec(mode="max", in_h=2, in_w=2, channels=1, pool_h=3, pool_w=3, stride=1)
+
+
+def test_pool_spec_padding_round_trips_and_omits_zero():
+    """PoolSpec padding round-trips; padding=0 is omitted from to_dict()."""
+    p_pad = PoolSpec(
+        mode="avg", in_h=3, in_w=3, channels=1, pool_h=2, pool_w=2, stride=2, padding=1
+    )
+    d_pad = p_pad.to_dict()
+    assert d_pad["padding"] == 1
+    keys = list(d_pad.keys())
+    assert keys.index("padding") == keys.index("stride") + 1
+    assert PoolSpec.from_dict(d_pad) == p_pad
+
+    p_zero = PoolSpec(
+        mode="avg", in_h=4, in_w=4, channels=1, pool_h=2, pool_w=2, stride=2, padding=0
+    )
+    d_zero = p_zero.to_dict()
+    assert "padding" not in d_zero
+
+    # from_dict without padding defaults to 0
+    restored = PoolSpec.from_dict(d_zero)
+    assert restored.padding == 0
+    assert restored == p_zero
+
+
+def test_pool_spec_rejects_bad_padding():
+    """PoolSpec rejects padding >= min(pool_h, pool_w) or negative padding."""
+    with pytest.raises(ValueError, match="must be smaller than the window"):
+        PoolSpec(mode="avg", in_h=4, in_w=4, channels=1, pool_h=2, pool_w=2, stride=2, padding=2)
+    with pytest.raises(ValueError, match="non-negative"):
+        PoolSpec(mode="avg", in_h=4, in_w=4, channels=1, pool_h=2, pool_w=2, stride=2, padding=-1)
 
 
 def test_conv2d_spec_round_trips():

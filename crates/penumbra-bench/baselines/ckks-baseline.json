@@ -5,7 +5,7 @@
     {
       "model": "phase2_logreg",
       "backend": "ckks",
-      "profile": null,
+      "profile": "deg15",
       "num_blocks": 6,
       "client_key_bytes": 131196,
       "server_key_bytes": 1869089408,
@@ -24,7 +24,7 @@
     {
       "model": "phase4_cnn",
       "backend": "ckks",
-      "profile": null,
+      "profile": "deg15",
       "num_blocks": 7,
       "client_key_bytes": 131196,
       "server_key_bytes": 1869089408,
@@ -43,7 +43,7 @@
     {
       "model": "phase6_sklearn",
       "backend": "ckks",
-      "profile": null,
+      "profile": "deg15",
       "num_blocks": 10,
       "client_key_bytes": 131196,
       "server_key_bytes": 1869089408,

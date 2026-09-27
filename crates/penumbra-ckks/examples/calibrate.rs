@@ -115,9 +115,31 @@ fn main() {
             "logits",
             bounds::PHASE7_FACES,
         ),
+        (
+            "Phase 8 tanh",
+            "examples/mnist/phase8_tanh_fixture.json",
+            "logits",
+            bounds::PHASE8_TANH,
+        ),
+        (
+            "Phase 8 branch",
+            "examples/mnist/phase8_branch_fixture.json",
+            "logits",
+            bounds::PHASE8_BRANCH,
+        ),
+        (
+            "Phase 8 bn cnn",
+            "examples/mnist/phase8_bn_cnn_fixture.json",
+            "logits",
+            bounds::PHASE8_BN_CNN,
+        ),
+        (
+            "Phase 8 gap cnn",
+            "examples/mnist/phase8_gap_cnn_fixture.json",
+            "logits",
+            bounds::PHASE8_GAP_CNN,
+        ),
     ];
-
-    let ctx = EvalCtx::new(&sk, 8);
 
     println!("\nEvaluating committed fixtures against declared bounds...");
     println!(
@@ -133,7 +155,20 @@ fn main() {
         let val = load_fixture(path);
         let graph: Graph = serde_json::from_value(val["graph"].clone()).expect("valid graph");
 
-        let budget_check = check_graph_depth_budget(&backend, &graph);
+        let (branch_ck, branch_sk, branch_backend);
+        let (eval_ck, eval_sk, eval_backend) = if name == "Phase 8 branch" {
+            let p = params.with_max_poly_degree(3).unwrap();
+            let keys = keygen(&p).expect("keygen failed");
+            branch_ck = keys.0;
+            branch_sk = keys.1;
+            branch_backend = CkksBackend::new(p);
+            (&branch_ck, &branch_sk, &branch_backend)
+        } else {
+            (&ck, &sk, &backend)
+        };
+        let eval_ctx = EvalCtx::new(eval_sk, 8);
+
+        let budget_check = check_graph_depth_budget(eval_backend, &graph);
         let budget_status = if budget_check.is_ok() { "PASS" } else { "FAIL" };
 
         let inputs = val["test_inputs"].as_array().expect("test_inputs array");
@@ -145,14 +180,14 @@ fn main() {
         for (s, input_val) in inputs.iter().enumerate() {
             let input = as_i64_vec(input_val);
             let mut inputs_map = HashMap::new();
-            inputs_map.insert(graph.inputs[0].clone(), encrypt(&ck, &input));
+            inputs_map.insert(graph.inputs[0].clone(), encrypt(eval_ck, &input));
 
-            let eval_res = evaluate_graph(&ctx, &graph, inputs_map);
+            let eval_res = evaluate_graph(&eval_ctx, &graph, inputs_map);
             match eval_res {
                 Ok(outputs) => {
                     let out_cts = &outputs[&graph.outputs[0]];
-                    let raw_floats = decrypt_raw_vec(&ck, out_cts);
-                    let rounded_ints = decrypt_vec(&ck, out_cts);
+                    let raw_floats = decrypt_raw_vec(eval_ck, out_cts);
+                    let rounded_ints = decrypt_vec(eval_ck, out_cts);
 
                     let want_label = val["expected_labels"][s].as_i64().unwrap();
                     let (want_ints, pred_label) = if mode == "labels" {

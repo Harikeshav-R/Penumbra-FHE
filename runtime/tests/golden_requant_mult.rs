@@ -65,6 +65,8 @@ fn requant_graph(
                 shift,
                 mult,
                 round_bias,
+                clamp_lo: 0,
+                zero_point: 0,
                 out_bits,
                 clamp_lut: clamp_lut(out_bits),
                 // Per-tensor scalar rescale — the per-channel overlay is exercised by

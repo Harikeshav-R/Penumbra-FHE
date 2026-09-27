@@ -28,9 +28,11 @@ load-bearing for correctness.
 
 from __future__ import annotations
 
+import heapq
 import json
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 # IR wire-format version. Hardcoded identically in ``runtime/src/ir.rs``; a mismatch is a
 # breaking change caught loudly at load time (``AGENTS.md`` §5, §8).
@@ -42,7 +44,15 @@ from typing import Any
 # per-channel weight quantization rescales each channel by its true ratio. The fields are omitted
 # from the JSON when unused, so a per-tensor ``Requant`` (and every legacy fixture) serializes
 # byte-identically — but the version still bumps (a 0.6.0 reader is required to interpret them).
-SCHEMA_VERSION = "0.6.0"
+# 0.7.0 added the Compare op (element-wise threshold comparison with a fused gather,
+# used by tree-ensemble lowering) — a breaking schema change.
+# 0.8.0 added signed floor (clamp_lo) and activation offset (zero_point) to Requant — a
+# breaking schema change (AGENTS.md §5, §8).
+# 0.9.0 added the Concat and Split ops (multi-input merge / multi-output segmentation for
+# branching graphs), each carrying flat segment sizes — a breaking schema change (AGENTS.md §5, §8).
+# 0.10.0 added symmetric virtual `padding` to Pool (omitted from JSON when 0) — a breaking
+# schema change (AGENTS.md §5, §8).
+SCHEMA_VERSION = "0.10.0"
 
 
 @dataclass(frozen=True)
@@ -88,6 +98,11 @@ class OpSpec:
             )
         if op_type == "Argmax":
             return ArgmaxSpec(threshold=int(d["threshold"]))
+        if op_type == "Compare":
+            return CompareSpec(
+                indices=[int(i) for i in d["indices"]],
+                thresholds=[int(t) for t in d["thresholds"]],
+            )
         if op_type == "Requant":
             cs = d.get("channel_size")
             return RequantSpec(
@@ -96,6 +111,8 @@ class OpSpec:
                 # (mult=1, round_bias=0) when absent so a minimal Requant payload still loads.
                 mult=int(d.get("mult", 1)),
                 round_bias=int(d.get("round_bias", 0)),
+                clamp_lo=int(d.get("clamp_lo", 0)),
+                zero_point=int(d.get("zero_point", 0)),
                 out_bits=int(d["out_bits"]),
                 clamp_lut=[int(v) for v in d["clamp_lut"]],
                 # 0.6.0 per-channel overlay; absent -> empty (per-tensor scalar path).
@@ -113,12 +130,17 @@ class OpSpec:
                 pool_h=int(d["pool_h"]),
                 pool_w=int(d["pool_w"]),
                 stride=int(d["stride"]),
+                padding=int(d.get("padding", 0)),
             )
         if op_type == "Add":
             return AddSpec()
+        if op_type == "Concat":
+            return ConcatSpec(sizes=[int(n) for n in d["sizes"]])
+        if op_type == "Split":
+            return SplitSpec(sizes=[int(n) for n in d["sizes"]])
         raise ValueError(
             f"unknown op_type {op_type!r}; expected one of 'Linear', 'Conv2d', 'Activation', "
-            "'Argmax', 'Requant', 'Pool', 'Add'"
+            "'Argmax', 'Compare', 'Requant', 'Pool', 'Add', 'Concat', 'Split'"
         )
 
 
@@ -255,6 +277,40 @@ class ArgmaxSpec(OpSpec):
 
 
 @dataclass(frozen=True)
+class CompareSpec(OpSpec):
+    """Element-wise threshold comparison with a fused gather (tree split evaluation).
+
+    ``out[i] = 1 if x[indices[i]] >= thresholds[i] else 0``. The gather lets one node read a
+    different input element per comparison — a decision tree's internal nodes each test their
+    own feature — with no bit-width growth and no extra cost under TFHE (indexing the input
+    ``CtVec``). Output is a single bit, independent of input width.
+    """
+
+    indices: list[int]
+    thresholds: list[int]
+
+    op_type: str = field(init=False, default="Compare")
+
+    def __post_init__(self) -> None:
+        if not self.thresholds:
+            raise ValueError("Compare needs at least one threshold")
+        if len(self.indices) != len(self.thresholds):
+            raise ValueError(
+                f"Compare has {len(self.indices)} indices but {len(self.thresholds)} "
+                "thresholds; need one input index per threshold"
+            )
+        if any(i < 0 for i in self.indices):
+            raise ValueError(f"Compare indices must be non-negative, got {self.indices}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "op_type": self.op_type,
+            "indices": self.indices,
+            "thresholds": self.thresholds,
+        }
+
+
+@dataclass(frozen=True)
 class RequantSpec(OpSpec):
     """Rescale a wide accumulator down to a narrow, LUT-able value.
 
@@ -307,7 +363,9 @@ class RequantSpec(OpSpec):
     # the Rust struct's field order by `to_dict`. Defaults reproduce the legacy pure-shift.
     mult: int = 1
     round_bias: int = 0
-    # 0.6.0 per-channel overlay; empty/None = per-tensor (scalar) path, omitted from `to_dict`.
+    # 0.8.0 additions for signed floor + activation offset.
+    clamp_lo: int = 0
+    zero_point: int = 0
     mults: list[int] = field(default_factory=list)
     shifts: list[int] = field(default_factory=list)
     round_biases: list[int] = field(default_factory=list)
@@ -328,6 +386,13 @@ class RequantSpec(OpSpec):
             )
         if self.round_bias < 0:
             raise ValueError(f"RequantSpec round_bias must be non-negative, got {self.round_bias}")
+        if self.clamp_lo > 0:
+            raise ValueError(
+                "Requant clamp_lo must be <= 0 (it is the pre-rescale floor; "
+                f"0 is the fused ReLU), got {self.clamp_lo}"
+            )
+        if self.zero_point < 0:
+            raise ValueError(f"Requant zero_point must be non-negative, got {self.zero_point}")
         # Per-channel overlay: if any part is present, all must be consistent (mirror Rust build).
         has_pc = bool(self.mults or self.shifts or self.round_biases or self.channel_size)
         if has_pc:
@@ -359,6 +424,19 @@ class RequantSpec(OpSpec):
             for i, s in enumerate(self.shifts):
                 if s < 0:
                     raise ValueError(f"RequantSpec shifts[{i}] = {s} must be non-negative")
+        if not self.mults:
+            u_min = (self.clamp_lo * self.mult + self.round_bias) >> self.shift
+        else:
+            u_min = min(
+                (self.clamp_lo * m + rb) >> s
+                for m, s, rb in zip(self.mults, self.shifts, self.round_biases, strict=True)
+            )
+        if self.zero_point + u_min < 0:
+            raise ValueError(
+                f"Requant zero_point {self.zero_point} does not cover the floor image {u_min}: "
+                "the narrowed value would be negative and the single-block LUT index would wrap — "
+                "regenerate the graph from the quantization service (AGENTS.md §1.4)"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         # Key order matches the Rust struct declaration (shift, mult, round_bias, out_bits,
@@ -368,9 +446,13 @@ class RequantSpec(OpSpec):
             "shift": self.shift,
             "mult": self.mult,
             "round_bias": self.round_bias,
-            "out_bits": self.out_bits,
-            "clamp_lut": self.clamp_lut,
         }
+        if self.clamp_lo != 0:
+            d["clamp_lo"] = self.clamp_lo
+        if self.zero_point != 0:
+            d["zero_point"] = self.zero_point
+        d["out_bits"] = self.out_bits
+        d["clamp_lut"] = self.clamp_lut
         # Emit the per-channel overlay only when used, so a per-tensor Requant is byte-identical
         # to 0.5.0 (mirrors the Rust `skip_serializing_if` guards) — keeps legacy fixtures stable.
         if self.mults:
@@ -385,8 +467,8 @@ class RequantSpec(OpSpec):
 class PoolSpec(OpSpec):
     """Spatial pooling over a flattened ``[channels][in_h][in_w]`` feature map.
 
-    ``mode`` is ``"avg"`` (window **sum** — the ``1/k`` averaging is folded into the
-    downstream ``Requant`` so pooling stays PBS-free) or ``"max"`` (pairwise max, expensive).
+    ``mode`` is ``"avg"`` (window **sum** — the ``1/k`` is carried in the output tensor's
+    quantization scale so pooling stays PBS-free) or ``"max"`` (pairwise max, expensive).
     The flat tensor is **channel-major, row-major**: element ``(c, y, x)`` is at
     ``c*in_h*in_w + y*in_w + x`` — the same layout ``Conv2d`` produces, so a ``Conv2d → Pool``
     chain needs no reshape. Output is ``[channels][out_h][out_w]`` in the same layout.
@@ -399,8 +481,15 @@ class PoolSpec(OpSpec):
     pool_h: int
     pool_w: int
     stride: int
+    padding: int = 0
 
     op_type: str = field(init=False, default="Pool")
+
+    def out_dims(self) -> tuple[int, int]:
+        return (
+            (self.in_h + 2 * self.padding - self.pool_h) // self.stride + 1,
+            (self.in_w + 2 * self.padding - self.pool_w) // self.stride + 1,
+        )
 
     def __post_init__(self) -> None:
         # Fail loudly at construction (mirrors Rust ``OpSpec::build``), not later (§1.4).
@@ -408,14 +497,21 @@ class PoolSpec(OpSpec):
             raise ValueError(f'PoolSpec mode must be "avg" or "max"; got {self.mode!r}')
         if min(self.in_h, self.in_w, self.channels, self.pool_h, self.pool_w, self.stride) < 1:
             raise ValueError("PoolSpec dims/window/stride must all be positive")
-        if self.pool_h > self.in_h or self.pool_w > self.in_w:
+        if self.padding < 0:
+            raise ValueError("PoolSpec padding must be non-negative")
+        if self.padding >= min(self.pool_h, self.pool_w):
             raise ValueError(
-                f"PoolSpec window ({self.pool_h}x{self.pool_w}) must fit the input "
-                f"({self.in_h}x{self.in_w})"
+                f"PoolSpec padding {self.padding} must be smaller than the window "
+                f"({self.pool_h}x{self.pool_w}) so every window covers at least one real input"
+            )
+        if self.pool_h > self.in_h + 2 * self.padding or self.pool_w > self.in_w + 2 * self.padding:
+            raise ValueError(
+                f"PoolSpec window ({self.pool_h}x{self.pool_w}) must fit the padded input "
+                f"({self.in_h + 2 * self.padding}x{self.in_w + 2 * self.padding})"
             )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "op_type": self.op_type,
             "mode": self.mode,
             "in_h": self.in_h,
@@ -425,6 +521,9 @@ class PoolSpec(OpSpec):
             "pool_w": self.pool_w,
             "stride": self.stride,
         }
+        if self.padding:
+            d["padding"] = self.padding
+        return d
 
 
 @dataclass(frozen=True)
@@ -440,6 +539,48 @@ class AddSpec(OpSpec):
 
     def to_dict(self) -> dict[str, Any]:
         return {"op_type": self.op_type}
+
+
+@dataclass(frozen=True)
+class ConcatSpec(OpSpec):
+    """Channel-axis concatenation of N tensors on the flat wire.
+
+    Carries flat segment ``sizes`` (one per input operand) to validate wiring at load time
+    and enable backends to prepare linear maps / moves without graph inspection.
+    """
+
+    sizes: list[int]
+    op_type: str = field(init=False, default="Concat")
+
+    def __post_init__(self) -> None:
+        if len(self.sizes) < 2:
+            raise ValueError(f"Concat needs at least 2 input segments; got {len(self.sizes)}")
+        if any(n <= 0 for n in self.sizes):
+            raise ValueError(f"Concat segment sizes must be positive; got {self.sizes!r}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"op_type": self.op_type, "sizes": list(self.sizes)}
+
+
+@dataclass(frozen=True)
+class SplitSpec(OpSpec):
+    """Contiguous segmentation of a single flat wire into N output tensors.
+
+    Carries flat segment ``sizes`` (one per output segment) to validate wiring at load time
+    and enable backends to prepare linear maps / moves without graph inspection.
+    """
+
+    sizes: list[int]
+    op_type: str = field(init=False, default="Split")
+
+    def __post_init__(self) -> None:
+        if len(self.sizes) < 2:
+            raise ValueError(f"Split needs at least 2 output segments; got {len(self.sizes)}")
+        if any(n <= 0 for n in self.sizes):
+            raise ValueError(f"Split segment sizes must be positive; got {self.sizes!r}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"op_type": self.op_type, "sizes": list(self.sizes)}
 
 
 @dataclass(frozen=True)
@@ -563,3 +704,111 @@ def build_linear_argmax_graph(
             ),
         ],
     )
+
+
+class TensorNode(Protocol):
+    """Anything with a name and the tensor names it reads/writes
+    (``Node``, ``layers.LayerNode``).
+    """
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def inputs(self) -> list[str]: ...
+
+    @property
+    def outputs(self) -> list[str]: ...
+
+
+def stable_kahn_order(
+    node_inputs: Sequence[Sequence[str]], node_outputs: Sequence[Sequence[str]]
+) -> list[int]:
+    """Node indices in a stable Kahn order: among ready nodes the lowest original index wins,
+    so an already-topological list is returned unchanged.
+
+    A tensor no node produces (a graph input, a constant) imposes no dependency. On a cycle the
+    returned order is *shorter* than the node count; the caller names the stuck nodes in its own
+    error type (``ValueError`` here, ``UnsupportedModelError`` in the ONNX loader).
+    """
+    num_nodes = len(node_inputs)
+    if num_nodes == 0:
+        return []
+
+    producer_map: dict[str, int] = {
+        out: idx for idx, outs in enumerate(node_outputs) for out in outs
+    }
+    in_deps: list[set[int]] = [set() for _ in range(num_nodes)]
+    dependents: list[list[int]] = [[] for _ in range(num_nodes)]
+
+    for c_idx, inps in enumerate(node_inputs):
+        for inp in inps:
+            if inp in producer_map:
+                p_idx = producer_map[inp]
+                if p_idx not in in_deps[c_idx]:
+                    in_deps[c_idx].add(p_idx)
+                    dependents[p_idx].append(c_idx)
+
+    ready = [idx for idx, deps in enumerate(in_deps) if not deps]
+    heapq.heapify(ready)
+
+    order: list[int] = []
+    while ready:
+        idx = heapq.heappop(ready)
+        order.append(idx)
+        for dep in dependents[idx]:
+            in_deps[dep].remove(idx)
+            if not in_deps[dep]:
+                heapq.heappush(ready, dep)
+
+    return order
+
+
+def topological_order(nodes: Sequence[TensorNode], graph_inputs: Iterable[str]) -> list[int]:
+    """Indices of ``nodes`` in a valid evaluation order (stable Kahn, see
+    :func:`stable_kahn_order`).
+
+    Fails loudly (AGENTS.md §1.4) on an undefined input, a duplicate output, or a cycle.
+    """
+    graph_inputs = set(graph_inputs)
+    all_produced = {out for node in nodes for out in node.outputs}
+
+    for node in nodes:
+        for inp in node.inputs:
+            if inp not in graph_inputs and inp not in all_produced:
+                raise ValueError(
+                    f"node {node.name!r} reads tensor {inp!r}, which no node produces and is "
+                    "not a graph input"
+                )
+
+    existing: set[str] = set(graph_inputs)
+    for node in nodes:
+        for out in node.outputs:
+            if out in existing:
+                raise ValueError(
+                    f"node {node.name!r} writes tensor {out!r}, which already exists — "
+                    "tensor names must be unique (no silent overwrite)"
+                )
+            existing.add(out)
+
+    order = stable_kahn_order([n.inputs for n in nodes], [n.outputs for n in nodes])
+
+    if len(order) < len(nodes):
+        visited = set(order)
+        names = [node.name for idx, node in enumerate(nodes) if idx not in visited]
+        raise ValueError(
+            f"graph has a cycle: node(s) {names!r} are never ready — their inputs depend on "
+            "their own outputs"
+        )
+
+    return order
+
+
+def topological_nodes(graph: Graph) -> list[Node]:
+    """Every node of ``graph`` in a valid evaluation order (stable Kahn).
+
+    Among ready nodes, the lowest original index wins, so a graph already emitted in
+    topological order is unchanged. Fails loudly on an undefined input, duplicate output,
+    or cycle (AGENTS.md §1.4).
+    """
+    return [graph.nodes[i] for i in topological_order(graph.nodes, graph.inputs)]

@@ -370,17 +370,24 @@ that unlock new model classes, each via the same add-an-op discipline.
 
 ### Tasks
 
-- [ ] **Tree ensembles (decision trees / XGBoost):** trees are often *easier* in FHE than NNs
+- [x] **Tree ensembles (decision trees / XGBoost):** trees are often *easier* in FHE than NNs
       — comparisons are LUTs. Add a tree-to-IR adapter and the compare/select ops needed.
-- [ ] **More activations:** tanh, GELU, leaky ReLU, hardswish — all are single-input LUTs, so
+      *Note:* Delivered in Phase 8 Step 1 via `Compare` op (IR schema 0.7.0), `penumbra.adapters.from_sklearn` and `from_xgboost`, and committed fixtures `phase8_trees_fixture.json` and `phase8_xgb_fixture.json`.
+- [x] **More activations:** tanh, GELU, leaky ReLU, hardswish — all are single-input LUTs, so
       mostly LUT-generation work in the quantization service.
-- [ ] **Concat / split / multi-input graphs:** support branching graphs (not just linear
+      *Note:* Delivered in Phase 8 Step 2 via signed `Requant` (`clamp_lo` + `zero_point`, IR schema 0.8.0), affine `Activation` LUT generation, lowering for 7 ONNX ops (`Tanh`, `LeakyRelu`, `HardSwish`, `Gelu`, `Elu`, `HardSigmoid`, mid-graph `Sigmoid`), and committed fixture `phase8_tanh_fixture.json`.
+- [x] **Concat / split / multi-input graphs:** support branching graphs (not just linear
       chains) in the IR walker.
-- [ ] **Batch norm folding:** fold BN into preceding conv/linear at quantization time (common
+      *Note:* Delivered in Phase 8 Step 3 via `Concat` and `Split` ops (IR schema 0.9.0), stable Kahn topological walker, multi-output evaluation, merge-scale classes in `Model.quantize`, and committed fixture `phase8_branch_fixture.json`.
+- [x] **Batch norm folding:** fold BN into preceding conv/linear at quantization time (common
       ONNX pattern) so it costs nothing at runtime.
-- [ ] **Additional pooling / global average pool.**
-- [ ] For each new op: registry entry + Rust impl + bit-width rule + golden test.
-- [ ] Expand `docs/SUPPORTED-OPS.md` and add a model-zoo of validated examples.
+      *Note:* Delivered in Phase 8 Step 4 via load-time BatchNorm folding (`penumbra.quantization.fold_batchnorm`) into preceding Conv2d/Linear weights and bias, and committed fixture `phase8_bn_cnn_fixture.json`.
+- [x] **Additional pooling / global average pool.**
+      *Note:* Delivered via symmetric virtual `padding` on `Pool` (IR schema 0.10.0), avg-pool `1/k` carried in the output quantization scale (fixes ONNX AveragePool/GlobalAveragePool lowering fidelity), and committed fixture `phase8_gap_cnn_fixture.json` (padded AvgPool + GlobalAveragePool, TFHE + CKKS goldens).
+- [x] For each new op: registry entry + Rust impl + bit-width rule + golden test.
+      *Note:* Audited in `docs/SUPPORTED-OPS.md` § "Phase 8 — per-op coverage".
+- [x] Expand `docs/SUPPORTED-OPS.md` and add a model-zoo of validated examples.
+      *Note:* `docs/MODEL-ZOO.md`, drift-guarded by `tests/test_model_zoo_doc.py`.
 
 ### Exit Criteria
 

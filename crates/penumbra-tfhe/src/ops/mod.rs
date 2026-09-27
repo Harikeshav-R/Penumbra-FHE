@@ -32,18 +32,24 @@ use crate::encrypt::CtVec;
 pub mod activation;
 pub mod add;
 pub mod argmax;
+pub mod compare;
+pub mod concat;
 pub mod conv2d;
 pub mod linear;
 pub mod pool;
 pub mod requant;
+pub mod split;
 
 pub use activation::Activation;
 pub use add::Add;
 pub use argmax::Argmax;
+pub use compare::Compare;
+pub use concat::Concat;
 pub use conv2d::Conv2d;
 pub use linear::Linear;
 pub use pool::{Pool, PoolMode};
 pub use requant::Requant;
+pub use split::Split;
 
 /// Evaluation context specialized for the TFHE backend.
 pub type EvalCtx<'a> = penumbra_core::backend::EvalCtx<'a, tfhe::integer::ServerKey>;

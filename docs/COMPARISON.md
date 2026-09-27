@@ -205,6 +205,9 @@ The study answers the three motivating sub-questions (§1) with concrete data on
    2. TFHE requires zero polynomial approximation, has zero drift across layers, and guarantees bit-exact agreement with the integer specification. CKKS introduces bounded approximation error on multi-layer models (max error 4.0 to 74.0 in integer units across CNNs), requiring declared bounds and headroom analysis.
    3. TFHE server keys are **114.84 MB**, feasible for deployment on constrained nodes; CKKS requires **1.78 GB** of Galois rotation keys for the BSGS baby-step/giant-step steps.
 
+
+5. **Tree Ensembles (`Compare` and sum-of-comparisons lowering):**
+   TFHE evaluates decision tree ensembles bit-for-bit exactly via `scalar_ge_parallelized` comparison PBSs (`phase8_trees`: 67 PBSs total across 5 trees, ~10.4 s latency, 0 bootstraps). Under CKKS, `Compare` is implemented at the op level via a continuous smoothed step polynomial approximation over a plaintext linear map (`ckks_golden_ops.rs`). However, for a 4-node tree graph with chained sharp step functions (`split_cmp` and `leaf_sel`), the multiplicative level budget required (`(1 + 4) * 30 * 2 + 30 * 2 = 360` bits) exceeds the depth budget capacity of 330 bits at `k = 360`, `log_delta = 30`, `max_poly_degree = 15`. This demonstrates an asymmetric scheme tradeoff: TFHE evaluates sharp discrete comparisons and branching logic natively with zero error and zero bootstraps, whereas CKKS cannot chain two sharp step functions without parameter widening.
 ## Scope
 
 This study compares two backends on **Penumbra's existing supported operations and committed

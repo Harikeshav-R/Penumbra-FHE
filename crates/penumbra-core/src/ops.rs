@@ -41,6 +41,19 @@ pub trait Op<B: Backend + ?Sized>: Send + Sync {
         self.output_bits(input_bits[0])
     }
 
+    /// Evaluate over an ordered slice of input tensors, returning ALL output tensors.
+    ///
+    /// The default produces exactly one output by delegating to [`Op::eval_n`]; only a
+    /// multi-output op (`Split`) overrides it.
+    fn eval_multi(&self, ctx: &EvalCtx<B::ServerKey>, inputs: &[&CtVec<B>]) -> Vec<CtVec<B>> {
+        vec![self.eval_n(ctx, inputs)]
+    }
+
+    /// Bit-widths of ALL output tensors — the companion to [`Op::eval_multi`].
+    fn output_bits_multi(&self, input_bits: &[usize]) -> Vec<usize> {
+        vec![self.output_bits_n(input_bits)]
+    }
+
     /// Peak internal bit-width this op materializes while computing, given its input widths.
     fn internal_bits_n(&self, input_bits: &[usize]) -> usize {
         self.output_bits_n(input_bits)

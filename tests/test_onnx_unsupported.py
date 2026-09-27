@@ -41,33 +41,55 @@ def _f32(arr, name):
 
 
 def test_lists_all_unsupported_problems_at_once(tmp_path):
-    """A model with BatchNorm + a non-ReLU activation + a residual Add reports all three at once."""
+    """A model with invalid attributes on Concat + Conv reports both at once."""
     rng = np.random.default_rng(0)
     w = rng.normal(size=(4, 4))
+    wc = rng.normal(size=(4, 1, 3, 3))
+    nodes = [
+        helper.make_node("MatMul", ["x", "w"], ["h"], name="mm"),
+        helper.make_node("Concat", ["h", "h"], ["c"], name="cat1", axis=0),
+        helper.make_node("Conv", ["img", "wc"], ["y"], name="c1", group=2, strides=[1, 1]),
+    ]
+    inits = [_f32(w, "w"), _f32(wc, "wc")]
+    path = _model(
+        nodes,
+        inits,
+        [_vi("x", [1, 4]), _vi("img", [1, 2, 8, 8])],
+        [_vi("c", [2, 4]), _vi("y", [1, 4, 6, 6])],
+        tmp_path,
+    )
+
+    with pytest.raises(UnsupportedModelError) as exc:
+        fhe.load_onnx(path)
+    problems = exc.value.problems
+    joined = "\n".join(problems)
+    assert "Concat" in joined and "'cat1'" in joined
+    assert "Conv" in joined and "'c1'" in joined
+    assert len(problems) == 2
+
+
+def test_mid_graph_sigmoid_is_supported_in_problem_list(tmp_path):
+    """A mid-graph Sigmoid is a supported activation; it does not appear in the problem list."""
+    rng = np.random.default_rng(0)
+    w = rng.normal(size=(4, 4))
+    nodes = [
+        helper.make_node("MatMul", ["x", "w"], ["h"], name="mm"),
+        helper.make_node("Sigmoid", ["h"], ["s"], name="sig1"),
+        helper.make_node("BatchNormalization", ["s", "scale", "b", "m", "v"], ["y"], name="bn1"),
+    ]
     scale = np.ones(4)
     b = np.zeros(4)
     mean = np.zeros(4)
     var = np.ones(4)
-    nodes = [
-        helper.make_node("MatMul", ["x", "w"], ["h"], name="mm"),
-        helper.make_node("BatchNormalization", ["h", "s", "bb", "m", "v"], ["bn"], name="bn1"),
-        helper.make_node("Tanh", ["bn"], ["t"], name="tanh1"),
-        helper.make_node(
-            "Add", ["t", "h"], ["y"], name="res"
-        ),  # residual: both operands activations
-    ]
-    inits = [_f32(w, "w"), _f32(scale, "s"), _f32(b, "bb"), _f32(mean, "m"), _f32(var, "v")]
+    inits = [_f32(w, "w"), _f32(scale, "scale"), _f32(b, "b"), _f32(mean, "m"), _f32(var, "v")]
     path = _model(nodes, inits, [_vi("x", [1, 4])], [_vi("y", [1, 4])], tmp_path)
 
     with pytest.raises(UnsupportedModelError) as exc:
         fhe.load_onnx(path)
     problems = exc.value.problems
-    # All three offenders named in one report, each actionable.
-    joined = "\n".join(problems)
-    assert "BatchNormalization" in joined and "'bn1'" in joined
-    assert "Tanh" in joined and "'tanh1'" in joined
-    assert "Add" in joined and "'res'" in joined
-    assert len(problems) == 3
+    assert len(problems) == 1
+    assert "BatchNormalization" in problems[0] and "'bn1'" in problems[0]
+    assert "Sigmoid" not in "\n".join(problems)
 
 
 def test_branching_graph_fails_loudly(tmp_path):
@@ -86,22 +108,6 @@ def test_branching_graph_fails_loudly(tmp_path):
     )
     with pytest.raises(UnsupportedModelError, match="output"):
         # Two graph outputs is itself rejected; if single-output, fan-out is caught in the walker.
-        fhe.load_onnx(path)
-
-
-def test_fanout_branching_single_output_fails_loudly(tmp_path):
-    """x feeding two nodes that reconverge is branching even with a single graph output."""
-    rng = np.random.default_rng(2)
-    w1 = rng.normal(size=(4, 4))
-    w2 = rng.normal(size=(4, 4))
-    nodes = [
-        helper.make_node("Gemm", ["x", "w1"], ["a"], name="ga", transB=1),
-        helper.make_node("Gemm", ["x", "w2"], ["b"], name="gb", transB=1),  # fan-out on x
-        helper.make_node("Add", ["a", "b"], ["y"], name="merge"),  # reconverge (residual)
-    ]
-    inits = [_f32(w1, "w1"), _f32(w2, "w2")]
-    path = _model(nodes, inits, [_vi("x", [1, 4])], [_vi("y", [1, 4])], tmp_path)
-    with pytest.raises(UnsupportedModelError, match="branch|fan-out|residual"):
         fhe.load_onnx(path)
 
 
@@ -240,4 +246,57 @@ def test_perm_less_transpose_on_dynamic_batch_fails_loudly(tmp_path):
     inits = [shp, _f32(w, "w")]
     path = _model(nodes, inits, [_vi("x", [None, 4, 6])], [_vi("y", [None, 4])], tmp_path)
     with pytest.raises(UnsupportedModelError, match="reorders the flat"):
+        fhe.load_onnx(path)
+
+
+@pytest.mark.parametrize(
+    ("op_type", "attrs", "match"),
+    [
+        (
+            "AveragePool",
+            {"kernel_shape": [2, 2], "strides": [2, 2], "pads": [0, 1, 0, 1]},
+            "only symmetric equal padding",
+        ),
+        (
+            "MaxPool",
+            {"kernel_shape": [2, 2], "strides": [2, 2], "pads": [2, 2, 2, 2]},
+            "must be smaller than kernel_shape",
+        ),
+        (
+            "AveragePool",
+            {
+                "kernel_shape": [3, 3],
+                "strides": [1, 1],
+                "pads": [1, 1, 1, 1],
+                "count_include_pad": 0,
+            },
+            "count_include_pad=0",
+        ),
+        (
+            "MaxPool",
+            {"kernel_shape": [2, 2], "strides": [2, 2], "auto_pad": "SAME_UPPER"},
+            "auto_pad",
+        ),
+    ],
+)
+def test_pool_padding_constraints_fail_loudly(tmp_path, op_type, attrs, match):
+    rng = np.random.default_rng(0)
+    wc = rng.normal(size=(2, 1, 3, 3)).astype(np.float32)
+    wg = rng.normal(size=(4, 32)).astype(np.float32)
+    nodes = [
+        helper.make_node("Conv", ["x", "wc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node(op_type, ["c"], ["p"], name="pool", **attrs),
+        helper.make_node("Flatten", ["p"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg"], ["y"], name="gemm", transB=1),
+    ]
+    inits = [_f32(wc, "wc"), _f32(wg, "wg")]
+    path = _model(
+        nodes,
+        inits,
+        [_vi("x", [1, 1, 6, 6])],
+        [_vi("y", [1, 4])],
+        tmp_path,
+        check=False,
+    )
+    with pytest.raises(UnsupportedModelError, match=match):
         fhe.load_onnx(path)

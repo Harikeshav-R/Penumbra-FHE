@@ -12,9 +12,9 @@ Guarded by ``pytest.importorskip("onnxruntime")``: onnxruntime is in the optiona
 this **skips in CI** (which installs dev-only) and runs locally under ``uv run --extra ml pytest``.
 
 Comparison-model constraints (baked into the fixtures below so the two sides are directly
-comparable): the models are **logit-terminated** (no dropped Softmax tail) and **avg-pool-free**
-(our ``Pool('avg')`` emits the window *sum*, not the mean, deferring 1/k to the next Requant —
-which has no float-forward counterpart in onnxruntime's true averaging).
+comparable): the models are **logit-terminated** (no dropped Softmax tail); AveragePool and
+GlobalAveragePool are included because the float layer emits the true mean (with the integer
+op emitting the window sum and 1/k carried in the output quantization scale).
 """
 
 from __future__ import annotations
@@ -140,3 +140,103 @@ def test_fidelity_conv_layout(tmp_path):
     got = _lowered_forward(model, x.reshape(1, -1).astype(np.float64))  # flat channel-major
     ref = _ort_run(path, x).reshape(1, -1)  # onnxruntime output is (1,3,3,3) channel-major
     assert np.allclose(got, ref, atol=1e-4), f"conv lowering diverges:\n{got}\n{ref}"
+
+
+def test_fidelity_avgpool_and_gap(tmp_path):
+    """AveragePool and GlobalAveragePool float forwards match onnxruntime true averaging."""
+    rng = np.random.default_rng(4)
+    wc = rng.normal(size=(3, 1, 3, 3)).astype(np.float32)
+    bc = rng.normal(size=3).astype(np.float32)
+    wg = rng.normal(size=(4, 3)).astype(np.float32)
+    bg = rng.normal(size=4).astype(np.float32)
+    nodes = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node("Relu", ["c"], ["r"], name="relu"),
+        helper.make_node(
+            "AveragePool", ["r"], ["p"], name="avgpool", kernel_shape=[2, 2], strides=[2, 2]
+        ),
+        helper.make_node("GlobalAveragePool", ["p"], ["g"], name="gap"),
+        helper.make_node("Flatten", ["g"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg", "bg"], ["y"], name="gemm", transB=1),
+    ]
+    path = _save(
+        nodes,
+        [_f32(wc, "wc"), _f32(bc, "bc"), _f32(wg, "wg"), _f32(bg, "bg")],
+        [_vi("x", [1, 1, 8, 8])],
+        [_vi("y", [1, 4])],
+        tmp_path,
+    )
+    model = fhe.load_onnx(path)
+    x = rng.uniform(-2.0, 2.0, size=(1, 1, 8, 8)).astype(np.float32)
+    got = _lowered_forward(model, x.reshape(1, -1).astype(np.float64))
+    ref = _ort_run(path, x).reshape(1, -1)
+    assert np.allclose(got, ref, atol=1e-4), f"avgpool/gap lowering diverges:\n{got}\n{ref}"
+
+
+def test_fidelity_padded_pools(tmp_path):
+    """Lowered forward of padded MaxPool and AveragePool matches onnxruntime."""
+    rng = np.random.default_rng(5)
+    wc = rng.normal(size=(2, 1, 3, 3)).astype(np.float32)
+    bc = rng.normal(size=2).astype(np.float32)
+
+    # 1. Padded AveragePool: 6x6 -> 4x4 -> 4x4 (k=3, s=1, pad=1) -> 2*4*4=32 features
+    wg_avg = rng.normal(size=(4, 32)).astype(np.float32)
+    bg_avg = rng.normal(size=4).astype(np.float32)
+    nodes_avg = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node(
+            "AveragePool",
+            ["c"],
+            ["p"],
+            name="pool",
+            kernel_shape=[3, 3],
+            strides=[1, 1],
+            pads=[1, 1, 1, 1],
+            count_include_pad=1,
+        ),
+        helper.make_node("Flatten", ["p"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg_avg", "bg_avg"], ["y"], name="gemm", transB=1),
+    ]
+    path_avg = _save(
+        nodes_avg,
+        [_f32(wc, "wc"), _f32(bc, "bc"), _f32(wg_avg, "wg_avg"), _f32(bg_avg, "bg_avg")],
+        [_vi("x", [1, 1, 6, 6])],
+        [_vi("y", [1, 4])],
+        tmp_path,
+        name="avg.onnx",
+    )
+    model_avg = fhe.load_onnx(path_avg)
+    x = rng.uniform(-2.0, 2.0, size=(1, 1, 6, 6)).astype(np.float32)
+    got_avg = _lowered_forward(model_avg, x.reshape(1, -1).astype(np.float64))
+    ref_avg = _ort_run(path_avg, x).reshape(1, -1)
+    assert np.allclose(got_avg, ref_avg, atol=1e-4)
+
+    # 2. Padded MaxPool: 6x6 -> 4x4 -> 3x3 (k=2, s=2, pad=1) -> 2*3*3=18 features
+    wg_max = rng.normal(size=(4, 18)).astype(np.float32)
+    bg_max = rng.normal(size=4).astype(np.float32)
+    nodes_max = [
+        helper.make_node("Conv", ["x", "wc", "bc"], ["c"], name="conv", strides=[1, 1]),
+        helper.make_node(
+            "MaxPool",
+            ["c"],
+            ["p"],
+            name="pool",
+            kernel_shape=[2, 2],
+            strides=[2, 2],
+            pads=[1, 1, 1, 1],
+        ),
+        helper.make_node("Flatten", ["p"], ["f"], name="flatten"),
+        helper.make_node("Gemm", ["f", "wg_max", "bg_max"], ["y"], name="gemm", transB=1),
+    ]
+    path_max = _save(
+        nodes_max,
+        [_f32(wc, "wc"), _f32(bc, "bc"), _f32(wg_max, "wg_max"), _f32(bg_max, "bg_max")],
+        [_vi("x", [1, 1, 6, 6])],
+        [_vi("y", [1, 4])],
+        tmp_path,
+        name="max.onnx",
+    )
+    model_max = fhe.load_onnx(path_max)
+    got_max = _lowered_forward(model_max, x.reshape(1, -1).astype(np.float64))
+    ref_max = _ort_run(path_max, x).reshape(1, -1)
+    assert np.allclose(got_max, ref_max, atol=1e-4)

@@ -24,12 +24,16 @@ from penumbra.ir import (
     ActivationSpec,
     AddSpec,
     ArgmaxSpec,
+    CompareSpec,
+    ConcatSpec,
     Conv2dSpec,
     Graph,
     LinearSpec,
     OpSpec,
     PoolSpec,
     RequantSpec,
+    SplitSpec,
+    topological_nodes,
 )
 
 # Mirror of ``runtime/src/keys.rs`` (the default secure profile). Not user-facing.
@@ -103,30 +107,42 @@ def output_bits(op: OpSpec, input_bits: list[int]) -> int:
         return op.out_bits  # internal peak is checked separately (requant_internal_bits)
 
     if isinstance(op, ActivationSpec):
-        # Activation needs an already-narrowed (<= MESSAGE_BITS) single-block input; its output
-        # width is set by the table. Mirror the Rust assert so an un-requantized wide input
-        # fails loudly in the tracker, naming the contract.
         _expect_arity(op, input_bits, 1)
-        if input_bits[0] > MESSAGE_BITS:
-            raise ValueError(
-                f"Activation input is {input_bits[0]} bits, wider than the single "
-                f"{MESSAGE_BITS}-bit block it consumes; insert a Requant in front to narrow it"
-            )
         return op.output_bits
 
     if isinstance(op, ArgmaxSpec):
         _expect_arity(op, input_bits, 1)
         return 1  # a single class bit
 
+    if isinstance(op, CompareSpec):
+        _expect_arity(op, input_bits, 1)
+        return 1  # a single comparison bit, independent of input width
+
     if isinstance(op, AddSpec):
         _expect_arity(op, input_bits, 2)
         # One carry from the add; the wider operand's sign bit covers the result.
         return max(input_bits[0], input_bits[1]) + 1
 
+    if isinstance(op, ConcatSpec):
+        _expect_arity(op, input_bits, len(op.sizes))
+        return max(input_bits)
+
+    if isinstance(op, SplitSpec):
+        _expect_arity(op, input_bits, 1)
+        return input_bits[0]
+
     raise ValueError(f"output_bits: unsupported op {op.op_type!r}")
 
 
-def requant_internal_bits(input_bits: int, mult: int, round_bias: int) -> int:
+def output_bits_multi(op: OpSpec, input_bits: list[int]) -> list[int]:
+    """Bit-widths of all outputs (mirror of Rust ``op_spec_output_bits_multi``)."""
+    if isinstance(op, SplitSpec):
+        _expect_arity(op, input_bits, 1)
+        return [input_bits[0]] * len(op.sizes)
+    return [output_bits(op, input_bits)]
+
+
+def requant_internal_bits(input_bits: int, mult: int, round_bias: int, clamp_lo: int = 0) -> int:
     """Peak transient width a ``Requant`` materializes before the shift narrows it.
 
     Mirror of the Rust ``requant::requant_internal_bits`` (``AGENTS.md`` §1.3, §5). The op's
@@ -137,9 +153,10 @@ def requant_internal_bits(input_bits: int, mult: int, round_bias: int) -> int:
     accumulator and the narrowed output each fit — which is exactly the case the budget check
     must catch loudly (``AGENTS.md`` §1.4).
     """
-    # Largest positive value a signed ``input_bits``-wide accumulator holds, post-ReLU.
-    relu_max = (1 << (input_bits - 1)) - 1 if input_bits >= 1 else 0
-    intermediate_max = relu_max * mult + round_bias
+    pos_max = (1 << (input_bits - 1)) - 1 if input_bits >= 1 else 0
+    floor_cap = 1 << (input_bits - 1) if input_bits >= 1 else 0
+    neg_mag = min(abs(clamp_lo), floor_cap)
+    intermediate_max = max(pos_max * mult + round_bias, neg_mag * mult)
     # +1 for the sign bit (the intermediate lives in the signed radix); never below input width.
     return max(magnitude_bits(intermediate_max) + 1, input_bits)
 
@@ -157,10 +174,10 @@ def internal_bits(op: OpSpec, input_bits: list[int]) -> int:
         # channel bounds the radix). Empty arrays -> the scalar per-tensor path.
         if op.mults:
             return max(
-                requant_internal_bits(input_bits[0], m, rb)
+                requant_internal_bits(input_bits[0], m, rb, op.clamp_lo)
                 for m, rb in zip(op.mults, op.round_biases, strict=True)
             )
-        return requant_internal_bits(input_bits[0], op.mult, op.round_bias)
+        return requant_internal_bits(input_bits[0], op.mult, op.round_bias, op.clamp_lo)
     return output_bits(op, input_bits)
 
 
@@ -174,17 +191,17 @@ def _expect_arity(op: OpSpec, input_bits: list[int], n: int) -> None:
 def propagate_bit_widths(graph: Graph) -> dict[str, int]:
     """Per-tensor bit-widths through ``graph``, seeded by ``graph.input_bits``.
 
-    The Python mirror of ``eval::propagate_bit_widths``: walk nodes in order, resolve each
-    node's input widths from a running map, apply :func:`output_bits`, and store the single
-    output. Fails loudly (`AGENTS.md` §1.4) on a tensor read before it is produced, a duplicate
-    output name, or a node without exactly one output.
+    The Python mirror of ``eval::propagate_bit_widths``: walk nodes in topological order, resolve
+    each node's input widths, apply :func:`output_bits_multi`, and store every output. Fails loudly
+    (``AGENTS.md`` §1.4) on a tensor read before it is produced, a duplicate output name, or a node
+    without at least one input/output.
     """
     widths: dict[str, int] = {name: graph.input_bits for name in graph.inputs}
-    for node in graph.nodes:
-        if not node.inputs or len(node.outputs) != 1:
+    for node in topological_nodes(graph):
+        if not node.inputs or not node.outputs:
             raise ValueError(
                 f"node {node.name!r} ({node.op.op_type}) must have at least one input and "
-                "exactly one output"
+                "at least one output"
             )
         in_bits = []
         for name in node.inputs:
@@ -194,13 +211,19 @@ def propagate_bit_widths(graph: Graph) -> dict[str, int]:
                     "and is not a graph input — node order is not a valid topological order"
                 )
             in_bits.append(widths[name])
-        out_name = node.outputs[0]
-        if out_name in widths:
+        out_widths = output_bits_multi(node.op, in_bits)
+        if len(node.outputs) != len(out_widths):
             raise ValueError(
-                f"node {node.name!r} writes tensor {out_name!r}, which already exists — "
-                "tensor names must be unique"
+                f"node {node.name!r} ({node.op.op_type}) declares {len(node.outputs)} output(s) "
+                f"but produces {len(out_widths)}"
             )
-        widths[out_name] = output_bits(node.op, in_bits)
+        for out_name, out_b in zip(node.outputs, out_widths, strict=True):
+            if out_name in widths:
+                raise ValueError(
+                    f"node {node.name!r} writes tensor {out_name!r}, which already exists — "
+                    "tensor names must be unique"
+                )
+            widths[out_name] = out_b
     return widths
 
 
@@ -217,15 +240,21 @@ def check_bit_width_budget(graph: Graph) -> None:
     capacity = radix_capacity_bits(graph.num_blocks)
     widths = propagate_bit_widths(graph)
     for node in graph.nodes:
-        name = node.outputs[0]
-        bits = widths[name]
-        if bits > capacity:
-            raise ValueError(
-                f"bit-width budget exceeded at node {node.name!r} (tensor {name!r}): requires "
-                f"{bits} bits but the radix holds only {capacity} ({graph.num_blocks} blocks x "
-                f"{MESSAGE_BITS} bits). Reduce precision, widen num_blocks, or requantize earlier."
-            )
+        for name in node.outputs:
+            bits = widths[name]
+            if bits > capacity:
+                raise ValueError(
+                    f"bit-width budget exceeded at node {node.name!r} (tensor {name!r}): "
+                    f"requires {bits} bits but the radix holds only {capacity} "
+                    f"({graph.num_blocks} blocks x {MESSAGE_BITS} bits). Reduce precision, "
+                    "widen num_blocks, or requantize earlier."
+                )
         in_bits = [widths[n] for n in node.inputs]
+        if isinstance(node.op, ActivationSpec) and in_bits[0] > MESSAGE_BITS:
+            raise ValueError(
+                f"Activation input is {in_bits[0]} bits, wider than the single "
+                f"{MESSAGE_BITS}-bit block it consumes; insert a Requant in front to narrow it"
+            )
         peak = internal_bits(node.op, in_bits)
         if peak > capacity:
             raise ValueError(

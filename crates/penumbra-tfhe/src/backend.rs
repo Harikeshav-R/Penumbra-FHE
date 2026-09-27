@@ -8,7 +8,7 @@ use penumbra_core::ops::Op;
 use tfhe::integer::{IntegerCiphertext, RadixClientKey, ServerKey, SignedRadixCiphertext};
 use tfhe::shortint::Ciphertext;
 
-use crate::ops::{Activation, Add, Argmax, Conv2d, Linear, Pool, Requant};
+use crate::ops::{Activation, Add, Argmax, Compare, Concat, Conv2d, Linear, Pool, Requant, Split};
 
 /// The concrete TFHE / CGGI backend.
 #[derive(Debug, Clone, Copy, Default)]
@@ -82,6 +82,8 @@ impl Backend for TfheBackend {
                 shift,
                 mult,
                 round_bias,
+                clamp_lo,
+                zero_point,
                 out_bits,
                 clamp_lut,
                 mults,
@@ -92,6 +94,8 @@ impl Backend for TfheBackend {
                 shift: *shift,
                 mult: *mult,
                 round_bias: *round_bias,
+                clamp_lo: *clamp_lo,
+                zero_point: *zero_point,
                 out_bits: *out_bits,
                 clamp_lut: clamp_lut.clone(),
                 mults: mults.clone(),
@@ -107,6 +111,7 @@ impl Backend for TfheBackend {
                 pool_h,
                 pool_w,
                 stride,
+                padding,
             } => {
                 let pool_mode = match mode.as_str() {
                     "avg" => PoolMode::Avg,
@@ -125,9 +130,23 @@ impl Backend for TfheBackend {
                     pool_h: *pool_h,
                     pool_w: *pool_w,
                     stride: *stride,
+                    padding: *padding,
                 }))
             }
             OpSpec::Add {} => Ok(Box::new(Add)),
+            OpSpec::Compare {
+                indices,
+                thresholds,
+            } => Ok(Box::new(Compare {
+                indices: indices.clone(),
+                thresholds: thresholds.clone(),
+            })),
+            OpSpec::Concat { sizes } => Ok(Box::new(Concat {
+                sizes: sizes.clone(),
+            })),
+            OpSpec::Split { sizes } => Ok(Box::new(Split {
+                sizes: sizes.clone(),
+            })),
         }
     }
 

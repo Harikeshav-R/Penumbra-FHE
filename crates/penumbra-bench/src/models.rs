@@ -63,6 +63,30 @@ pub const MODELS: &[ModelFixture] = &[
         label: "Phase-7 faces",
         default_bench: false,
     },
+    ModelFixture {
+        key: "phase8_trees",
+        path: "../../examples/tabular/phase8_trees_fixture.json",
+        label: "Phase-8 tree ensemble",
+        default_bench: false,
+    },
+    ModelFixture {
+        key: "phase8_branch",
+        path: "../../examples/mnist/phase8_branch_fixture.json",
+        label: "Phase-8 branching MLP",
+        default_bench: false,
+    },
+    ModelFixture {
+        key: "phase8_bn_cnn",
+        path: "../../examples/mnist/phase8_bn_cnn_fixture.json",
+        label: "Phase-8 BN CNN",
+        default_bench: false,
+    },
+    ModelFixture {
+        key: "phase8_gap_cnn",
+        path: "../../examples/mnist/phase8_gap_cnn_fixture.json",
+        label: "Phase-8 padded-pool + GAP CNN",
+        default_bench: false,
+    },
 ];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

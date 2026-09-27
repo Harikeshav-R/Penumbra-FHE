@@ -26,11 +26,15 @@ from penumbra.ir import (
     ActivationSpec,
     AddSpec,
     ArgmaxSpec,
+    CompareSpec,
+    ConcatSpec,
     Conv2dSpec,
     Graph,
     LinearSpec,
     PoolSpec,
     RequantSpec,
+    SplitSpec,
+    topological_nodes,
 )
 
 
@@ -58,29 +62,32 @@ def _conv2d(op: Conv2dSpec, x: list[int]) -> list[int]:
 
 
 def _pool(op: PoolSpec, x: list[int]) -> list[int]:
-    """Integer pooling — ``avg`` emits the window **sum**, ``max`` the window max (``pool.rs``)."""
-    out_h = (op.in_h - op.pool_h) // op.stride + 1
-    out_w = (op.in_w - op.pool_w) // op.stride + 1
+    """Integer pooling with virtual padding: ``avg`` sums the in-bounds taps,
+    ``max`` takes their max (``pool.rs``).
+    """
+    out_h, out_w = op.out_dims()
     out: list[int] = []
     for c in range(op.channels):
         base = c * op.in_h * op.in_w
         for oy in range(out_h):
             for ox in range(out_w):
                 vals = [
-                    x[base + (oy * op.stride + ky) * op.in_w + (ox * op.stride + kx)]
-                    for ky in range(op.pool_h)
-                    for kx in range(op.pool_w)
+                    x[base + iy * op.in_w + ix]
+                    for iy in (oy * op.stride + ky - op.padding for ky in range(op.pool_h))
+                    if 0 <= iy < op.in_h
+                    for ix in (ox * op.stride + kx - op.padding for kx in range(op.pool_w))
+                    if 0 <= ix < op.in_w
                 ]
                 out.append(sum(vals) if op.mode == "avg" else max(vals))
     return out
 
 
 def _requant(op: RequantSpec, x: list[int]) -> list[int]:
-    """Integer requant: ``clamp((max(v,0)*mult + round_bias) >> shift, 0, 2^out_bits-1)``.
+    """Integer requant with signed floor and activation offset.
 
-    Mirrors ``requant.rs`` exactly: ReLU first, then the fixed-point multiply + round bias, then
-    the arithmetic right shift (floor — the value is non-negative here), then the clamp. For a
-    per-channel Requant (``op.mults`` non-empty) each flat element ``idx`` uses its channel's
+    Formula: ``clamp(((max(v, clamp_lo)*mult + round_bias) >> shift) + zero_point, 0, ceil)``.
+    Mirrors ``requant.rs`` exactly: clamp_lo floor first, then fixed-point multiply + round bias,
+    then arithmetic right shift (floor), then zero_point offset, then clamp. For a
     params (channel ``idx // channel_size``) — the same index math as the Rust eval, so the
     per-channel path is bit-exact too.
     """
@@ -101,13 +108,14 @@ def _requant(op: RequantSpec, x: list[int]) -> list[int]:
             )
         for idx, v in enumerate(x):
             ch = idx // cs
-            shifted = (max(v, 0) * op.mults[ch] + op.round_biases[ch]) >> op.shifts[ch]
-            out.append(min(max(shifted, 0), ceil))
+            t = max(v, op.clamp_lo)
+            u = (t * op.mults[ch] + op.round_biases[ch]) >> op.shifts[ch]
+            out.append(min(max(u + op.zero_point, 0), ceil))
         return out
     for v in x:
-        nonneg = max(v, 0)
-        shifted = (nonneg * op.mult + op.round_bias) >> op.shift
-        out.append(min(max(shifted, 0), ceil))
+        t = max(v, op.clamp_lo)
+        u = (t * op.mult + op.round_bias) >> op.shift
+        out.append(min(max(u + op.zero_point, 0), ceil))
     return out
 
 
@@ -138,6 +146,46 @@ def _activation(op: ActivationSpec, x: list[int]) -> list[int]:
     return out
 
 
+def _compare(op: CompareSpec, x: list[int]) -> list[int]:
+    """Integer threshold comparison with a fused gather (``compare.rs``)."""
+    out = []
+    for i, (idx, t) in enumerate(zip(op.indices, op.thresholds, strict=True)):
+        if idx >= len(x):
+            raise ValueError(
+                f"Compare indices[{i}] = {idx} is out of range for an input tensor of "
+                f"length {len(x)}; check the graph wiring feeding this Compare"
+            )
+        out.append(1 if x[idx] >= t else 0)
+    return out
+
+
+def _concat(op: ConcatSpec, xs: list[list[int]]) -> list[int]:
+    """Integer channel-axis concatenation of N tensors (``concat.rs``)."""
+    if len(xs) != len(op.sizes):
+        raise ValueError(f"Concat expects {len(op.sizes)} input tensors; got {len(xs)}")
+    out: list[int] = []
+    for i, (x, sz) in enumerate(zip(xs, op.sizes, strict=True)):
+        if len(x) != sz:
+            raise ValueError(f"Concat segment {i} expects length {sz}; got {len(x)}")
+        out.extend(x)
+    return out
+
+
+def _split(op: SplitSpec, x: list[int]) -> list[list[int]]:
+    """Integer contiguous segmentation of a flat tensor into N output tensors (``split.rs``)."""
+    total = sum(op.sizes)
+    if len(x) != total:
+        raise ValueError(
+            f"Split input length {len(x)} does not match sum of declared sizes {total}"
+        )
+    out: list[list[int]] = []
+    offset = 0
+    for sz in op.sizes:
+        out.append(x[offset : offset + sz])
+        offset += sz
+    return out
+
+
 def evaluate_graph_int(graph: Graph, inputs: dict[str, list[int]]) -> dict[str, list[int]]:
     """Evaluate ``graph`` in plain integers, returning every graph-output tensor.
 
@@ -148,11 +196,26 @@ def evaluate_graph_int(graph: Graph, inputs: dict[str, list[int]]) -> dict[str, 
     """
     env: dict[str, list[int]] = {name: list(inputs[name]) for name in graph.inputs}
 
-    for node in graph.nodes:
+    for node in topological_nodes(graph):
         op = node.op
         if isinstance(op, AddSpec):
             a, b = (env[name] for name in node.inputs)
             out = [x + y for x, y in zip(a, b, strict=True)]
+            env[node.outputs[0]] = out
+        elif isinstance(op, ConcatSpec):
+            xs = [env[name] for name in node.inputs]
+            out = _concat(op, xs)
+            env[node.outputs[0]] = out
+        elif isinstance(op, SplitSpec):
+            x = env[node.inputs[0]]
+            outs = _split(op, x)
+            if len(node.outputs) != len(outs):
+                raise ValueError(
+                    f"node {node.name!r} declares {len(node.outputs)} outputs but Split "
+                    f"produces {len(outs)}"
+                )
+            for out_name, out in zip(node.outputs, outs, strict=True):
+                env[out_name] = out
         else:
             x = env[node.inputs[0]]
             if isinstance(op, Conv2dSpec):
@@ -166,17 +229,16 @@ def evaluate_graph_int(graph: Graph, inputs: dict[str, list[int]]) -> dict[str, 
             elif isinstance(op, ActivationSpec):
                 out = _activation(op, x)
             elif isinstance(op, ArgmaxSpec):
-                # 2-class threshold -> encrypted 0/1 label (a single value). The op thresholds a
-                # single logit; a multi-element input is a wiring bug (it would silently threshold
-                # only x[0] and drop the rest). Fail loudly (`AGENTS.md` §1.4).
                 if len(x) != 1:
                     raise ValueError(
                         f"Argmax expects a single-logit input, got {len(x)} elements; the 2-class "
                         "threshold reads one value — check the graph wiring feeding this Argmax"
                     )
                 out = [1 if x[0] >= op.threshold else 0]
-            else:  # pragma: no cover - every OpSpec variant is handled above
+            elif isinstance(op, CompareSpec):
+                out = _compare(op, x)
+            else:  # pragma: no cover
                 raise ValueError(f"reference evaluator: unsupported op {op.op_type!r}")
-        env[node.outputs[0]] = out
+            env[node.outputs[0]] = out
 
     return {name: env[name] for name in graph.outputs}

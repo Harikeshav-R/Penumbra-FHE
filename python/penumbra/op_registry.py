@@ -30,12 +30,14 @@ registry recognizes exactly the ONNX ops that shape maps onto that chain:
     Softmax / LogSoftmax /      -> (terminal classifier tail, dropped; client argmaxes logits)
       Sigmoid / ArgMax
 
-Branching (residual ``Add``, ``Concat``), non-ReLU activations, and ``BatchNormalization``
-are deferred to Phase 8 and rejected loudly (``ROADMAP.md`` Phase 6/8).
+Branching (residual ``Add``, ``Concat``, ``Split``), non-ReLU activations (via affine LUTs),
+and inference-mode ``BatchNormalization`` (folded into preceding accumulators) are supported
+as of Phase 8.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 # Supported opset range for the default (ai.onnx, domain "") operator set. The ops we lower
@@ -54,6 +56,9 @@ CAT_POOL = "pool"  # MaxPool / AveragePool / GlobalAveragePool -> Pool
 CAT_BIAS_ADD = "bias_add"  # Add -> folded into a preceding MatMul's Linear bias (or rejected)
 CAT_SHAPE = "shape"  # Reshape / Flatten / Transpose -> layout no-op, folded away
 CAT_TERMINAL = "terminal"  # Softmax / LogSoftmax / Sigmoid / ArgMax -> dropped terminal tail
+CAT_MERGE = "merge"  # Concat -> Concat; a residual Add -> Add
+CAT_SPLIT = "split"  # Split -> Split
+CAT_BN_FOLD = "bn_fold"  # BatchNormalization -> folded into preceding accumulator
 
 
 @dataclass(frozen=True)
@@ -115,11 +120,90 @@ REGISTRY: dict[str, OnnxOpRule] = {
         internal_op="Activation",
         category=CAT_ACTIVATION,
         rationale=(
-            "ReLU max(x,0) is the exact hard-clip the fused Requant already applies "
-            "(`runtime/src/ops/requant.rs`), so it costs no extra op — the accumulator's Requant "
-            "realizes it. Must follow an accumulator (Conv/Gemm/MatMul), not be terminal."
+            "ReLU max(x,0) is realized via the fused-Requant special case: the preceding layer's "
+            "Requant applies max(x,0) directly with zero extra op cost "
+            "(`runtime/src/ops/requant.rs`). Must follow an accumulator, not be terminal."
         ),
         attribute_constraints="none.",
+    ),
+    "Tanh": OnnxOpRule(
+        onnx_op="Tanh",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "Hyperbolic tangent is realized as a single-input LUT over the narrow post-Requant "
+            "activation domain, with signed pre-rescale floor and output zero-point folded into "
+            "the downstream layer's bias. Must follow an accumulator and feed one."
+        ),
+        attribute_constraints="none.",
+    ),
+    "LeakyRelu": OnnxOpRule(
+        onnx_op="LeakyRelu",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "Leaky ReLU is realized as a single-input LUT over the narrow post-Requant "
+            "activation domain, with signed pre-rescale floor and output zero-point folded into "
+            "the downstream layer's bias. Must follow an accumulator and feed one."
+        ),
+        attribute_constraints="alpha (default 0.01).",
+    ),
+    "HardSwish": OnnxOpRule(
+        onnx_op="HardSwish",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "HardSwish is realized as a single-input LUT over the narrow post-Requant "
+            "activation domain, with signed pre-rescale floor and output zero-point folded into "
+            "the downstream layer's bias. Must follow an accumulator and feed one."
+        ),
+        attribute_constraints="none.",
+    ),
+    "Gelu": OnnxOpRule(
+        onnx_op="Gelu",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "GELU is realized as a single-input LUT over the narrow post-Requant "
+            "activation domain, with signed pre-rescale floor and output zero-point folded into "
+            "the downstream layer's bias. Must follow an accumulator and feed one."
+        ),
+        attribute_constraints="approximate in {'none', 'tanh'}.",
+    ),
+    "Elu": OnnxOpRule(
+        onnx_op="Elu",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "ELU is realized as a single-input LUT over the narrow post-Requant "
+            "activation domain, with signed pre-rescale floor and output zero-point folded into "
+            "the downstream layer's bias. Must follow an accumulator and feed one."
+        ),
+        attribute_constraints="alpha (default 1.0).",
+    ),
+    "HardSigmoid": OnnxOpRule(
+        onnx_op="HardSigmoid",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "HardSigmoid is realized as a single-input LUT over the narrow post-Requant "
+            "activation domain, with signed pre-rescale floor and output zero-point folded into "
+            "the downstream layer's bias. Must follow an accumulator and feed one."
+        ),
+        attribute_constraints="alpha (default 0.2), beta (default 0.5).",
+    ),
+    "Sigmoid": OnnxOpRule(
+        onnx_op="Sigmoid",
+        internal_op="Activation",
+        category=CAT_ACTIVATION,
+        rationale=(
+            "Sigmoid is realized as a single-input LUT over the narrow post-Requant activation "
+            "domain; a terminal Sigmoid is still dropped (argmax-invariant)."
+        ),
+        attribute_constraints=(
+            "none; a terminal Sigmoid is dropped (argmax-invariant), a mid-graph one lowers to "
+            "an Activation LUT."
+        ),
     ),
     "MaxPool": OnnxOpRule(
         onnx_op="MaxPool",
@@ -129,7 +213,10 @@ REGISTRY: dict[str, OnnxOpRule] = {
             "Max pooling is a per-channel window reduction realized as pairwise ciphertext max "
             "(comparison PBS) — `Pool` mode 'max'."
         ),
-        attribute_constraints="pads=0; ceil_mode=0; dilations=[1,1]; uniform kernel/stride.",
+        attribute_constraints=(
+            "symmetric pads [p,p,p,p] with p < kernel (padded taps ignored); no auto_pad; "
+            "ceil_mode=0; dilations=[1,1]; uniform kernel/stride."
+        ),
     ),
     "AveragePool": OnnxOpRule(
         onnx_op="AveragePool",
@@ -137,10 +224,11 @@ REGISTRY: dict[str, OnnxOpRule] = {
         category=CAT_POOL,
         rationale=(
             "Average pooling is a per-channel window sum (`add_parallelized`, no PBS); the 1/k "
-            "averaging folds into the next Requant's rescale — `Pool` mode 'avg'."
+            "is carried in the output quantization scale — `Pool` mode 'avg'."
         ),
         attribute_constraints=(
-            "pads=0; ceil_mode=0; count_include_pad moot (pads=0); uniform kernel/stride."
+            "symmetric pads [p,p,p,p] with p < kernel; count_include_pad=1 when p > 0; "
+            "no auto_pad; ceil_mode=0; uniform kernel/stride."
         ),
     ),
     "GlobalAveragePool": OnnxOpRule(
@@ -149,21 +237,62 @@ REGISTRY: dict[str, OnnxOpRule] = {
         category=CAT_POOL,
         rationale=(
             "Global average pooling is AveragePool over the whole feature map (kernel = spatial "
-            "size) — the same PBS-free window sum, 1/k folded into the next Requant."
+            "size) — the same PBS-free window sum, 1/k is carried in the output quantization scale."
         ),
         attribute_constraints="none (kernel = full input spatial size).",
     ),
     "Add": OnnxOpRule(
         onnx_op="Add",
-        internal_op="Linear (bias fold)",
+        internal_op="Add / Linear bias fold",
         category=CAT_BIAS_ADD,
         rationale=(
-            "A constant-initializer Add right after a MatMul is that dense layer's bias — folded "
-            "into `Linear.bias`. A residual/branching Add (both operands are activations) needs "
-            "multi-input topological eval and is deferred to Phase 8."
+            "A constant-initializer Add after MatMul/Conv folds into its bias; a residual Add "
+            "(both operands activations) lowers to internal Add. Operands must share one "
+            "quantization scale, which the merge-scale pass enforces."
+        ),
+        attribute_constraints="none; both operands must have matching shapes.",
+    ),
+    "Concat": OnnxOpRule(
+        onnx_op="Concat",
+        internal_op="Concat",
+        category=CAT_MERGE,
+        rationale=(
+            "Concatenation along the channel axis is a relabelling of the flat channel-major "
+            "wire — free under TFHE (a ciphertext move, no PBS) and a 0/1 selection linear map "
+            "under CKKS. Operands must share one quantization scale, which the merge-scale "
+            "pass enforces."
         ),
         attribute_constraints=(
-            "one operand must be a constant initializer (else branching -> Phase 8)."
+            "axis must resolve to 1 (the channel/feature axis); all inputs must share their "
+            "non-concatenated dims."
+        ),
+    ),
+    "Split": OnnxOpRule(
+        onnx_op="Split",
+        internal_op="Split",
+        category=CAT_SPLIT,
+        rationale=(
+            "Splitting along the channel axis is a contiguous segmentation of the flat wire — "
+            "free under TFHE, a 0/1 window map under CKKS. Scale and zero-point pass through "
+            "unchanged."
+        ),
+        attribute_constraints=(
+            "axis must resolve to 1; split sizes come from the 'split' attribute (opset < 13), "
+            "a constant 'split' input (opset >= 13), or an equal division."
+        ),
+    ),
+    "BatchNormalization": OnnxOpRule(
+        onnx_op="BatchNormalization",
+        internal_op="(folded into the preceding Conv2d/Linear)",
+        category=CAT_BN_FOLD,
+        rationale=(
+            "Inference-time BN is a per-channel affine map that composes exactly with the "
+            "preceding accumulator's weights and bias, so it is folded at load time and costs "
+            "nothing at runtime."
+        ),
+        attribute_constraints=(
+            "training_mode must be 0/absent; exactly one output; scale/B/mean/var must be "
+            "constant initializers; must directly follow a Conv/Gemm/MatMul."
         ),
     ),
     "Reshape": OnnxOpRule(
@@ -224,16 +353,6 @@ REGISTRY: dict[str, OnnxOpRule] = {
         internal_op="(terminal, dropped)",
         category=CAT_TERMINAL,
         rationale="Log-softmax is monotone and argmax-invariant — dropped as a terminal tail.",
-        attribute_constraints="must be the terminal (graph-output) node.",
-    ),
-    "Sigmoid": OnnxOpRule(
-        onnx_op="Sigmoid",
-        internal_op="(terminal, dropped)",
-        category=CAT_TERMINAL,
-        rationale=(
-            "A terminal Sigmoid is monotone; the thresholded label is argmax-invariant, so it is "
-            "dropped (a non-terminal Sigmoid is a real activation and is not supported)."
-        ),
         attribute_constraints="must be the terminal (graph-output) node.",
     ),
     "ArgMax": OnnxOpRule(
@@ -338,11 +457,28 @@ def check_attributes(op_type: str, attrs: dict[str, object], node_name: str) -> 
         if abs(float(beta) - 1.0) > 1e-6:
             problems.append(f"Gemm (node {node_name!r}): beta={beta} not supported (only 1.0)")
     elif op_type in ("MaxPool", "AveragePool"):
+        kernel = [int(k) for k in attrs.get("kernel_shape", [])]
         pads = attrs.get("pads")
-        if pads is not None and any(p != 0 for p in pads):
+        pad = 0
+        if pads is not None:
+            pads = [int(p) for p in pads]
+            if len(pads) != 4 or len(set(pads)) != 1:
+                problems.append(
+                    f"{op_type} (node {node_name!r}): pads={pads} not supported (only symmetric "
+                    "equal padding on all sides, e.g. [p, p, p, p])"
+                )
+            else:
+                pad = pads[0]
+                if len(kernel) == 2 and pad >= min(kernel):
+                    problems.append(
+                        f"{op_type} (node {node_name!r}): pads={pads} must be smaller than "
+                        f"kernel_shape={kernel} (every window must cover at least one real input)"
+                    )
+        auto_pad = attrs.get("auto_pad", b"NOTSET")
+        if _as_str(auto_pad) not in ("NOTSET", ""):
             problems.append(
-                f"{op_type} (node {node_name!r}): pads={list(pads)} not supported (only pads=0; "
-                "padded pooling is Phase 8)"
+                f"{op_type} (node {node_name!r}): auto_pad={_as_str(auto_pad)!r} not supported "
+                "(use explicit symmetric pads)"
             )
         ceil_mode = attrs.get("ceil_mode", 0)
         if ceil_mode != 0:
@@ -357,9 +493,16 @@ def check_attributes(op_type: str, attrs: dict[str, object], node_name: str) -> 
             )
         if op_type == "AveragePool":
             cip = attrs.get("count_include_pad", 0)
-            if cip not in (0, 1):  # value is irrelevant with pads=0, but reject a garbage value
+            if cip not in (0, 1):
                 problems.append(
                     f"AveragePool (node {node_name!r}): count_include_pad={cip} not understood"
+                )
+            elif pad > 0 and cip != 1:
+                problems.append(
+                    f"AveragePool (node {node_name!r}): count_include_pad={cip} with pads={pads} "
+                    "not supported (border windows would divide by a per-position count, which "
+                    "no single quantization scale can carry); export with count_include_pad=1 "
+                    "(PyTorch's default)"
                 )
     elif op_type == "Cast":
         # A Cast folds away only if it preserves the represented value. Casting to a float type is
@@ -371,6 +514,70 @@ def check_attributes(op_type: str, attrs: dict[str, object], node_name: str) -> 
             problems.append(
                 f"Cast (node {node_name!r}): to={to} not supported (only a cast to a floating type "
                 "is a value-preserving no-op; an int/bool cast changes the value — Phase 8)"
+            )
+    elif op_type == "Gelu":
+        approx = _as_str(attrs.get("approximate", "none")).lower()
+        if not approx:
+            approx = "none"
+        if approx not in ("none", "tanh"):
+            problems.append(
+                f"Gelu (node {node_name!r}): approximate={approx!r} not supported "
+                "(only 'none' or 'tanh')"
+            )
+    elif op_type in ("LeakyRelu", "Elu"):
+        alpha = attrs.get("alpha")
+        if alpha is not None:
+            try:
+                val = float(alpha)  # type: ignore[arg-type]
+                if not math.isfinite(val):
+                    problems.append(f"{op_type} (node {node_name!r}): alpha={alpha} must be finite")
+            except (TypeError, ValueError):
+                problems.append(
+                    f"{op_type} (node {node_name!r}): alpha={alpha} is not a valid float"
+                )
+    elif op_type == "HardSigmoid":
+        alpha = attrs.get("alpha")
+        if alpha is not None:
+            try:
+                val = float(alpha)  # type: ignore[arg-type]
+                if not math.isfinite(val):
+                    problems.append(
+                        f"HardSigmoid (node {node_name!r}): alpha={alpha} must be finite"
+                    )
+            except (TypeError, ValueError):
+                problems.append(
+                    f"HardSigmoid (node {node_name!r}): alpha={alpha} is not a valid float"
+                )
+        beta = attrs.get("beta")
+        if beta is not None:
+            try:
+                val = float(beta)  # type: ignore[arg-type]
+                if not math.isfinite(val):
+                    problems.append(f"HardSigmoid (node {node_name!r}): beta={beta} must be finite")
+            except (TypeError, ValueError):
+                problems.append(
+                    f"HardSigmoid (node {node_name!r}): beta={beta} is not a valid float"
+                )
+    elif op_type in ("Concat", "Split"):
+        axis = attrs.get("axis")
+        if axis is None and op_type == "Concat":
+            problems.append(f"Concat (node {node_name!r}): missing required attribute 'axis'")
+        elif axis is not None:
+            try:
+                ax = int(axis)  # type: ignore[arg-type]
+                if ax != 1 and ax >= 0:
+                    problems.append(
+                        f"{op_type} (node {node_name!r}): axis={axis} not supported "
+                        "(only channel axis 1)"
+                    )
+            except (TypeError, ValueError):
+                problems.append(f"{op_type} (node {node_name!r}): axis={axis!r} is not a valid int")
+    elif op_type == "BatchNormalization":
+        training_mode = attrs.get("training_mode", 0)
+        if training_mode != 0:
+            problems.append(
+                f"BatchNormalization (node {node_name!r}): training_mode={training_mode} not "
+                "supported (only inference-mode BN with training_mode=0)"
             )
     return problems
 

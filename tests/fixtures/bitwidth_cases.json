@@ -102,6 +102,50 @@
       "op": {"op_type": "Argmax", "threshold": 0},
       "input_bits": [16],
       "expected": 1
+    },
+    {
+      "name": "compare_gathered_splits",
+      "op": {"op_type": "Compare", "indices": [0, 3, 7], "thresholds": [5, 2, 9]},
+      "input_bits": [8],
+      "expected": 1
+    },
+    {
+      "name": "compare_elementwise_leaf_select",
+      "op": {"op_type": "Compare", "indices": [0, 1], "thresholds": [3, 4]},
+      "input_bits": [11],
+      "expected": 1
+    },
+    {
+      "name": "requant_signed_floor_positive_dominates",
+      "op": {"op_type": "Requant", "shift": 6, "mult": 3, "round_bias": 32, "clamp_lo": -8192, "zero_point": 384, "out_bits": 2, "clamp_lut": [0, 1, 2, 3]},
+      "input_bits": [14],
+      "expected": 2,
+      "expected_internal": 16
+    },
+    {
+      "name": "requant_signed_floor_dominates",
+      "op": {"op_type": "Requant", "shift": 4, "mult": 16, "round_bias": 0, "clamp_lo": -128, "zero_point": 128, "out_bits": 2, "clamp_lut": [0, 1, 2, 3]},
+      "input_bits": [8],
+      "expected": 2,
+      "expected_internal": 13
+    },
+    {
+      "name": "concat_takes_max",
+      "op": {"op_type": "Concat", "sizes": [2, 2]},
+      "input_bits": [4, 6],
+      "expected": 6
+    },
+    {
+      "name": "split_preserves_width",
+      "op": {"op_type": "Split", "sizes": [2, 2]},
+      "input_bits": [7],
+      "expected": 7
+    },
+    {
+      "name": "pool_avg_3x3_padded",
+      "op": {"op_type": "Pool", "mode": "avg", "in_h": 4, "in_w": 4, "channels": 1, "pool_h": 3, "pool_w": 3, "stride": 1, "padding": 1},
+      "input_bits": [2],
+      "expected": 6
     }
   ]
 }

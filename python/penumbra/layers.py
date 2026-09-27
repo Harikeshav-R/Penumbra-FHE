@@ -64,14 +64,19 @@ class LayerContext:
     scale: float  # quantization scale of the current tensor (float = scale * int)
     config: QuantConfig
     index: int = 0  # layer index, for unique node names
+    zero_point: int = 0  # incoming tensor's integer offset (for affine activation LUTs)
 
 
 class Layer:
     """Base class: a float layer that can run a forward pass and emit quantized IR nodes."""
 
-    def forward(self, x: np.ndarray) -> np.ndarray:  # pragma: no cover - abstract
+    def forward(self, *inputs: np.ndarray) -> np.ndarray:  # pragma: no cover - abstract
         """Float forward over a batch ``(N, ...)`` -> ``(N, ...)`` (for calibration)."""
         raise NotImplementedError
+
+    def forward_multi(self, *inputs: np.ndarray) -> list[np.ndarray]:
+        """Float forward returning all output tensors."""
+        return [self.forward(*inputs)]
 
     def quantize(
         self, ctx: LayerContext
@@ -104,7 +109,12 @@ class Linear(Layer):
     def quantize(self, ctx: LayerContext) -> tuple[list[Node], float, int, list[float] | None]:
         cfg = ctx.config
         w_q, b_q, spec = quantize_linear(
-            self.weight, self.bias, ctx.scale, bits=cfg.n_bits, per_channel=cfg.per_channel
+            self.weight,
+            self.bias,
+            ctx.scale,
+            bits=cfg.n_bits,
+            per_channel=cfg.per_channel,
+            in_zero_point=ctx.zero_point,
         )
         # Per-channel returns one scale per output row; each row's accumulator lives in its own
         # units (in_scale * row_scale). We surface those per-channel accumulator scales so the
@@ -171,9 +181,10 @@ class Conv2d(Layer):
         w_q, b_q, spec = quantize_conv(
             w,
             bits=cfg.n_bits,
-            in_scale=ctx.scale if self.bias is not None else None,
+            in_scale=ctx.scale if (self.bias is not None or ctx.zero_point != 0) else None,
             b_f=self.bias,
             per_channel=cfg.per_channel,
+            in_zero_point=ctx.zero_point,
         )
         # Per-channel: one scale per output channel; surface each channel's accumulator scale for
         # a per-channel Requant. `out_scale` (the max row scale) is the nominal downstream scale.
@@ -209,7 +220,9 @@ class Conv2d(Layer):
 
 @dataclass
 class Pool(Layer):
-    """Average/max pool over a ``[channels][in_h][in_w]`` feature map (``avg`` emits window sum)."""
+    """Average/max pool over a [channels][in_h][in_w] feature map (float avg = true mean;
+    IR avg = window sum at scale in_scale/k).
+    """
 
     mode: str
     in_h: int
@@ -218,12 +231,17 @@ class Pool(Layer):
     pool_h: int
     pool_w: int
     stride: int
+    padding: int = 0
 
     def forward(self, x: np.ndarray) -> np.ndarray:
         n = x.shape[0]
         xr = x.reshape(n, self.channels, self.in_h, self.in_w)
-        out_h = (self.in_h - self.pool_h) // self.stride + 1
-        out_w = (self.in_w - self.pool_w) // self.stride + 1
+        if self.padding:
+            fill = 0.0 if self.mode == "avg" else -np.inf
+            p = self.padding
+            xr = np.pad(xr, ((0, 0), (0, 0), (p, p), (p, p)), constant_values=fill)
+        out_h = (self.in_h + 2 * self.padding - self.pool_h) // self.stride + 1
+        out_w = (self.in_w + 2 * self.padding - self.pool_w) // self.stride + 1
         out = np.zeros((n, self.channels, out_h, out_w), dtype=np.float64)
         for oy in range(out_h):
             for ox in range(out_w):
@@ -233,16 +251,16 @@ class Pool(Layer):
                     oy * self.stride : oy * self.stride + self.pool_h,
                     ox * self.stride : ox * self.stride + self.pool_w,
                 ]
-                # avg emits the window SUM (the 1/k averaging is folded into the next Requant's
-                # rescale — keeps Pool PBS-free), matching pool.rs and the example.
+                # avg is the true mean (ONNX/PyTorch semantics); the integer op emits the window
+                # sum and the 1/k lives in the output scale (see quantize).
                 out[:, :, oy, ox] = (
-                    window.sum(axis=(2, 3)) if self.mode == "avg" else window.max(axis=(2, 3))
+                    window.mean(axis=(2, 3)) if self.mode == "avg" else window.max(axis=(2, 3))
                 )
         return out.reshape(n, -1)
 
     def quantize(self, ctx: LayerContext) -> tuple[list[Node], float, int, list[float] | None]:
-        out_h = (self.in_h - self.pool_h) // self.stride + 1
-        out_w = (self.in_w - self.pool_w) // self.stride + 1
+        out_h = (self.in_h + 2 * self.padding - self.pool_h) // self.stride + 1
+        out_w = (self.in_w + 2 * self.padding - self.pool_w) // self.stride + 1
         name = f"pool{ctx.index}"
         node = Node(
             name=name,
@@ -256,21 +274,24 @@ class Pool(Layer):
                 pool_h=self.pool_h,
                 pool_w=self.pool_w,
                 stride=self.stride,
+                padding=self.padding,
             ),
         )
-        # avg-pool sums pool_h*pool_w terms -> the value scale is unchanged (the sum is in the
-        # same integer units); max-pool selects one value, also scale-preserving. Not an
-        # accumulator layer, so no per-channel accumulator scales.
-        return [node], ctx.scale, self.channels * out_h * out_w, None
+        # avg: the IR op emits the integer window SUM of k = pool_h*pool_w taps, so float
+        # mean = (in_scale / k) * sum — the 1/k is carried in the output scale and folds into
+        # the next layer's weight/bias quantization (PBS-free). max selects one value:
+        # scale-preserving.
+        out_scale = ctx.scale / (self.pool_h * self.pool_w) if self.mode == "avg" else ctx.scale
+        return [node], out_scale, self.channels * out_h * out_w, None
 
 
 @dataclass
 class Activation(Layer):
-    """Single-input activation realized as a LUT (ReLU, sigmoid, ...).
+    """Single-input activation (ReLU, tanh, GELU, leaky ReLU, hardswish, elu, ...).
 
-    Holds the float function ``fn``; its LUT is generated at quantize time over the narrow
-    post-Requant block domain. The preceding accumulator layer's Requant narrows the value into
-    that domain first, so an ``Activation`` always follows a ``Requant`` in the emitted graph.
+    Holds the float function ``fn``. Realized either as a fused ReLU inside ``Requant``,
+    or as a standalone affine ``Activation`` LUT whose input and output zero-points are
+    handled by the signed ``Requant`` and folded into the downstream consumer's bias.
     """
 
     fn: Callable[[float], float]
@@ -287,6 +308,75 @@ class Activation(Layer):
             "Activation is materialized by Model.quantize after Requant insertion; it cannot be "
             "quantized standalone"
         )
+
+
+@dataclass(frozen=True)
+class LayerNode:
+    """One node of a branching float model: a layer plus the float-graph tensor names it
+    reads and writes. A plain ``Model([...])`` list is the degenerate chain case."""
+
+    name: str
+    layer: Layer
+    inputs: list[str]
+    outputs: list[str]
+
+
+@dataclass
+class Add(Layer):
+    """Element-wise residual add of two same-length tensors (IR ``AddSpec``)."""
+
+    def forward(self, *inputs: np.ndarray) -> np.ndarray:
+        if len(inputs) != 2:
+            raise ValueError(f"Add takes exactly 2 inputs, got {len(inputs)}")
+        return inputs[0] + inputs[1]
+
+    def forward_multi(self, *xs: np.ndarray) -> list[np.ndarray]:
+        return [self.forward(*xs)]
+
+    def quantize(self, ctx: LayerContext):
+        raise NotImplementedError("Add is materialized by Model.quantize directly")
+
+
+@dataclass
+class Concat(Layer):
+    """Channel-axis concatenation of N tensors on the flat wire (IR ``ConcatSpec``)."""
+
+    def forward(self, *inputs: np.ndarray) -> np.ndarray:
+        if len(inputs) < 2:
+            raise ValueError(f"Concat takes at least 2 inputs, got {len(inputs)}")
+        return np.concatenate(inputs, axis=1)
+
+    def forward_multi(self, *xs: np.ndarray) -> list[np.ndarray]:
+        return [self.forward(*xs)]
+
+    def quantize(self, ctx: LayerContext):
+        raise NotImplementedError("Concat is materialized by Model.quantize directly")
+
+
+@dataclass
+class Split(Layer):
+    """Contiguous segmentation into ``sizes`` flat parts (IR ``SplitSpec``)."""
+
+    sizes: list[int]
+
+    def __post_init__(self) -> None:
+        if len(self.sizes) < 2:
+            raise ValueError(f"Split needs at least 2 output segments; got {len(self.sizes)}")
+        if any(n <= 0 for n in self.sizes):
+            raise ValueError(f"Split segment sizes must be positive; got {self.sizes!r}")
+
+    def forward(self, *inputs: np.ndarray) -> np.ndarray:
+        raise NotImplementedError("Split produces multiple outputs; use forward_multi")
+
+    def forward_multi(self, *xs: np.ndarray) -> list[np.ndarray]:
+        if len(xs) != 1:
+            raise ValueError(f"Split takes exactly 1 input, got {len(xs)}")
+        x = xs[0]
+        split_points = list(np.cumsum(self.sizes)[:-1])
+        return list(np.split(x, split_points, axis=1))
+
+    def quantize(self, ctx: LayerContext):
+        raise NotImplementedError("Split is materialized by Model.quantize directly")
 
 
 def _representative_scale(specs: list) -> float:

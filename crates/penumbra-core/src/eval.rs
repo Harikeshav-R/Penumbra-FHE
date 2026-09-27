@@ -93,7 +93,9 @@ fn evaluate_graph_inner<B: Backend>(
     let t_total = profile.as_ref().map(|_| Instant::now());
 
     let mut env = inputs;
-    for node in &graph.nodes {
+    let order = crate::ir::topological_order(graph)?;
+    for &idx in &order {
+        let node = &graph.nodes[idx];
         let t_build = profile.as_ref().map(|_| Instant::now());
         let op = backend
             .build_op(&node.op)
@@ -133,7 +135,7 @@ fn evaluate_graph_inner<B: Backend>(
             .map(|_| backend.measured_counters())
             .unwrap_or_default();
         let t_eval = profile.as_ref().map(|_| Instant::now());
-        let result = op.eval_n(ctx, &input_cts);
+        let results = op.eval_multi(ctx, &input_cts);
         let eval = t_eval.map(|t| t.elapsed()).unwrap_or_default();
 
         if let Some(prof) = &mut profile {
@@ -165,29 +167,24 @@ fn evaluate_graph_inner<B: Backend>(
                 build,
                 eval,
                 input_lens,
-                output_len: result.len(),
+                output_len: results.iter().map(|r| r.len()).sum(),
                 counters,
                 measured,
             });
         }
 
-        if node.outputs.len() != 1 {
+        if node.outputs.len() != results.len() {
             return Err(format!(
-                "node '{}' ({}) declares {} outputs; the current ops produce one output tensor",
+                "node '{}' ({}) declares {} output tensor(s) but its op produced {}",
                 node.name,
                 node.op.op_type(),
-                node.outputs.len()
+                node.outputs.len(),
+                results.len()
             ));
         }
-        let output_name = &node.outputs[0];
-        if env.contains_key(output_name) {
-            return Err(format!(
-                "node '{}' writes tensor '{output_name}', which already exists — tensor names \
-                 must be unique (no silent overwrite)",
-                node.name
-            ));
+        for (output_name, result) in node.outputs.iter().zip(results) {
+            env.insert(output_name.clone(), result);
         }
-        env.insert(output_name.clone(), result);
     }
 
     if let (Some(prof), Some(t_tot)) = (profile, t_total) {

@@ -18,11 +18,22 @@ use crate::hal::ActiveBackend;
 use crate::keys::{alloc_scratch, keygen, CkksClientKey, CkksServerKey, SCHEME_CKKS};
 use crate::ops::add::eval_add;
 use crate::ops::argmax::{self, prepare_argmax};
-use crate::ops::matvec::{avg_pool_matrix, conv2d_matrix, linear_matrix, prepare_linear_map};
+use crate::ops::matvec::{
+    avg_pool_matrix, conv2d_matrix, linear_matrix, prepare_linear_map, selection_matrix,
+    window_matrix,
+};
 use crate::ops::polymap::{eval_polymap, fit_activation, fit_per_channel_requant, fit_requant};
-use crate::ops::{Activation, Add, Argmax, Conv2d, Linear, PoolAvg, Requant, RequantKind};
+use crate::ops::{
+    Activation, Add, Argmax, Compare, Concat, Conv2d, Linear, PoolAvg, Requant, RequantKind, Split,
+};
 use crate::params::{CkksParams, DEFAULT_PARAMS};
 
+fn is_identity_clamp(lut: &[u64], out_bits: usize) -> bool {
+    let ceil = (1u64 << out_bits) - 1;
+    lut.iter()
+        .enumerate()
+        .all(|(i, &e)| e == (i as u64).min(ceil))
+}
 pub struct CkksBackend {
     pub params: CkksParams,
     pub(crate) host_module: Module<HostBytesBackend>,
@@ -159,11 +170,12 @@ impl Backend for CkksBackend {
                 pool_h,
                 pool_w,
                 stride,
+                padding,
             } => {
                 if mode != "avg" {
                     return Err(format!("operator Pool({mode}) is unsupported on backend 'ckks'"));
                 }
-                let m = avg_pool_matrix(*channels, *in_h, *in_w, *pool_h, *pool_w, *stride)?;
+                let m = avg_pool_matrix(*channels, *in_h, *in_w, *pool_h, *pool_w, *stride, *padding)?;
                 let mut scratch_guard = self
                     .scratch
                     .lock()
@@ -184,15 +196,23 @@ impl Backend for CkksBackend {
                 shift,
                 mult,
                 round_bias,
+                clamp_lo,
+                zero_point,
                 out_bits,
+                clamp_lut,
                 mults,
                 shifts,
                 round_biases,
                 channel_size,
-                ..
             } => {
                 let max_depth = (self.params.log_budget() / self.params.log_delta.max(1)).max(1);
                 let input_bits = 14;
+                let post = if is_identity_clamp(clamp_lut, *out_bits) {
+                    None
+                } else {
+                    let lut_i64: Vec<i64> = clamp_lut.iter().map(|&v| v as i64).collect();
+                    Some(fit_activation(&self.host_module, &self.params, &lut_i64)?)
+                };
                 if mults.is_empty() {
                     let pm = fit_requant(
                         &self.host_module,
@@ -200,6 +220,8 @@ impl Backend for CkksBackend {
                         *mult as i64,
                         *shift as usize,
                         *round_bias as i64,
+                        *clamp_lo,
+                        *zero_point as i64,
                         *out_bits,
                         input_bits,
                         max_depth,
@@ -207,6 +229,7 @@ impl Backend for CkksBackend {
                     Ok(Box::new(Requant {
                         kind: RequantKind::PerTensor(pm),
                         out_bits: *out_bits,
+                        post,
                     }))
                 } else {
                     let ch_size = channel_size.unwrap_or(1);
@@ -221,6 +244,8 @@ impl Backend for CkksBackend {
                         &mults_i64,
                         &shifts_usize,
                         &round_biases_i64,
+                        *clamp_lo,
+                        *zero_point as i64,
                         ch_size,
                         *out_bits,
                         input_bits,
@@ -230,6 +255,7 @@ impl Backend for CkksBackend {
                     Ok(Box::new(Requant {
                         kind: RequantKind::PerChannel(map),
                         out_bits: *out_bits,
+                        post,
                     }))
                 }
             }
@@ -247,7 +273,73 @@ impl Backend for CkksBackend {
                     prepare_argmax(&self.host_module, &self.params, *threshold, 16, max_depth)?;
                 Ok(Box::new(Argmax { prepared }))
             }
+            OpSpec::Compare {
+                indices,
+                thresholds,
+            } => {
+                let max_depth = (self.params.log_budget() / self.params.log_delta.max(1)).max(1);
+                let input_bits = 8;
+                let mut scratch_guard = self
+                    .scratch
+                    .lock()
+                    .map_err(|e| format!("mutex poisoned: {e}"))?;
+                let prepared = crate::ops::compare::prepare_compare(
+                    &self.params,
+                    &self.module,
+                    &mut scratch_guard.borrow(),
+                    indices,
+                    thresholds,
+                    input_bits,
+                    max_depth,
+                )?;
+                Ok(Box::new(Compare { prepared }))
+            }
             OpSpec::Add {} => Ok(Box::new(Add)),
+            OpSpec::Concat { sizes } => {
+                let total: usize = sizes.iter().sum();
+                let mut scratch_guard = self
+                    .scratch
+                    .lock()
+                    .map_err(|e| format!("mutex poisoned: {e}"))?;
+                let mut prepared = Vec::with_capacity(sizes.len());
+                let mut row_offset = 0;
+                for &sz in sizes {
+                    let m = selection_matrix(total, sz, row_offset);
+                    let prep = prepare_linear_map(
+                        &m,
+                        &self.params,
+                        &self.module,
+                        &mut scratch_guard.borrow(),
+                    )?;
+                    prepared.push(prep);
+                    row_offset += sz;
+                }
+                Ok(Box::new(Concat {
+                    prepared,
+                    sizes: sizes.clone(),
+                }))
+            }
+            OpSpec::Split { sizes } => {
+                let total: usize = sizes.iter().sum();
+                let mut scratch_guard = self
+                    .scratch
+                    .lock()
+                    .map_err(|e| format!("mutex poisoned: {e}"))?;
+                let mut prepared = Vec::with_capacity(sizes.len());
+                let mut col_offset = 0;
+                for &sz in sizes {
+                    let m = window_matrix(sz, total, col_offset);
+                    let prep = prepare_linear_map(
+                        &m,
+                        &self.params,
+                        &self.module,
+                        &mut scratch_guard.borrow(),
+                    )?;
+                    prepared.push(prep);
+                    col_offset += sz;
+                }
+                Ok(Box::new(Split { prepared }))
+            }
         }
     }
 
@@ -355,8 +447,19 @@ impl Backend for CkksBackend {
         _scalar: i64,
     ) -> Self::Ciphertext {
         let max_depth = (sk.params.log_budget() / sk.params.log_delta.max(1)).max(1);
-        let pm = fit_requant(&sk.host_module, &sk.params, 1, 0, 0, 16, 16, max_depth)
-            .expect("scalar_max fit failed");
+        let pm = fit_requant(
+            &sk.host_module,
+            &sk.params,
+            1,
+            0,
+            0,
+            _scalar,
+            0,
+            16,
+            16,
+            max_depth,
+        )
+        .expect("scalar_max fit failed");
         eval_polymap(sk, a, &pm).expect("scalar_max eval failed")
     }
 
@@ -367,8 +470,19 @@ impl Backend for CkksBackend {
         _scalar: i64,
     ) -> Self::Ciphertext {
         let max_depth = (sk.params.log_budget() / sk.params.log_delta.max(1)).max(1);
-        let pm = fit_requant(&sk.host_module, &sk.params, 1, 0, 0, 16, 16, max_depth)
-            .expect("scalar_min fit failed");
+        let pm = fit_requant(
+            &sk.host_module,
+            &sk.params,
+            1,
+            0,
+            0,
+            0,
+            0,
+            16,
+            16,
+            max_depth,
+        )
+        .expect("scalar_min fit failed");
         eval_polymap(sk, a, &pm).expect("scalar_min eval failed")
     }
 
@@ -450,14 +564,23 @@ pub fn check_graph_depth_budget(backend: &CkksBackend, graph: &Graph) -> Result<
     // 1. Bit-width propagation ensures topological sort and basic graph validity
     let _widths = penumbra_core::bitwidth::propagate_bit_widths(graph)?;
 
-    let mut accumulated_bits = 0usize;
     let budget_capacity = backend.params.log_budget();
+    let mut depth: HashMap<String, usize> = graph.inputs.iter().map(|n| (n.clone(), 0)).collect();
 
-    for node in &graph.nodes {
+    for idx in penumbra_core::ir::topological_order(graph)? {
+        let node = &graph.nodes[idx];
         // Validate and build op, prefixing error with node name
         let _built = backend
             .build_op(&node.op)
             .map_err(|e| format!("node '{}': {e}", node.name))?;
+
+        let in_depth = node
+            .inputs
+            .iter()
+            .filter_map(|n| depth.get(n))
+            .copied()
+            .max()
+            .unwrap_or(0);
 
         // Compute budget consumption for this node
         let node_bits = match &node.op {
@@ -470,14 +593,27 @@ pub fn check_graph_depth_budget(backend: &CkksBackend, graph: &Graph) -> Result<
                     0
                 }
             }
-            OpSpec::Requant { mults, .. } => {
+            OpSpec::Requant {
+                mults,
+                clamp_lut,
+                out_bits,
+                ..
+            } => {
                 // If per-channel, +1 ct x pt multiply level for the channel mask
                 let mult_level = if mults.is_empty() { 0 } else { 1 };
                 let poly_depth = poulpy_core::layouts::bsgs_eval_depth(
                     backend.params.max_poly_degree,
                     poulpy_ckks::polynomial::SplitStrategy::MinDepth,
                 );
-                (poly_depth + mult_level) * backend.params.log_delta
+                let post_depth = if is_identity_clamp(clamp_lut, *out_bits) {
+                    0
+                } else {
+                    poulpy_core::layouts::bsgs_eval_depth(
+                        clamp_lut.len().saturating_sub(1),
+                        poulpy_ckks::polynomial::SplitStrategy::MinDepth,
+                    )
+                };
+                (poly_depth + mult_level + post_depth) * backend.params.log_delta
             }
             OpSpec::Activation { lut, .. } => {
                 let poly_depth = poulpy_core::layouts::bsgs_eval_depth(
@@ -493,21 +629,34 @@ pub fn check_graph_depth_budget(backend: &CkksBackend, graph: &Graph) -> Result<
                 );
                 poly_depth * backend.params.log_delta
             }
+            OpSpec::Compare { .. } => {
+                let poly_depth = poulpy_core::layouts::bsgs_eval_depth(
+                    backend.params.max_poly_degree,
+                    poulpy_ckks::polynomial::SplitStrategy::MinDepth,
+                );
+                (1 + poly_depth) * backend.params.log_delta
+            }
             OpSpec::Add {} => 0,
+            OpSpec::Concat { .. } | OpSpec::Split { .. } => backend.params.log_delta,
         };
-        accumulated_bits += node_bits;
-        if accumulated_bits > budget_capacity {
+
+        let out_depth = in_depth + node_bits;
+        if out_depth > budget_capacity {
             return Err(format!(
-                "depth/scale budget exceeded at node '{}' ({}): the graph needs {} bits of \
+                "depth/scale budget exceeded on backend 'ckks' at node '{}' ({}): the graph needs {} bits of \
                  multiplicative budget by this node but the profile holds only {} (k={}, \
                  log_delta={}). Reduce max_poly_degree, or widen the parameter profile.",
                 node.name,
                 node.op.op_type(),
-                accumulated_bits,
+                out_depth,
                 budget_capacity,
                 backend.params.k,
                 backend.params.log_delta,
             ));
+        }
+
+        for o in &node.outputs {
+            depth.insert(o.clone(), out_depth);
         }
     }
 

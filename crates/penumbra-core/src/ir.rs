@@ -17,11 +17,23 @@ use crate::ops::OpSummary;
 
 /// IR wire-format version. Hardcoded identically in `python/penumbra/ir.py`; a mismatch is
 /// a breaking change caught loudly at load time (`AGENTS.md` §5, §8).
-pub const SCHEMA_VERSION: &str = "0.6.0";
+pub const SCHEMA_VERSION: &str = "0.10.0";
 
 /// Serde default for `Requant.mult`: `1` makes the rescale a pure power-of-two shift.
 fn default_requant_mult() -> u64 {
     1
+}
+
+fn is_zero_i64(v: &i64) -> bool {
+    *v == 0
+}
+
+fn is_zero_u64(v: &u64) -> bool {
+    *v == 0
+}
+
+fn is_zero_usize(v: &usize) -> bool {
+    *v == 0
 }
 
 /// The root IR object: a directed graph of op nodes in a valid topological order.
@@ -79,12 +91,20 @@ pub enum OpSpec {
     Argmax {
         threshold: i64,
     },
+    Compare {
+        indices: Vec<usize>,
+        thresholds: Vec<i64>,
+    },
     Requant {
         shift: u32,
         #[serde(default = "default_requant_mult")]
         mult: u64,
         #[serde(default)]
         round_bias: u64,
+        #[serde(default, skip_serializing_if = "is_zero_i64")]
+        clamp_lo: i64,
+        #[serde(default, skip_serializing_if = "is_zero_u64")]
+        zero_point: u64,
         out_bits: usize,
         clamp_lut: Vec<u64>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -104,8 +124,16 @@ pub enum OpSpec {
         pool_h: usize,
         pool_w: usize,
         stride: usize,
+        #[serde(default, skip_serializing_if = "is_zero_usize")]
+        padding: usize,
     },
     Add {},
+    Concat {
+        sizes: Vec<usize>,
+    },
+    Split {
+        sizes: Vec<usize>,
+    },
 }
 
 impl Graph {
@@ -129,6 +157,115 @@ impl Graph {
     }
 }
 
+/// Node indices in a valid evaluation order (stable Kahn: among ready nodes, the lowest
+/// original index wins, so a graph already emitted in topological order is unchanged).
+///
+/// Fails loudly naming the offending tensor/node on an undefined input, a duplicate output
+/// tensor, or a cycle (`AGENTS.md` §1.4).
+pub fn topological_order(graph: &Graph) -> Result<Vec<usize>, String> {
+    let graph_inputs: std::collections::HashSet<&str> =
+        graph.inputs.iter().map(String::as_str).collect();
+
+    // 1. Collect all produced tensors to detect undefined inputs.
+    let mut all_produced: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for node in &graph.nodes {
+        for out in &node.outputs {
+            all_produced.insert(out.as_str());
+        }
+    }
+
+    // 2. Validate inputs: every input must be a graph input or produced by some node.
+    for node in &graph.nodes {
+        for input in &node.inputs {
+            if !graph_inputs.contains(input.as_str()) && !all_produced.contains(input.as_str()) {
+                return Err(format!(
+                    "node '{}' reads tensor '{input}', which no node produces and is not a graph input",
+                    node.name
+                ));
+            }
+        }
+    }
+
+    // 3. Validate duplicate outputs: tensor names must be unique (no silent overwrite).
+    let mut existing_tensors: std::collections::HashSet<&str> =
+        graph.inputs.iter().map(String::as_str).collect();
+    for node in &graph.nodes {
+        for out in &node.outputs {
+            if !existing_tensors.insert(out.as_str()) {
+                return Err(format!(
+                    "node '{}' writes tensor '{out}', which already exists — tensor names must be unique (no silent overwrite)",
+                    node.name
+                ));
+            }
+        }
+    }
+
+    // 4. Stable Kahn topological sort.
+    let num_nodes = graph.nodes.len();
+    if num_nodes == 0 {
+        return Ok(Vec::new());
+    }
+
+    // Map each tensor to the node index producing it.
+    let mut producer_map: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::with_capacity(num_nodes);
+    for (idx, node) in graph.nodes.iter().enumerate() {
+        for out in &node.outputs {
+            producer_map.insert(out.as_str(), idx);
+        }
+    }
+
+    let mut in_deps: Vec<std::collections::HashSet<usize>> =
+        vec![std::collections::HashSet::new(); num_nodes];
+    let mut dependents: Vec<Vec<usize>> = vec![Vec::new(); num_nodes];
+
+    for (consumer_idx, node) in graph.nodes.iter().enumerate() {
+        for input in &node.inputs {
+            if let Some(&producer_idx) = producer_map.get(input.as_str()) {
+                if in_deps[consumer_idx].insert(producer_idx) {
+                    dependents[producer_idx].push(consumer_idx);
+                }
+            }
+        }
+    }
+
+    let mut ready: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+    for (idx, deps) in in_deps.iter().enumerate() {
+        if deps.is_empty() {
+            ready.insert(idx);
+        }
+    }
+
+    let mut order = Vec::with_capacity(num_nodes);
+    while let Some(&idx) = ready.iter().next() {
+        ready.remove(&idx);
+        order.push(idx);
+
+        for &dep_idx in &dependents[idx] {
+            in_deps[dep_idx].remove(&idx);
+            if in_deps[dep_idx].is_empty() {
+                ready.insert(dep_idx);
+            }
+        }
+    }
+
+    if order.len() < num_nodes {
+        let visited: std::collections::HashSet<usize> = order.iter().copied().collect();
+        let names: Vec<&str> = graph
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| !visited.contains(idx))
+            .map(|(_, n)| n.name.as_str())
+            .collect();
+        return Err(format!(
+            "graph has a cycle: node(s) {names:?} are never ready — their inputs depend on their own outputs"
+        ));
+    }
+
+    Ok(order)
+}
+
 impl OpSpec {
     pub fn op_type(&self) -> &'static str {
         match self {
@@ -139,6 +276,9 @@ impl OpSpec {
             OpSpec::Requant { .. } => "Requant",
             OpSpec::Pool { .. } => "Pool",
             OpSpec::Add { .. } => "Add",
+            OpSpec::Compare { .. } => "Compare",
+            OpSpec::Concat { .. } => "Concat",
+            OpSpec::Split { .. } => "Split",
         }
     }
 
@@ -213,15 +353,36 @@ impl OpSpec {
             }
             OpSpec::Activation { .. } => {}
             OpSpec::Argmax { .. } => {}
+            OpSpec::Compare {
+                indices,
+                thresholds,
+            } => {
+                if thresholds.is_empty() {
+                    return Err(
+                        "Compare op has no thresholds; it must compare at least one value"
+                            .to_string(),
+                    );
+                }
+                if indices.len() != thresholds.len() {
+                    return Err(format!(
+                        "Compare has {} indices but {} thresholds; need one input index per threshold",
+                        indices.len(),
+                        thresholds.len()
+                    ));
+                }
+            }
             OpSpec::Requant {
+                shift,
                 mult,
+                round_bias,
+                clamp_lo,
+                zero_point,
                 out_bits,
                 clamp_lut,
                 mults,
                 shifts,
                 round_biases,
                 channel_size,
-                ..
             } => {
                 let domain = 1usize << MESSAGE_BITS;
                 if clamp_lut.len() != domain {
@@ -253,6 +414,11 @@ impl OpSpec {
                         "Requant mult must be >= 1 (a fixed-point multiplier; 1 is a pure shift)"
                             .to_string(),
                     );
+                }
+                if *clamp_lo > 0 {
+                    return Err(format!(
+                        "Requant clamp_lo must be <= 0 (it is the pre-rescale floor; 0 is the fused ReLU), got {clamp_lo}"
+                    ));
                 }
                 let has_pc = !mults.is_empty()
                     || !shifts.is_empty()
@@ -290,6 +456,22 @@ impl OpSpec {
                         ));
                     }
                 }
+                let u_min = if mults.is_empty() {
+                    (*clamp_lo * *mult as i64 + *round_bias as i64) >> shift
+                } else {
+                    mults
+                        .iter()
+                        .zip(shifts)
+                        .zip(round_biases)
+                        .map(|((&m, &s), &rb)| (*clamp_lo * m as i64 + rb as i64) >> s)
+                        .min()
+                        .unwrap_or(0)
+                };
+                if *zero_point as i64 + u_min < 0 {
+                    return Err(format!(
+                        "Requant zero_point {zero_point} does not cover the floor image {u_min}: the narrowed value would be negative and the single-block LUT index would wrap — regenerate the graph from the quantization service (AGENTS.md §1.4)"
+                    ));
+                }
             }
             OpSpec::Pool {
                 mode,
@@ -299,6 +481,7 @@ impl OpSpec {
                 pool_h,
                 pool_w,
                 stride,
+                padding,
             } => {
                 match mode.as_str() {
                     "avg" | "max" => {}
@@ -314,13 +497,46 @@ impl OpSpec {
                 if *pool_h == 0 || *pool_w == 0 || *stride == 0 {
                     return Err("Pool pool_h/pool_w/stride must be positive".to_string());
                 }
-                if pool_h > in_h || pool_w > in_w {
+                if padding >= pool_h || padding >= pool_w {
                     return Err(format!(
-                        "Pool window ({pool_h}x{pool_w}) must fit the input ({in_h}x{in_w})"
+                        "Pool padding {padding} must be smaller than the window ({pool_h}x{pool_w}) so every window covers at least one real input"
+                    ));
+                }
+                if *pool_h > in_h + 2 * padding || *pool_w > in_w + 2 * padding {
+                    return Err(format!(
+                        "Pool window ({pool_h}x{pool_w}) must fit the padded input ({}x{})",
+                        in_h + 2 * padding,
+                        in_w + 2 * padding
                     ));
                 }
             }
             OpSpec::Add {} => {}
+            OpSpec::Concat { sizes } => {
+                if sizes.len() < 2 {
+                    return Err(format!(
+                        "Concat needs at least 2 input segments; got {}",
+                        sizes.len()
+                    ));
+                }
+                if sizes.contains(&0) {
+                    return Err(format!(
+                        "Concat segment sizes must be positive; got {sizes:?}"
+                    ));
+                }
+            }
+            OpSpec::Split { sizes } => {
+                if sizes.len() < 2 {
+                    return Err(format!(
+                        "Split needs at least 2 output segments; got {}",
+                        sizes.len()
+                    ));
+                }
+                if sizes.contains(&0) {
+                    return Err(format!(
+                        "Split segment sizes must be positive; got {sizes:?}"
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -468,6 +684,8 @@ mod tests {
                     shift: 4,
                     mult: 1,
                     round_bias: 0,
+                    clamp_lo: 0,
+                    zero_point: 0,
                     out_bits: 2,
                     clamp_lut: vec![0, 1, 2, 3],
                     mults: vec![],
@@ -487,6 +705,8 @@ mod tests {
             shift: 1,
             mult: 1,
             round_bias: 0,
+            clamp_lo: 0,
+            zero_point: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2],
             mults: vec![],
@@ -500,6 +720,8 @@ mod tests {
             shift: 1,
             mult: 1,
             round_bias: 0,
+            clamp_lo: 0,
+            zero_point: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2, 9],
             mults: vec![],
@@ -513,6 +735,8 @@ mod tests {
             shift: 1,
             mult: 0,
             round_bias: 0,
+            clamp_lo: 0,
+            zero_point: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2, 3],
             mults: vec![],
@@ -559,6 +783,8 @@ mod tests {
                     shift: 5,
                     mult: 3,
                     round_bias: 16,
+                    clamp_lo: 0,
+                    zero_point: 0,
                     out_bits: 2,
                     clamp_lut: vec![0, 1, 2, 3],
                     mults: vec![],
@@ -588,6 +814,8 @@ mod tests {
                     shift: 0,
                     mult: 1,
                     round_bias: 0,
+                    clamp_lo: 0,
+                    zero_point: 0,
                     out_bits: 2,
                     clamp_lut: vec![0, 1, 2, 3],
                     mults: vec![1, 3],
@@ -606,6 +834,8 @@ mod tests {
             shift: 0,
             mult: 1,
             round_bias: 0,
+            clamp_lo: 0,
+            zero_point: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2, 3],
             mults: vec![1, 3],
@@ -619,6 +849,8 @@ mod tests {
             shift: 0,
             mult: 1,
             round_bias: 0,
+            clamp_lo: 0,
+            zero_point: 0,
             out_bits: 2,
             clamp_lut: vec![0, 1, 2, 3],
             mults: vec![1, 3],
@@ -649,6 +881,7 @@ mod tests {
                     pool_h: 2,
                     pool_w: 2,
                     stride: 2,
+                    padding: 0,
                 },
             }],
         };
@@ -663,6 +896,7 @@ mod tests {
             pool_h: 2,
             pool_w: 2,
             stride: 2,
+            padding: 0,
         };
         assert!(bad_mode.build().is_err());
 
@@ -674,8 +908,101 @@ mod tests {
             pool_h: 3,
             pool_w: 3,
             stride: 1,
+            padding: 0,
         };
         assert!(too_big.build().is_err());
+    }
+
+    #[test]
+    fn pool_padding_round_trips_and_validates() {
+        let pool_padded = OpSpec::Pool {
+            mode: "avg".to_string(),
+            in_h: 3,
+            in_w: 3,
+            channels: 1,
+            pool_h: 2,
+            pool_w: 2,
+            stride: 2,
+            padding: 1,
+        };
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 6,
+            input_bits: 5,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["y".to_string()],
+            nodes: vec![Node {
+                name: "pool".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["y".to_string()],
+                op: pool_padded,
+            }],
+        };
+        let json = graph.to_json();
+        assert!(
+            json.contains(r#""padding":1"#),
+            "must serialize non-zero padding"
+        );
+        let restored = Graph::from_json(&json).expect("round-trips padded pool");
+        assert_eq!(graph, restored);
+
+        let pool_zero = OpSpec::Pool {
+            mode: "avg".to_string(),
+            in_h: 4,
+            in_w: 4,
+            channels: 1,
+            pool_h: 2,
+            pool_w: 2,
+            stride: 2,
+            padding: 0,
+        };
+        let graph_zero = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 6,
+            input_bits: 5,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["y".to_string()],
+            nodes: vec![Node {
+                name: "pool".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["y".to_string()],
+                op: pool_zero,
+            }],
+        };
+        let json_zero = graph_zero.to_json();
+        assert!(
+            !json_zero.contains("padding"),
+            "zero padding must be omitted from JSON"
+        );
+
+        // Deserialization without padding gives padding == 0
+        let json_no_pad = r#"{"schema_version":""#.to_string()
+            + SCHEMA_VERSION
+            + r#"","num_blocks":6,"input_bits":5,"inputs":["x"],"outputs":["y"],"nodes":[{"name":"pool","inputs":["x"],"outputs":["y"],"op":{"op_type":"Pool","mode":"avg","in_h":4,"in_w":4,"channels":1,"pool_h":2,"pool_w":2,"stride":2}}]}"#;
+        let restored_no_pad = Graph::from_json(&json_no_pad).expect("deserializes without padding");
+        if let OpSpec::Pool { padding, .. } = &restored_no_pad.nodes[0].op {
+            assert_eq!(*padding, 0);
+        } else {
+            panic!("expected OpSpec::Pool");
+        }
+
+        let bad_pad = OpSpec::Pool {
+            mode: "avg".to_string(),
+            in_h: 4,
+            in_w: 4,
+            channels: 1,
+            pool_h: 2,
+            pool_w: 2,
+            stride: 2,
+            padding: 2,
+        };
+        match bad_pad.build() {
+            Err(err) => assert!(
+                err.contains("must be smaller than the window"),
+                "got: {err}"
+            ),
+            Ok(_) => panic!("padding >= window must fail"),
+        }
     }
 
     #[test]
@@ -708,5 +1035,55 @@ mod tests {
             weight_bits: 4,
         };
         assert!(spec.build().is_err());
+    }
+
+    #[test]
+    fn concat_op_json_round_trip_and_validation() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 4,
+            input_bits: 4,
+            inputs: vec!["a".to_string(), "b".to_string()],
+            outputs: vec!["c".to_string()],
+            nodes: vec![Node {
+                name: "concat".to_string(),
+                inputs: vec!["a".to_string(), "b".to_string()],
+                outputs: vec!["c".to_string()],
+                op: OpSpec::Concat { sizes: vec![2, 3] },
+            }],
+        };
+        let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
+        assert_eq!(graph, restored);
+        assert_eq!(graph.nodes[0].op.op_type(), "Concat");
+
+        let too_few = OpSpec::Concat { sizes: vec![2] };
+        assert!(too_few.build().is_err());
+        let zero_size = OpSpec::Concat { sizes: vec![2, 0] };
+        assert!(zero_size.build().is_err());
+    }
+
+    #[test]
+    fn split_op_json_round_trip_and_validation() {
+        let graph = Graph {
+            schema_version: SCHEMA_VERSION.to_string(),
+            num_blocks: 4,
+            input_bits: 4,
+            inputs: vec!["x".to_string()],
+            outputs: vec!["s0".to_string(), "s1".to_string()],
+            nodes: vec![Node {
+                name: "split".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["s0".to_string(), "s1".to_string()],
+                op: OpSpec::Split { sizes: vec![2, 2] },
+            }],
+        };
+        let restored = Graph::from_json(&graph.to_json()).expect("round-trips");
+        assert_eq!(graph, restored);
+        assert_eq!(graph.nodes[0].op.op_type(), "Split");
+
+        let too_few = OpSpec::Split { sizes: vec![4] };
+        assert!(too_few.build().is_err());
+        let zero_size = OpSpec::Split { sizes: vec![2, 0] };
+        assert!(zero_size.build().is_err());
     }
 }

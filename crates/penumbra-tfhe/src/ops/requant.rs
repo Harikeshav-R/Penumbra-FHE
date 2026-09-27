@@ -17,13 +17,25 @@ fn lut_output_bits(lut: &[u64]) -> usize {
 }
 
 /// Peak internal bit-width the rescale needs before the shift narrows it.
-pub fn requant_internal_bits(input_bits: usize, mult: u64, round_bias: u64) -> usize {
-    let relu_max: u128 = if input_bits >= 1 {
+pub fn requant_internal_bits(
+    input_bits: usize,
+    mult: u64,
+    round_bias: u64,
+    clamp_lo: i64,
+) -> usize {
+    let pos_max: u128 = if input_bits >= 1 {
         (1u128 << (input_bits - 1)) - 1
     } else {
         0
     };
-    let intermediate_max = relu_max * mult as u128 + round_bias as u128;
+    let floor_cap: u128 = if input_bits >= 1 {
+        1u128 << (input_bits - 1)
+    } else {
+        0
+    };
+    let neg_mag: u128 = (clamp_lo.unsigned_abs() as u128).min(floor_cap);
+    let intermediate_max =
+        (pos_max * mult as u128 + round_bias as u128).max(neg_mag * mult as u128);
     let magnitude = (u128::BITS - intermediate_max.leading_zeros()) as usize;
     (magnitude + 1).max(input_bits)
 }
@@ -34,6 +46,8 @@ pub struct Requant {
     pub shift: u32,
     pub mult: u64,
     pub round_bias: u64,
+    pub clamp_lo: i64,
+    pub zero_point: u64,
     pub out_bits: usize,
     pub clamp_lut: Vec<u64>,
     pub mults: Vec<u64>,
@@ -99,6 +113,22 @@ impl Op<TfheBackend> for Requant {
                 self.mults.len()
             );
         }
+        let u_min = if self.mults.is_empty() {
+            (self.clamp_lo * self.mult as i64 + self.round_bias as i64) >> self.shift
+        } else {
+            self.mults
+                .iter()
+                .zip(&self.shifts)
+                .zip(&self.round_biases)
+                .map(|((&m, &s), &rb)| (self.clamp_lo * m as i64 + rb as i64) >> s)
+                .min()
+                .unwrap_or(0)
+        };
+        assert!(
+            self.zero_point as i64 + u_min >= 0,
+            "Requant zero_point {} does not cover the floor image {u_min}: the narrowed value would be negative and the single-block LUT index would wrap — regenerate the graph from the quantization service (AGENTS.md §1.4)",
+            self.zero_point
+        );
 
         let table = self.clamp_lut.clone();
         let lut = shortint_sk.generate_lookup_table(move |v| *table.get(v as usize).unwrap_or(&0));
@@ -117,11 +147,11 @@ impl Op<TfheBackend> for Requant {
                 } else {
                     (self.mult, self.shift, self.round_bias as i64)
                 };
-                let nonneg = sk.scalar_max_parallelized(ct, 0i64);
+                let floored = sk.scalar_max_parallelized(ct, self.clamp_lo);
                 let scaled = if mult == 1 {
-                    nonneg
+                    floored
                 } else {
-                    sk.scalar_mul_parallelized(&nonneg, mult as i64)
+                    sk.scalar_mul_parallelized(&floored, mult as i64)
                 };
                 let biased = if round_bias == 0 {
                     scaled
@@ -130,6 +160,11 @@ impl Op<TfheBackend> for Requant {
                 };
                 let shifted: SignedRadixCiphertext =
                     sk.scalar_right_shift_parallelized(&biased, shift);
+                let shifted = if self.zero_point != 0 {
+                    sk.scalar_add_parallelized(&shifted, self.zero_point as i64)
+                } else {
+                    shifted
+                };
                 let saturated = sk.scalar_min_parallelized(&shifted, max_val);
                 let mapped: Ciphertext =
                     shortint_sk.apply_lookup_table(&saturated.blocks()[0], &lut);
@@ -169,12 +204,12 @@ impl Op<TfheBackend> for Requant {
             input_bits.len()
         );
         if self.mults.is_empty() {
-            requant_internal_bits(input_bits[0], self.mult, self.round_bias)
+            requant_internal_bits(input_bits[0], self.mult, self.round_bias, self.clamp_lo)
         } else {
             self.mults
                 .iter()
                 .zip(&self.round_biases)
-                .map(|(&m, &rb)| requant_internal_bits(input_bits[0], m, rb))
+                .map(|(&m, &rb)| requant_internal_bits(input_bits[0], m, rb, self.clamp_lo))
                 .max()
                 .expect("per-channel Requant has at least one channel")
         }

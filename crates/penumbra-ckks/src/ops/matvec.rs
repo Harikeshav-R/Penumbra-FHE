@@ -100,9 +100,10 @@ pub fn avg_pool_matrix(
     pool_h: usize,
     pool_w: usize,
     stride: usize,
+    padding: usize,
 ) -> Result<PlainMatrix, String> {
-    let out_h = (in_h - pool_h) / stride + 1;
-    let out_w = (in_w - pool_w) / stride + 1;
+    let out_h = (in_h + 2 * padding - pool_h) / stride + 1;
+    let out_w = (in_w + 2 * padding - pool_w) / stride + 1;
     let rows = channels * out_h * out_w;
     let cols = channels * in_h * in_w;
 
@@ -117,10 +118,15 @@ pub fn avg_pool_matrix(
                 let row_idx = base_out + oy * out_w + ox;
                 for ky in 0..pool_h {
                     for kx in 0..pool_w {
-                        let y = oy * stride + ky;
-                        let xx = ox * stride + kx;
-                        let col_idx = base_in + y * in_w + xx;
-                        data[row_idx * cols + col_idx] += 1.0;
+                        if let (Some(y), Some(xx)) = (
+                            (oy * stride + ky).checked_sub(padding),
+                            (ox * stride + kx).checked_sub(padding),
+                        ) {
+                            if y < in_h && xx < in_w {
+                                let col_idx = base_in + y * in_w + xx;
+                                data[row_idx * cols + col_idx] += 1.0;
+                            }
+                        }
                     }
                 }
             }
@@ -133,6 +139,38 @@ pub fn avg_pool_matrix(
         data,
         bias: bias_f64,
     })
+}
+
+/// A 0/1 selection map: input slot `j` lands at output row `row_offset + j`, for
+/// `cols` consecutive slots; every other row is zero. The building block for
+/// slot-packed `Concat` (one map per input segment, summed).
+pub fn selection_matrix(rows: usize, cols: usize, row_offset: usize) -> PlainMatrix {
+    let mut data = vec![0.0f64; rows * cols];
+    for j in 0..cols {
+        data[(row_offset + j) * cols + j] = 1.0;
+    }
+    PlainMatrix {
+        rows,
+        cols,
+        data,
+        bias: vec![0.0; rows],
+    }
+}
+
+/// A 0/1 window map: output row `j` takes input column `col_offset + j`, for
+/// `rows` consecutive slots; every other column is zero. The building block for
+/// slot-packed `Split` (one map per output segment).
+pub fn window_matrix(rows: usize, cols: usize, col_offset: usize) -> PlainMatrix {
+    let mut data = vec![0.0f64; rows * cols];
+    for j in 0..rows {
+        data[j * cols + (col_offset + j)] = 1.0;
+    }
+    PlainMatrix {
+        rows,
+        cols,
+        data,
+        bias: vec![0.0; rows],
+    }
 }
 
 pub struct PreparedLinearMap {

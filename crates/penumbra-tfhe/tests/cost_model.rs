@@ -109,6 +109,8 @@ fn test_tfhe_requant_zero_multipliers_and_biases() {
         shift: 4,
         mult: 1,
         round_bias: 0,
+        clamp_lo: 0,
+        zero_point: 0,
         out_bits: 2,
         clamp_lut: vec![0, 1, 2, 3],
         mults: vec![],
@@ -122,4 +124,48 @@ fn test_tfhe_requant_zero_multipliers_and_biases() {
     assert_eq!(cost.get("cmp_pbs_ops"), Some(&30));
     assert_eq!(cost.get("scalar_mul"), None);
     assert_eq!(cost.get("scalar_add"), None);
+}
+
+#[test]
+fn test_tfhe_concat_and_split_zero_cost() {
+    let backend = TfheBackend::default();
+    let concat_spec = OpSpec::Concat { sizes: vec![4, 4] };
+    let op_c = backend.build_op(&concat_spec).expect("build concat");
+    assert!(op_c.cost(&[4, 4]).is_empty(), "Concat has zero PBS cost");
+
+    let split_spec = OpSpec::Split { sizes: vec![4, 4] };
+    let op_s = backend.build_op(&split_spec).expect("build split");
+    assert!(op_s.cost(&[8]).is_empty(), "Split has zero PBS cost");
+}
+
+#[test]
+fn test_tfhe_padded_pool_counts_only_real_taps() {
+    let backend = TfheBackend::default();
+    let max_pool = OpSpec::Pool {
+        mode: "max".to_string(),
+        in_h: 3,
+        in_w: 3,
+        channels: 1,
+        pool_h: 2,
+        pool_w: 2,
+        stride: 2,
+        padding: 1,
+    };
+    let op_max = backend.build_op(&max_pool).expect("build max pool");
+    let cost_max: BTreeMap<&'static str, u64> = op_max.cost(&[9]).into_iter().collect();
+    assert_eq!(cost_max.get("cmp_pbs_ops"), Some(&5));
+
+    let avg_pool = OpSpec::Pool {
+        mode: "avg".to_string(),
+        in_h: 3,
+        in_w: 3,
+        channels: 1,
+        pool_h: 2,
+        pool_w: 2,
+        stride: 2,
+        padding: 1,
+    };
+    let op_avg = backend.build_op(&avg_pool).expect("build avg pool");
+    let cost_avg: BTreeMap<&'static str, u64> = op_avg.cost(&[9]).into_iter().collect();
+    assert_eq!(cost_avg.get("ct_add"), Some(&5));
 }

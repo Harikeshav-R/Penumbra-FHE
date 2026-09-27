@@ -19,11 +19,16 @@ import pytest
 from penumbra.ir import (
     SCHEMA_VERSION,
     ActivationSpec,
+    AddSpec,
     ArgmaxSpec,
+    CompareSpec,
+    ConcatSpec,
     Graph,
     LinearSpec,
     Node,
+    PoolSpec,
     RequantSpec,
+    SplitSpec,
 )
 from penumbra.reference import evaluate_graph_int
 
@@ -194,3 +199,147 @@ def test_activation_out_of_domain_fails_loudly():
     assert evaluate_graph_int(g, {"x": [0, 3]})["y"] == [0, 3]
     with pytest.raises(ValueError, match="outside the LUT domain"):
         evaluate_graph_int(g, {"x": [4]})  # 4 is past the 4-entry table
+
+
+def test_compare_reference_oracle():
+    """Compare: >= threshold evaluation, gather indexing, and out-of-range check."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=4,
+        input_bits=4,
+        inputs=["x"],
+        outputs=["bits"],
+        nodes=[
+            Node(
+                name="cmp",
+                inputs=["x"],
+                outputs=["bits"],
+                op=CompareSpec(indices=[2, 0, 1, 0], thresholds=[5, 3, 10, 4]),
+            )
+        ],
+    )
+    # x = [3, 9, 5]
+    # indices[0] = 2 -> x[2]=5 >= 5 -> 1 (exact equality)
+    # indices[1] = 0 -> x[0]=3 >= 3 -> 1 (exact equality)
+    # indices[2] = 1 -> x[1]=9 >= 10 -> 0
+    # indices[3] = 0 -> x[0]=3 >= 4 -> 0
+    out = evaluate_graph_int(g, {"x": [3, 9, 5]})
+    assert out["bits"] == [1, 1, 0, 0]
+
+    # Out-of-range index raises ValueError
+    with pytest.raises(ValueError, match="out of range"):
+        evaluate_graph_int(g, {"x": [3, 9]})  # length 2, but indices[0]=2 needs index 2
+
+
+def test_requant_signed_floor_and_zero_point():
+    """Requant: clamp_lo < 0 and zero_point > 0 evaluate exact signed floor + offset arithmetic."""
+    g = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=6,
+        input_bits=8,
+        inputs=["x"],
+        outputs=["y"],
+        nodes=[
+            Node(
+                name="rq",
+                inputs=["x"],
+                outputs=["y"],
+                op=RequantSpec(
+                    shift=3,
+                    mult=1,
+                    round_bias=4,
+                    clamp_lo=-16,
+                    zero_point=2,
+                    out_bits=2,
+                    clamp_lut=[0, 1, 2, 3],
+                ),
+            )
+        ],
+    )
+    inputs = [-50, -16, -10, -4, 4, 12, 100]
+    # -50: t=max(-50, -16)=-16, u=(-16+4)>>3 = -2, u+zero_point = 0 -> clamped to 0
+    # -16: t=-16, u=-2, u+zero_point = 0
+    # -10: t=-10, u=(-10+4)>>3 = -1, u+zero_point = 1
+    #  -4: t=-4,  u=(-4+4)>>3 = 0,  u+zero_point = 2
+    #   4: t=4,   u=(4+4)>>3 = 1,   u+zero_point = 3
+    #  12: t=12,  u=(12+4)>>3 = 2,  u+zero_point = 4 -> clamped to 3
+    # 100: positive saturation -> clamped to 3
+    expected = [0, 0, 1, 2, 3, 3, 3]
+    out = evaluate_graph_int(g, {"x": inputs})
+    assert out["y"] == expected
+
+
+def test_branching_dag_evaluation():
+    """Branching DAG: Split + Add + Concat + Add evaluates correctly with fan-out."""
+    graph = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=4,
+        inputs=["x"],
+        outputs=["out"],
+        nodes=[
+            Node(name="split", inputs=["x"], outputs=["s0", "s1"], op=SplitSpec(sizes=[2, 2])),
+            Node(name="add_half", inputs=["s0", "s1"], outputs=["sum"], op=AddSpec()),
+            Node(name="concat", inputs=["s0", "sum"], outputs=["c"], op=ConcatSpec(sizes=[2, 2])),
+            Node(name="final_add", inputs=["x", "c"], outputs=["out"], op=AddSpec()),
+        ],
+    )
+    out = evaluate_graph_int(graph, {"x": [10, 20, 30, 40]})
+    assert out["out"] == [20, 40, 70, 100]
+
+
+def test_non_topological_node_order_evaluates():
+    """Stable Kahn sort ensures nodes emitted in arbitrary valid order still evaluate."""
+    graph = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=4,
+        inputs=["x"],
+        outputs=["out"],
+        nodes=[
+            Node(name="final_add", inputs=["x", "c"], outputs=["out"], op=AddSpec()),
+            Node(name="concat", inputs=["s0", "sum"], outputs=["c"], op=ConcatSpec(sizes=[2, 2])),
+            Node(name="add_half", inputs=["s0", "s1"], outputs=["sum"], op=AddSpec()),
+            Node(name="split", inputs=["x"], outputs=["s0", "s1"], op=SplitSpec(sizes=[2, 2])),
+        ],
+    )
+    out = evaluate_graph_int(graph, {"x": [10, 20, 30, 40]})
+    assert out["out"] == [20, 40, 70, 100]
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [
+        ("avg", [-4, -5, 1, 8]),
+        ("max", [-4, -2, 2, 4]),
+    ],
+)
+def test_padded_pool_skips_out_of_range_taps(mode: str, expected: list[int]):
+    """Virtual padding skips out-of-range taps: avg sums in-bounds; max ignores padded taps."""
+    graph = Graph(
+        schema_version=SCHEMA_VERSION,
+        num_blocks=8,
+        input_bits=5,
+        inputs=["x"],
+        outputs=["out"],
+        nodes=[
+            Node(
+                name="pool",
+                inputs=["x"],
+                outputs=["out"],
+                op=PoolSpec(
+                    mode=mode,
+                    in_h=3,
+                    in_w=3,
+                    channels=1,
+                    pool_h=2,
+                    pool_w=2,
+                    stride=2,
+                    padding=1,
+                ),
+            )
+        ],
+    )
+    x = list(range(-4, 5))  # [-4, -3, -2, -1, 0, 1, 2, 3, 4]
+    out = evaluate_graph_int(graph, {"x": x})
+    assert out["out"] == expected

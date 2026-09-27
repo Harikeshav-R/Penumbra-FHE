@@ -37,6 +37,8 @@ struct CliArgs {
     out_path: Option<PathBuf>,
     baseline_path: Option<PathBuf>,
     write_baseline_path: Option<PathBuf>,
+    #[allow(dead_code)]
+    ckks_poly_degree: Option<usize>,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -49,6 +51,7 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut baseline_path: Option<PathBuf> = None;
     let mut write_baseline_path: Option<PathBuf> = None;
     let mut tfhe_profile = penumbra_tfhe::keys::TfheProfile::default();
+    let mut ckks_poly_degree: Option<usize> = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--models" => {
@@ -98,6 +101,15 @@ fn parse_args() -> Result<CliArgs, String> {
                 })?;
                 tfhe_profile = penumbra_tfhe::keys::TfheProfile::from_name(&p)?;
             }
+            "--ckks-poly-degree" => {
+                let p = args
+                    .next()
+                    .ok_or_else(|| "--ckks-poly-degree requires an integer argument".to_string())?;
+                let deg = p
+                    .parse::<usize>()
+                    .map_err(|e| format!("invalid --ckks-poly-degree value '{p}': {e}"))?;
+                ckks_poly_degree = Some(deg);
+            }
             "--baseline" => {
                 baseline_path =
                     Some(PathBuf::from(args.next().ok_or_else(|| {
@@ -123,6 +135,7 @@ fn parse_args() -> Result<CliArgs, String> {
                                                 Available: {avail}\n  \
                        --tfhe-profile <name>    TFHE crypto profile (default: {default_prof})\n                           \
                                                 Valid names: {valid_profiles}\n  \
+                       --ckks-poly-degree <N>   CKKS max polynomial degree override (default: 15; 3 for phase8_branch)\n  \
                        --samples <N>            Number of samples to evaluate per model (default: 1)\n  \
                        --format <markdown|json> Output format (default: markdown)\n  \
                        --out <PATH>             Write output to PATH instead of stdout\n  \
@@ -201,6 +214,7 @@ fn parse_args() -> Result<CliArgs, String> {
         out_path,
         baseline_path,
         write_baseline_path,
+        ckks_poly_degree,
     })
 }
 
@@ -227,7 +241,17 @@ fn run() -> Result<(), String> {
                 }
                 #[cfg(feature = "ckks")]
                 "ckks" => {
-                    let run = run_model(ckks_backend(), &loaded, args.samples)?;
+                    let mut be = ckks_backend();
+                    let deg = args.ckks_poly_degree.unwrap_or_else(|| {
+                        if loaded.fixture.key == "phase8_branch" {
+                            3
+                        } else {
+                            be.params.max_poly_degree
+                        }
+                    });
+                    be.params = be.params.with_max_poly_degree(deg)?;
+                    let mut run = run_model(be, &loaded, args.samples)?;
+                    run.profile = Some(format!("deg{deg}"));
                     runs.push(run);
                 }
                 _ => unreachable!(),

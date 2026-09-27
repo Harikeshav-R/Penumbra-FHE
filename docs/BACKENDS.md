@@ -26,7 +26,7 @@ schemes multiply.
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │  ◀── waist 1: the stable IR
 ┌─ Layer 2: IR + OP REGISTRY + EVAL LOOP (fixed, backend-neutral) ────┐
-│  a graph of ~8 op types, walked once: Linear, Conv2d, Requant, ...   │
+│  a graph of ~10 op types, walked once: Linear, Conv2d, Requant, Concat, Split, ... │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │  ◀── waist 2: the `Backend` trait
 ┌─ Layer 1: FHE BACKENDS (pluggable — one per scheme) ────────────────┐
@@ -72,7 +72,7 @@ what a general FHE API might look like. Every row below is a real call site.
 | ct + ct | `linear.rs:69`, `conv2d.rs:129`, `pool.rs:115`, `add.rs:56` | `add_parallelized` | native homomorphic add |
 | ct × plaintext scalar | `linear.rs:68`, `conv2d.rs:128`, `requant.rs:215` | `scalar_mul_parallelized` | plaintext multiply (consumes one level) |
 | ct + plaintext scalar | `linear.rs:73`, `conv2d.rs:135`, `requant.rs:221` | `scalar_add_parallelized` | plaintext add |
-| ct ≥ plaintext scalar | `argmax.rs:33` | `scalar_ge_parallelized` | **no exact analogue** — polynomial sign/step |
+| ct ≥ plaintext scalar | `argmax.rs:33`, `compare.rs:33` | `scalar_ge_parallelized` | **no exact analogue** — polynomial sign/step |
 | max(ct, ct) | `pool.rs:123` | `max_parallelized` | polynomial max |
 | max(ct, 0) — ReLU | `requant.rs:209` | `scalar_max_parallelized` | polynomial ReLU |
 | min(ct, k) — saturate | `requant.rs:228` | `scalar_min_parallelized` | polynomial clamp |
@@ -102,10 +102,15 @@ The exceptions are the interesting ones:
    (`poulpy-ckks` provides an `approximation` module for the fitting). This is the single
    largest semantic difference between the backends and the most interesting thing the
    comparison measures.
-2. **`ct ≥ scalar`** (`Argmax`) is a LUT under the hood. Under CKKS it is a polynomial step
-   function, and a poor one at low degree. Note that Penumbra's multi-class models already
-   decrypt logits and argmax **client-side** (`docs/BENCHMARKS.md`, Phase-4 onward), so this
-   only affects the 2-class `Argmax` head.
+   *Note on `Requant.clamp_lut`:* a backend implementing `Requant` must honour `clamp_lut`.
+   While an identity table (`[0, 1, ..., 2^out_bits - 1]`) is satisfied by clamping the continuous
+   ramp, graph optimization (e.g. rule R1 fusing `Requant → Activation`) creates a non-identity
+   table that the backend must evaluate (under TFHE via the single-block PBS LUT; under CKKS by
+   composing the Chebyshev polynomial of the table after the requant ramp).
+2. **`ct ≥ scalar`** (`Argmax`, `Compare`) is a comparison PBS under TFHE. Under CKKS it is a polynomial step
+   function. For a single comparison (`ckks_golden_ops.rs`), continuous step approximation works; for
+   chained sharp steps in a tree graph (4-node lowering), the required depth exceeds CKKS's depth budget
+   (needs 360 bits vs 330 budget capacity with default params).
 
 > A backend that cannot implement an op must say so **at load time, naming the op and the
 > node** (`AGENTS.md` §1.4) — never approximate it silently, and never fall back to another
@@ -129,7 +134,7 @@ Two consequences worth stating plainly:
   float model instead of the quantized one would make its accuracy look better and the
   comparison meaningless.
 
-Under CKKS the PBS-free ops (`Linear`, `Conv2d`, `Pool`, `Add`) may well round-trip to the
+Under CKKS the PBS-free ops (`Linear`, `Conv2d`, `Pool`, `Add`, `Concat`, `Split`) may well round-trip to the
 exact integers at a generous scale. That is worth **reporting as a diagnostic** — it isolates
 approximation error to the nonlinearities — but it is not a CI gate, because it is a
 property of the chosen scale rather than of the implementation.

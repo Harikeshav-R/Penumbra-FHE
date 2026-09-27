@@ -21,9 +21,31 @@ implementing (`AGENTS.md` §3.2). Do **not** add a binary format or compression 
 ## Versioning
 
 `SCHEMA_VERSION` is a string constant hardcoded identically in `ir.py` and `ir.rs`
-(currently **`"0.6.0"`**). On load, both sides check it and **fail loudly** on a mismatch
+(currently **`"0.10.0"`**). On load, both sides check it and **fail loudly** on a mismatch
 (`AGENTS.md` §1.4) — the version field is the forward-compatibility gate.
 
+> **0.10.0** added symmetric virtual `padding` to `Pool` (default 0, omitted from the JSON when 0).
+> Out-of-range taps are skipped: `avg` sums the in-bounds taps (zero padding, the divisor stays `k`
+> via the scale), `max` ignores them. Validated: `padding < min(pool_h, pool_w)` and the window
+> fits the padded input.
+>
+> **0.9.0** added the `Concat` and `Split` ops (multi-input merge / multi-output segmentation
+> for branching graphs), each carrying flat segment `sizes` (one per input segment for `Concat`,
+> one per output segment for `Split`). It enables branching ONNX DAGs with fan-out, skip connections,
+> and parallel branches. The runtime computes a stable Kahn topological sort before evaluation.
+> Schema-version bumped — a breaking change (`AGENTS.md` §5, §8).
+> **0.8.0** added `clamp_lo` (signed floor before rescale, default `0`) and `zero_point`
+> (non-negative activation domain offset, default `0`) to `Requant`. It enables non-ReLU activations
+> (tanh, GELU, leaky ReLU, hardswish, elu, hard sigmoid, mid-graph sigmoid) by narrowing signed
+> accumulators into the unsigned single-block LUT domain with sign intact. Both fields are
+> **omitted from the JSON when zero**, so legacy per-tensor `Requant` payloads serialize
+> byte-identically — but the version string still bumped, which is the breaking change
+> (`AGENTS.md` §8): a 0.7.0 runtime rejects a 0.8.0 file and vice versa.
+>
+> **0.7.0** added the `Compare` op (element-wise threshold comparison with a fused gather,
+> used by tree-ensemble lowering). It maps an input tensor to 0/1 bits via `out[i] = [x[indices[i]] >= thresholds[i]]`.
+> Output is always 1 bit regardless of input width — a breaking schema change (`AGENTS.md` §8).
+>
 > **0.6.0** added an optional **per-channel** overlay to `Requant` — the `mults`, `shifts`,
 > `round_biases` (one entry per output channel) and `channel_size` (elements per channel)
 > fields. It lets per-channel weight quantization rescale each output channel by its own
@@ -54,7 +76,7 @@ This is load-bearing rather than incidental. The scheme comparison (`docs/COMPAR
 is only valid if both backends are handed identical work; a scheme-tagged IR would let the
 two drift and would make any measured difference unattributable.
 
-**Adding the CKKS backend does not bump this schema.** It stays at `0.6.0`.
+**Adding the CKKS backend does not bump this schema.** It stayed at `0.6.0` (bumped to `0.7.0` in Phase 8 for `Compare`, and `0.8.0` for non-ReLU activation LUTs).
 
 Some payload fields are historically TFHE-shaped. A second backend **reinterprets** them; it
 does not get fields of its own:
@@ -66,6 +88,7 @@ does not get fields of its own:
 | `Requant.clamp_lut` | a PBS lookup table | Likewise — the clamp is approximated, not looked up. |
 | `Requant.out_bits ≤ MESSAGE_BITS` | the single-block PBS limit | A TFHE feasibility constraint. It still bounds what the *quantizer* emits, so both backends see the same narrow activations — see `docs/QUANTIZATION.md` on why that is deliberate. |
 | `Requant.shift` / `mult` / `round_bias` | fixed-point integer rescale | A rescale in the approximate domain. |
+| `Requant.clamp_lo` / `zero_point` | signed pre-rescale floor and unsigned LUT domain offset | A CKKS backend folds both into the fitted continuous ramp polynomial (`(t.max(clamp_lo)*mult + round_bias)/divisor + zero_point`). |
 
 > ⚠️ If you find yourself wanting to add a field, a tag, or a `backend:` key to the IR to make
 > a scheme work, **stop**. That is the backend abstraction leaking (`AGENTS.md` §1.2), and it
@@ -106,7 +129,7 @@ The op payload is a **nested, internally-tagged object** keyed on `op_type` — 
 Rust `#[serde(tag = "op_type")]` enum expects. It is deliberately *not* `serde(flatten)`ed
 into the node: flatten disables `deny_unknown_fields` and has round-trip bugs with
 internally-tagged enums. An unknown `op_type` fails loudly (`unknown variant 'BatchNorm',
-expected one of 'Linear', 'Conv2d', 'Activation', 'Argmax', 'Requant', 'Pool', 'Add'`).
+expected one of 'Linear', 'Conv2d', 'Activation', 'Argmax', 'Compare', 'Requant', 'Pool', 'Add', 'Concat', 'Split'`).
 
 The supported ops match [`docs/SUPPORTED-OPS.md`](./SUPPORTED-OPS.md) (kept in sync, and
 tested via the conformance test). The op fields mirror the runtime ops but live in IR-land
@@ -118,22 +141,24 @@ so the ops themselves stay serialization-free.
 | `"Conv2d"` | `weights: [[int]]` (row-major `[out_channels][in_channels*kernel_h*kernel_w]`), `bias: [int]` (one per output channel), `weight_bits: int`, `in_h, in_w, in_channels, kernel_h, kernel_w, stride, padding: int` | 2-D convolution vs plaintext kernel. Input/output flat tensors use the channel-major, row-major layout (shared with `Pool`); zero padding is virtual. Kernel-width = fan-in and one-bias-per-channel validated at load. |
 | `"Activation"` | `lut: [int]` (indexed by input value), `output_bits: int` | Single-input LUT via PBS over a narrow domain. |
 | `"Argmax"` | `threshold: int` | 2-class threshold: label `1` iff `z ≥ threshold`. |
-| `"Requant"` | `shift: int`, `mult: int` (≥ 1, default 1), `round_bias: int` (≥ 0, default 0), `out_bits: int` (≤ `MESSAGE_BITS`), `clamp_lut: [int]` (`2^MESSAGE_BITS` entries, each `< 2^MESSAGE_BITS`); **optional per-channel overlay** `mults: [int]`, `shifts: [int]`, `round_biases: [int]` (one per output channel), `channel_size: int` (≥ 1) | Rescale a wide accumulator → narrow non-negative value: `clamp((max(x, 0) * mult + round_bias) >> shift, 0, 2^out_bits - 1)` (fused ReLU + fixed-point multiply-then-round-shift). `mult / 2^shift` approximates the real scale ratio; `mult = 1, round_bias = 0` is the legacy pure shift. **Per-channel (0.6.0):** when `mults` is non-empty, flat element `idx` uses channel `idx / channel_size` — `clamp((max(x,0)*mults[ch] + round_biases[ch]) >> shifts[ch], …)` — and the scalar `shift`/`mult`/`round_bias` are ignored; `channel_size` is `1` for a `Linear` head, `out_h*out_w` for a `Conv2d`. The four overlay fields are omitted when per-tensor (byte-identical to 0.5.0). LUT length / range, `mult ≥ 1` (per channel too), `out_bits ≤ MESSAGE_BITS`, per-channel array-length consistency + `channel_size ≥ 1`, and the **internal peak** `max(x,0)*mult + round_bias ≤ radix capacity` (max over channels) all validated at load. |
-| `"Pool"` | `mode: string` (`"avg"`\|`"max"`), `in_h, in_w, channels, pool_h, pool_w, stride: int` | Spatial pooling over a flattened **channel-major, row-major** `[channels][in_h][in_w]` map. `avg` emits the window sum (the `/k` is deferred to `Requant`); `max` is pairwise max. Mode and window-fits-input validated at load. |
+| `"Compare"` | `indices: [int]`, `thresholds: [int]` (equal length, non-empty) | Element-wise `x[indices[i]] >= thresholds[i]` → `0`/`1`, with a fused gather. Output is 1 bit regardless of input width. |
+| `"Requant"` | `shift: int`, `mult: int` (≥ 1, default 1), `round_bias: int` (≥ 0, default 0), `clamp_lo: int` (≤ 0, default 0), `zero_point: int` (≥ 0, default 0), `out_bits: int` (≤ `MESSAGE_BITS`), `clamp_lut: [int]` (`2^MESSAGE_BITS` entries, each `< 2^MESSAGE_BITS`); **optional per-channel overlay** `mults: [int]`, `shifts: [int]`, `round_biases: [int]` (one per output channel), `channel_size: int` (≥ 1) | Rescale a wide accumulator → narrow non-negative value: `clamp(((max(x, clamp_lo) * mult + round_bias) >> shift) + zero_point, 0, 2^out_bits - 1)`. `clamp_lo = 0, zero_point = 0` reproduces the fused-ReLU path. `mult / 2^shift` approximates the real scale ratio; `mult = 1, round_bias = 0` is the legacy pure shift. **Per-channel (0.6.0):** when `mults` is non-empty, flat element `idx` uses channel `idx / channel_size` with the channel's `(m, s, rb)`. **Signed floor + offset (0.8.0):** `clamp_lo` and `zero_point` allow signed accumulators to narrow into the single-block LUT domain without clipping negatives. |
+| `"Pool"` | `mode: string` (`"avg"`\|`"max"`), `in_h, in_w, channels, pool_h, pool_w, stride: int`, `padding: int` (≥ 0, default 0, omitted when 0) | Spatial pooling over a flattened **channel-major, row-major** `[channels][in_h][in_w]` map. `avg` emits the sum of in-bounds taps (the `1/k` is carried in the output tensor's quantization scale); `max` is the max of in-bounds taps. Output dims `(in + 2·padding − pool)/stride + 1`. Mode, `padding < window`, and window-fits-padded-input validated at load. |
 | `"Add"` | *(none)* | Element-wise addition of **two** input tensors (residuals). The node carries two `inputs`; the payload is the bare `{"op_type": "Add"}`. Multi-input — see [Node](#node). |
+| `"Concat"` | `sizes: [int]` (≥ 2 segments, all positive) | Concatenation along the channel axis on the flat wire. Node carries N `inputs` and 1 `outputs`. Segment sizes validated against inputs at load/eval. |
+| `"Split"` | `sizes: [int]` (≥ 2 segments, all positive) | Contiguous segmentation of the flat wire into N output tensors. Node carries 1 `inputs` and N `outputs`. Segment sizes validated against input length. |
 
 ## Node ordering
 
-Nodes are stored and evaluated **in the order they appear** in `nodes`. That order is
-*trusted but validated* to be a valid topological order: each node's input tensors must
-already exist (a graph input or an earlier node's output), output names must be unique (no
-silent overwrite), and every declared graph output must be produced. Any violation fails
-loudly, naming the offending node.
+Nodes in `Graph.nodes` may be stored in any valid order. Before evaluation and bit-width
+propagation, the runtime computes a **stable Kahn topological order**: among ready nodes
+whose inputs are fully satisfied, the node with the lowest original index in `nodes` is chosen
+first. Thus, a graph already emitted in topological order evaluates in that exact order (all
+committed fixtures are unchanged).
 
-The runtime does **not** compute the order itself (no Kahn's-algorithm sort). True
-topological sorting for branching graphs is deferred to Phase 8; the current models are
-linear chains where the emitted order *is* the evaluation order. This keeps the eval loop
-minimal while the format already supports the general `inputs`/`outputs` edge shape.
+Topological sorting validates the graph up front: undefined input tensors, duplicate output
+tensor names (no silent overwrite), and cyclical dependencies fail loudly before any crypto
+material or execution is invoked (`AGENTS.md` §1.4).
 
 ## Worked example — the Phase-2 model
 
