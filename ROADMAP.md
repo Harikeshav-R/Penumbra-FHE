@@ -492,11 +492,11 @@ and a clear statement of scope.
 
 ### Tasks
 
-- [ ] **Test coverage:** unit tests per op, integration tests per example, the golden test
+- [x] **Test coverage:** unit tests per op, integration tests per example, the golden test
       across all models **at each backend's comparator**, the unsupported-op failure test,
       cross-language IR conformance. Target high coverage on Layers 1–2.
-- [ ] **Property/fuzz tests:** random small models → assert the golden invariant per backend.
-- [ ] **Documentation site:** getting-started, tutorial (MNIST end to end), supported ops,
+- [x] **Property/fuzz tests:** random small models → assert the golden invariant per backend.
+- [x] **Documentation site:** getting-started, tutorial (MNIST end to end), supported ops,
       quantization guide, performance guide, backend guide (link `docs/BACKENDS.md`), API
       reference, architecture (link `PROJECT.md`).
 - [ ] **Examples polished:** `examples/mnist/`, `examples/faces/`, a tabular example, a tree
