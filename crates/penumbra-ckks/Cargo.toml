@@ -1,11 +1,11 @@
 [package]
 name = "penumbra-ckks"
-version = "0.0.0"
-edition = "2021"
-rust-version = "1.83"
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 description = "Layer 1 of Penumbra-FHE: CKKS backend implemented over poulpy-ckks."
-repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
+repository.workspace = true
 publish = false
 
 [features]
@@ -26,7 +26,7 @@ ckks = [
 ]
 
 [dependencies]
-penumbra-core = { path = "../penumbra-core" }
+penumbra-core = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 bincode = "1.3"
 poulpy-hal = { version = "=0.8.3", optional = true }

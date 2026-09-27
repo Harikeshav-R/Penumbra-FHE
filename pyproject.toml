@@ -1,6 +1,8 @@
 [project]
 name = "penumbra-fhe"
-version = "0.0.0"
+# Single-sourced from Cargo.toml [workspace.package].version (maturin reads it via
+# crates/penumbra-py), so the wheel, sdist, and crates can never disagree.
+dynamic = ["version"]
 description = "Encrypted ML inference on ONNX models over pluggable FHE backends — load a model, run it under FHE, never write crypto code."
 readme = "README.md"
 license = { text = "Apache-2.0" }

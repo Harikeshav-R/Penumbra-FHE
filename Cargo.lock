@@ -659,7 +659,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "penumbra-bench"
-version = "0.0.0"
+version = "1.0.0"
 dependencies = [
  "criterion",
  "penumbra-ckks",
@@ -671,7 +671,7 @@ dependencies = [
 
 [[package]]
 name = "penumbra-ckks"
-version = "0.0.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -689,7 +689,7 @@ dependencies = [
 
 [[package]]
 name = "penumbra-core"
-version = "0.0.0"
+version = "1.0.0"
 dependencies = [
  "bincode",
  "serde",
@@ -698,7 +698,7 @@ dependencies = [
 
 [[package]]
 name = "penumbra-fhe-runtime"
-version = "0.0.0"
+version = "1.0.0"
 dependencies = [
  "penumbra-core",
  "penumbra-tfhe",
@@ -709,7 +709,7 @@ dependencies = [
 
 [[package]]
 name = "penumbra-py"
-version = "0.0.0"
+version = "1.0.0"
 dependencies = [
  "bincode",
  "penumbra-ckks",
@@ -722,7 +722,7 @@ dependencies = [
 
 [[package]]
 name = "penumbra-tfhe"
-version = "0.0.0"
+version = "1.0.0"
 dependencies = [
  "bincode",
  "penumbra-core",

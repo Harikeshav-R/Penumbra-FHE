@@ -1,11 +1,11 @@
 [package]
 name = "penumbra-fhe-runtime"
-version = "0.0.0"
-edition = "2021"
-rust-version = "1.83"
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 description = "Penumbra-FHE runtime: the backend-neutral eval core (Layer 2) and the tfhe-rs backend (Layer 1) for encrypted ML inference."
-repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
+repository.workspace = true
 # crates.io allows at most 5 keywords.
 keywords = ["fhe", "tfhe", "ckks", "homomorphic", "encryption"]
 categories = ["cryptography"]
@@ -16,8 +16,8 @@ name = "penumbra_fhe_runtime"
 path = "src/lib.rs"
 
 [dependencies]
-penumbra-core = { path = "../crates/penumbra-core" }
-penumbra-tfhe = { path = "../crates/penumbra-tfhe" }
+penumbra-core = { workspace = true }
+penumbra-tfhe = { workspace = true }
 tfhe = { version = "1.6", features = ["shortint", "integer"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
