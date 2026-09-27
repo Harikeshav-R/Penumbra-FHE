@@ -1,0 +1,119 @@
+{
+  "decision": {
+    "deferred": "yes",
+    "mac": "b'",
+    "s_ratio_b_over_bprime": 1.643691481338525,
+    "s_ratio_winner_over_c": 1.4752413289996134
+  },
+  "meta": {
+    "commit": "74b4b63a8a22a0167e1f52bbe51245a18d16b8af",
+    "date": "2026-09-27",
+    "fixture": "examples/mnist/phase5_digits_fixture.json",
+    "machine": "Apple M3 Pro, macOS 25.6.0",
+    "repeats": 7,
+    "rustc": "rustc 1.100.0-nightly (bba531001 2026-09-20)",
+    "threads": 11
+  },
+  "neurons": [
+    {
+      "acc_bits": 14,
+      "acc_blocks": 7,
+      "in_bits": 3,
+      "name": "conv0",
+      "nb": 9,
+      "terms": 9,
+      "variants": [
+        {
+          "exact": true,
+          "max_secs": 1.37371925,
+          "median_secs": 1.36696725,
+          "min_secs": 1.35793275,
+          "pbs": 402,
+          "variant": "a",
+          "widen_pbs": 0,
+          "widen_secs": 0.0
+        },
+        {
+          "exact": true,
+          "max_secs": 1.072980958,
+          "median_secs": 1.065306708,
+          "min_secs": 1.050713542,
+          "pbs": 286,
+          "variant": "b",
+          "widen_pbs": 64,
+          "widen_secs": 0.175673458
+        },
+        {
+          "exact": true,
+          "max_secs": 1.120417625,
+          "median_secs": 0.92645375,
+          "min_secs": 0.877678708,
+          "pbs": 152,
+          "variant": "b'",
+          "widen_pbs": 64,
+          "widen_secs": 0.179497834
+        },
+        {
+          "exact": true,
+          "max_secs": 0.737119583,
+          "median_secs": 0.730168667,
+          "min_secs": 0.709433333,
+          "pbs": 168,
+          "variant": "c",
+          "widen_pbs": 64,
+          "widen_secs": 0.1885985
+        }
+      ]
+    },
+    {
+      "acc_bits": 17,
+      "acc_blocks": 9,
+      "in_bits": 2,
+      "name": "linear2",
+      "nb": 9,
+      "terms": 108,
+      "variants": [
+        {
+          "exact": true,
+          "max_secs": 10.53273725,
+          "median_secs": 10.466053875,
+          "min_secs": 10.358400417,
+          "pbs": 3174,
+          "variant": "a",
+          "widen_pbs": 0,
+          "widen_secs": 0.0
+        },
+        {
+          "exact": true,
+          "max_secs": 10.658118292,
+          "median_secs": 10.526716584,
+          "min_secs": 10.131607291,
+          "pbs": 3174,
+          "variant": "b",
+          "widen_pbs": 108,
+          "widen_secs": 0.295611834
+        },
+        {
+          "exact": true,
+          "max_secs": 6.821929209,
+          "median_secs": 6.125978792,
+          "min_secs": 5.984799709,
+          "pbs": 1017,
+          "variant": "b'",
+          "widen_pbs": 108,
+          "widen_secs": 0.291930292
+        },
+        {
+          "exact": true,
+          "max_secs": 4.088621459,
+          "median_secs": 4.050359375,
+          "min_secs": 4.022870875,
+          "pbs": 970,
+          "variant": "c",
+          "widen_pbs": 108,
+          "widen_secs": 0.301252958
+        }
+      ]
+    }
+  ]
+}

@@ -32,6 +32,8 @@ artifacts stable.
 - **Message space:** 2 bits per block (`message_modulus = 4`), with a 2-bit carry buffer.
   Every profile shares `keys::MESSAGE_BITS = 2`, so a radix integer of `num_blocks` blocks holds
   `num_blocks × 2` bits of value (`keys::radix_capacity_bits`) identically across profiles.
+  `num_blocks` represents the model-level radix ceiling (central budget); each tensor is sized
+  to its derived bit width (Phase 14).
 - **Representation:** values are **signed** radix integers (`SignedRadixCiphertext`).
   Weights and logits are naturally signed; signed avoids a zero-point-offset dance and
   generalizes to conv accumulators.
@@ -60,11 +62,40 @@ signed radix, 64-feature single-logit `Linear → Argmax`):
 
 The per-sample cost is dominated by radix MAC carry-propagation bootstraps in addition and
 multiplication. Phase 10 landed rayon parallelism across independent outputs (cutting `phase2_logreg` eval latency 2.13x, 4.238 s → 1.992 s, and `phase4_cnn` 1.45x, 38.912 s → 26.899 s; `phase10-tfhe-sweep.json @ 78f5db7` vs `phase10-parallel-tuned-sweep.json @ 9b38c1b`) and verified that the classic profile provides the
-lowest latency under parallel execution. An open lever is Phase 10 task 5: shrinking `num_blocks`
-per layer to the minimum the accumulator actually needs.
+lowest latency under parallel execution. The radix width lever is Phase 14: shrinking radix width
+per tensor to the minimum needed by derived bit widths (see [Per-tensor radix width (Phase 14)](#per-tensor-radix-width-phase-14)).
 
 > ⚠️ Always benchmark in `--release`. Debug `tfhe-rs` is orders of magnitude slower and the
 > numbers are meaningless (`docs/DEVELOPMENT.md`).
+
+## Per-tensor radix width (Phase 14)
+
+### Linear-path spike (Phase 14.0)
+
+Before implementing full per-tensor widths, Phase 14.0 ran a micro-benchmark spike comparing four MAC variants on isolated neurons from `examples/mnist/phase5_digits_fixture.json` (`conv0` 9-term kernel with 8 non-zero weights, `in_bits = 3`, `acc_blocks = 7`; and `linear2` 108-term row 0 with 38 distinct non-zero weight groups, `in_bits = 2`, `acc_blocks = 9`; model ceiling `num_blocks = 9`):
+
+1. **(a) Baseline:** today's `evaluate_weighted_mac` at model ceiling `num_blocks` (9 blocks).
+2. **(b) Widen-once:** inputs resized to `acc_blocks` once before weighted MAC.
+3. **(b′) Progressive widening:** groups summed at their minimum width `value_blocks(in_bits + ceil_log2(k), acc_blocks)`, multiplied, and resized to `acc_blocks`.
+4. **(c) Deferred carries:** preshifted radix copies and block shifts combined via `unchecked_sum_ciphertexts_vec_parallelized` with deferred carry propagation.
+
+Measured with 7 timed runs per variant after 1 warm-up (11 threads, Apple M3 Pro, commit `74b4b63`, recorded in `docs/results/phase14-spike-mac.json`):
+
+| Neuron | Variant | Median (s) | Min (s) | Max (s) | PBS | Widen (s) | Widen PBS | Exact |
+|---|---|---|---|---|---|---|---|---|
+| `conv0` | a (baseline) | 1.367 | 1.358 | 1.374 | 402 | 0.000 | 0 | true |
+| `conv0` | b (widen-once) | 1.065 | 1.051 | 1.073 | 286 | 0.176 | 64 | true |
+| `conv0` | b′ (progressive) | 0.926 | 0.878 | 1.120 | 152 | 0.179 | 64 | true |
+| `conv0` | c (deferred) | 0.730 | 0.709 | 0.737 | 168 | 0.189 | 64 | true |
+| `linear2` | a (baseline) | 10.466 | 10.358 | 10.533 | 3174 | 0.000 | 0 | true |
+| `linear2` | b (widen-once) | 10.527 | 10.132 | 10.658 | 3174 | 0.296 | 108 | true |
+| `linear2` | b′ (progressive) | 6.126 | 5.985 | 6.822 | 1017 | 0.292 | 108 | true |
+| `linear2` | c (deferred) | 4.050 | 4.023 | 4.089 | 970 | 0.301 | 108 | true |
+
+**Decision rules:**
+- **R1:** $S(v) = \text{median}_{\text{conv}}(v) + \text{median}_{\text{linear}}(v)$. $S(b) = 11.592\text{ s}$, $S(b′) = 7.052\text{ s}$. $S(b) / S(b′) = 1.6437 \ge 1.05 \implies$ **b′ wins**.
+- **R2:** $S(\text{winner}) / S(c) = 7.052 / 4.781 = 1.4752 \ge 1.20 \implies$ **deferred carries included**.
+- **Final decision:** `mac=b' deferred=yes`.
 
 ## CI implication
 
