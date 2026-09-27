@@ -499,13 +499,16 @@ and a clear statement of scope.
 - [x] **Documentation site:** getting-started, tutorial (MNIST end to end), supported ops,
       quantization guide, performance guide, backend guide (link `docs/BACKENDS.md`), API
       reference, architecture (link `PROJECT.md`).
-- [ ] **Examples polished:** `examples/mnist/`, `examples/faces/`, a tabular example, a tree
+- [x] **Examples polished:** `examples/mnist/`, `examples/faces/`, a tabular example, a tree
       example — each with a README and one-command run.
-- [ ] **Scope statement:** prominently document the bounded meaning of "any ONNX model"
+      *Note:* delivered in `examples/mnist/`, `examples/faces/`, `examples/tabular/`, and `examples/trees/`: each contains a comprehensive README and a one-command in-process FHE replay runner (`run.py` via `examples/_replay.py`) with `--model`, `--samples`, and `--backend` options; guarded by `tests/test_examples_smoke.py`.
+- [x] **Scope statement:** prominently document the bounded meaning of "any ONNX model"
       (`PROJECT.md` §10, §16) and latency expectations, so users aren't surprised.
-- [ ] **Security note:** state the threat model (server sees only ciphertext), the parameter
+      *Note:* documented in `docs/SCOPE.md` and `README.md`: defines the bounded meaning of "any ONNX model", enforced DAG topology, opset bounds, resource limits, latency expectations from benchmark sweeps, accuracy tradeoffs, and prototype status.
+- [x] **Security note:** state the threat model (server sees only ciphertext), the parameter
       security level **per backend**, CKKS's IND-CPA^D caveat, and that this is
       research/prototype-grade, not audited production crypto.
+      *Note:* documented in `SECURITY.md` and embedded into the documentation site at `docs/security.md`: defines client/server threat model, per-backend parameter security profiles (128-bit classical), CKKS IND-CPA^D vulnerability details and mitigations, and prototype-grade disclaimer.
 - [ ] **Packaging:** publish wheels (PyPI) and the Rust crates (crates.io if desired);
       versioning + changelog.
 - [ ] **CONTRIBUTING.md:** how to add an op (the canonical extension path: registry entry +
