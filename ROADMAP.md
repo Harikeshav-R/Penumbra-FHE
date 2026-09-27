@@ -509,11 +509,14 @@ and a clear statement of scope.
       security level **per backend**, CKKS's IND-CPA^D caveat, and that this is
       research/prototype-grade, not audited production crypto.
       *Note:* documented in `SECURITY.md` and embedded into the documentation site at `docs/security.md`: defines client/server threat model, per-backend parameter security profiles (128-bit classical), CKKS IND-CPA^D vulnerability details and mitigations, and prototype-grade disclaimer.
-- [ ] **Packaging:** publish wheels (PyPI) and the Rust crates (crates.io if desired);
+- [x] **Packaging:** publish wheels (PyPI) and the Rust crates (crates.io if desired);
       versioning + changelog.
-- [ ] **CONTRIBUTING.md:** how to add an op (the canonical extension path: registry entry +
+      *Note:* the version is single-sourced at 1.0.0; the sdist LICENSE is fixed; `release.yml` publishes to PyPI (trusted publishing) and crates.io (4 crates) on a `v*` tag; see `CHANGELOG.md`.
+- [x] **CONTRIBUTING.md:** how to add an op (the canonical extension path: registry entry +
       impl per backend + bit-width rule + golden test) and how to add a backend.
+      *Note:* file-level add-op and add-backend paths plus the release process.
 - [ ] Tag **v1.0**.
+      *Note:* pending: run CONTRIBUTING.md → Versioning & releases after merge to main.
 
 ### Exit Criteria
 
