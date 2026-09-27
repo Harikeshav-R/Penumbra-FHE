@@ -100,8 +100,8 @@ but the public API is still subject to change."* Note that 0.6.0 was yanked.
 | Secret distribution | uniform ternary (`prob = 2/3`) | standard distribution assumption matching security tables |
 | Max polynomial degree | 15 | single override knob (`depth = 4` via BSGS min-depth) |
 | Security level | 128-bit classical security | verified against HomomorphicEncryption.org standard table (`log q <= 438`) |
-| Single packed ciphertext size | 4.75 MB | 4,980,843 bytes |
-| Key generation time | ~2.06 s | Apple Silicon `FFT64Neon` |
+| Single packed ciphertext size | 4.75 MB | 4,980,843 bytes (`phase10-final-sweep.json` @ `9b38c1b`; binary MB) |
+| Key generation time | 1.915–2.458 s | `phase10-final-sweep.json` @ `9b38c1b`, 7 models, `FFT64Neon` |
 ## The primitives everything composes from
 
 Structured to mirror `NOTES-tfhe.md`'s "two primitives" framing, because the contrast is the
@@ -125,6 +125,8 @@ The mapping from Penumbra's op vocabulary onto these primitives is tabulated in
 
 ## Empirical cost
 
+> **Historical, not citable.** Spike micro-benchmarks from crates/spike-ckks; introduced in 85719db (2026-09-21); no committed results file.
+
 *Measured by `crates/spike-ckks` in `--release` on Apple Silicon (AArch64, `FFT64Neon`, 128 slots):*
 
 | Quantity | Value |
@@ -135,9 +137,27 @@ The mapping from Penumbra's op vocabulary onto these primitives is tabulated in
 | one ReLU polynomial at degree 7 (128 slots) | 297 µs (~0.30 ms) |
 | one ReLU polynomial at degree 15 (128 slots) | 671 µs (~0.67 ms) |
 
-### Phase-12.2 calibrated model results
+### CKKS error against the quantized reference
 
-*Measured on Apple Silicon (`FFT64Neon`) using `cargo +nightly run -p penumbra-ckks --features ckks --release --example calibrate`:*
+Maximum absolute error in quantized-integer logit units, measured as the maximum over the 2 committed samples per model; the floor-bias fix was committed in `7d04993` (`crates/penumbra-ckks/src/ops/polymap.rs`).
+
+| Model | Pre-fix | Post-fix, same fixtures | Post-fix, minimized fixtures | Declared bound (HEAD) |
+|---|---:|---:|---:|---:|
+| phase2_logreg | n/a | n/a | n/a | 0.75 |
+| phase4_cnn | 15 | 3 | 4 | 6.0 |
+| phase5_digits | 209 | 35 | 38 | 60.0 |
+| phase5_qat | 238 | 28 | 10 | 15.0 |
+| phase6_onnx | 209 | 35 | 38 | 60.0 |
+| phase6_sklearn | 0 | 0 | 0 | 5e-4 |
+| phase7_faces | 192 (sample 1 label mismatch) | 74 | 74 | 120.0 |
+
+*Source: Pre-fix from [`docs/results/phase12-4-comparison.json`](./results/phase12-4-comparison.json) as of commit `4d033d2` (run `dc20d05`); post-fix, same fixtures from [`docs/results/phase12-4-comparison.json`](./results/phase12-4-comparison.json) (CKKS rerun commit `3f6bd68` + floor-bias fix, committed in `7d04993`); post-fix, minimized fixtures from [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`; declared bounds from [`crates/penumbra-ckks/src/bounds.rs`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/4e1a320/crates/penumbra-ckks/src/bounds.rs) @ `4e1a320`.*
+
+The current bounds were set after these measurements (`docs/PAPER.md` §2.3 defect 5); Phase 15 replaces them with bounds declared from a calibration split.
+
+On the pre-fix Phase-12.4 sweep, `phase7_faces` sample 1 measured 192 (label mismatch) against the then-declared bound 150.0 ([`docs/results/phase12-4-comparison.json`](./results/phase12-4-comparison.json) as of `4d033d2`; `crates/penumbra-ckks/src/bounds.rs` as of `4d033d2`). The mathematical root cause—an un-truncated continuous `round_bias` offset in `fit_requant` amplified across 128 linear weights—and the fix are documented in [`docs/INVESTIGATION-phase7-ckks-error.md`](./INVESTIGATION-phase7-ckks-error.md) and committed in `7d04993`.
+
+> **Historical, not citable.** Pre-fix `calibrate` example output (`cargo +nightly run -p penumbra-ckks --features ckks --release --example calibrate`); introduced in 782714a (2026-09-21), before fix 7d04993; no committed results file.
 
 | Model / Fixture | Graph Topology | Depth Check | Measured Max \|Err\| | Declared Bound | Match Label |
 |---|---|---|---|---|---|
@@ -148,10 +168,13 @@ The mapping from Penumbra's op vocabulary onto these primitives is tabulated in
 | Phase 5 qat | `Conv2d → Requant(per-ch) → Linear` | PASS | $2.38 \times 10^{2}$ | `3.0e2` | YES |
 | Phase 6 onnx | `Conv2d → Requant(per-ch) → Linear` | PASS | $1.88 \times 10^{2}$ | `2.5e2` | YES |
 | Phase 7 faces | `Conv2d → Requant(per-ch) → Linear` | PASS | $1.05 \times 10^{2}$ | `1.5e2` | YES |
+
+> **Historical, not citable.** Post-fix `calibrate` example output for Phase-8 models; introduced in f57a1ef and 45e7762 (2026-09-26); no committed results file.
+
+| Model / Fixture | Graph Topology | Depth Check | Measured Max \|Err\| | Declared Bound | Match Label |
+|---|---|---|---|---|---|
 | Phase 8 bn cnn | `Conv2d → Requant → Pool(avg) → Linear` | PASS | $1.80 \times 10^{1}$ | `2.7e1` | YES |
 | Phase 8 gap cnn | `Conv2d → Requant → Pool(avg, pad 1) → Pool(avg, global) → Linear` | PASS | $1.64 \times 10^{2}$ | `2.47e2` | YES |
-
-*(Note: On multi-sample evaluation in Phase 12.4, Sample 1 measured $1.92 \times 10^2$, exceeding the declared bound of 150.0. The mathematical root cause—an un-truncated continuous `round_bias` offset in `fit_requant` amplified across 128 linear weights—and the step-by-step fix blueprint are documented in [`docs/INVESTIGATION-phase7-ckks-error.md`](./INVESTIGATION-phase7-ckks-error.md)).*
 > ⚠️ Always benchmark in `--release`. Debug FHE is orders of magnitude slower and the numbers
 > are meaningless (`docs/DEVELOPMENT.md`).
 
@@ -161,6 +184,8 @@ CKKS is approximate by construction, so unlike the TFHE backend there is no bit-
 lean on as a truth oracle. The correctness gate is a **declared, per-model error bound**
 against the same quantized-cleartext reference, with the measured error always reported
 (`docs/BACKENDS.md`, "one invariant, two comparators").
+
+> **Historical, not citable.** Spike micro-benchmarks from Phase-12.0 spike; introduced in 85719db (2026-09-21); no committed results file.
 
 Empirical measurements from the Phase-12.0 spike demonstrate the clean decoupling between
 cryptographic noise and approximation error:
