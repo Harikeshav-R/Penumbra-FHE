@@ -27,11 +27,11 @@ The client argmaxes the decrypted logits, matching the standard multi-class conv
 ## Reproducing
 
 ```bash
-# Generate scikit-learn Random Forest fixture (examples/tabular/phase8_trees_fixture.json):
-uv run --extra ml python examples/tabular/tree_export.py
+# Generate scikit-learn Random Forest fixture (examples/trees/phase8_trees_fixture.json):
+uv run --extra ml python examples/trees/tree_export.py
 
-# Generate XGBoost fixture (examples/tabular/phase8_xgb_fixture.json):
-uv run --extra ml python examples/tabular/xgb_export.py
+# Generate XGBoost fixture (examples/trees/phase8_xgb_fixture.json):
+uv run --extra ml python examples/trees/xgb_export.py
 
 # Run golden test (exact bit-for-bit check under TFHE):
 cargo test --release --test golden_trees -- --nocapture

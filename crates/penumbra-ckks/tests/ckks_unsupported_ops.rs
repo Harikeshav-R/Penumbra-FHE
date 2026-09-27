@@ -50,7 +50,7 @@ fn pool_max_rejected_loudly_at_load_time() {
 
 #[test]
 fn tree_ensemble_chained_compares_rejected_by_depth_budget() {
-    let text = include_str!("../../../examples/tabular/phase8_trees_fixture.json");
+    let text = include_str!("../../../examples/trees/phase8_trees_fixture.json");
     let fx: serde_json::Value = serde_json::from_str(text).expect("valid fixture");
     let graph = Graph::from_json(&fx["graph"].to_string()).expect("valid graph");
 
@@ -70,7 +70,7 @@ fn tree_ensemble_chained_compares_rejected_by_depth_budget() {
 
 #[test]
 fn xgb_tree_ensemble_rejected_by_depth_budget() {
-    let text = include_str!("../../../examples/tabular/phase8_xgb_fixture.json");
+    let text = include_str!("../../../examples/trees/phase8_xgb_fixture.json");
     let fx: serde_json::Value = serde_json::from_str(text).expect("valid fixture");
     let graph = Graph::from_json(&fx["graph"].to_string()).expect("valid graph");
 

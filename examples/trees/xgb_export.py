@@ -1,7 +1,7 @@
-"""Train, quantize, and export a scikit-learn tree ensemble to Penumbra IR.
+"""Train, quantize, and export an XGBoost tree ensemble to Penumbra IR.
 
-Phase-8 tabular example: a RandomForestClassifier trained on the Wisconsin Breast Cancer
-dataset (30 features, 2 classes). Lowered via penumbra.adapters.from_sklearn into a 4-node
+Phase-8 tabular example: an XGBClassifier trained on the Wisconsin Breast Cancer
+dataset (30 features, 2 classes). Lowered via penumbra.adapters.from_xgboost into a 4-node
 IR graph:
     1. split_cmp:  Compare (evaluates all tree splits in parallel)
     2. leaf_score: Linear (accumulates path conditions)
@@ -9,7 +9,7 @@ IR graph:
     4. logits:     Linear (computes class logits)
 
 Exports:
-    examples/tabular/phase8_trees_fixture.json
+    examples/trees/phase8_xgb_fixture.json
 """
 
 from __future__ import annotations
@@ -20,17 +20,17 @@ from pathlib import Path
 
 import numpy as np
 from sklearn.datasets import load_breast_cancer
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier
 
 import penumbra as fhe
-from penumbra.adapters.trees import from_sklearn
+from penumbra.adapters.trees import from_xgboost
 from penumbra.ir import CompareSpec
 from penumbra.quantization.accuracy import accuracy_report
 from penumbra.reference import evaluate_graph_int
 
 THIS_DIR = Path(__file__).parent
-FIXTURE_PATH = THIS_DIR / "phase8_trees_fixture.json"
+FIXTURE_PATH = THIS_DIR / "phase8_xgb_fixture.json"
 
 INPUT_BITS = 8
 LEAF_BITS = 4
@@ -43,7 +43,7 @@ def main() -> None:
         "--fixture",
         type=Path,
         default=FIXTURE_PATH,
-        help="Path to write the fixture JSON (default: phase8_trees_fixture.json)",
+        help="Path to write the fixture JSON (default: phase8_xgb_fixture.json)",
     )
     args = parser.parse_args()
 
@@ -54,10 +54,10 @@ def main() -> None:
     y_tr = np.asarray(y_tr_raw, dtype=np.int64)
     y_te = np.asarray(y_te_raw, dtype=np.int64)
 
-    clf = RandomForestClassifier(n_estimators=5, max_depth=3, random_state=0)
+    clf = XGBClassifier(n_estimators=5, max_depth=3, random_state=0)
     clf.fit(x_tr, y_tr)
 
-    tree_model = from_sklearn(clf, x_tr, input_bits=INPUT_BITS, leaf_bits=LEAF_BITS)
+    tree_model = from_xgboost(clf, x_tr, input_bits=INPUT_BITS, leaf_bits=LEAF_BITS)
     graph = tree_model.graph
 
     x_te_q = tree_model.quantize_input(x_te)
@@ -87,9 +87,9 @@ def main() -> None:
 
     fixture = {
         "_comment": (
-            "Phase-8 tree ensemble fixture: a scikit-learn RandomForestClassifier "
+            "Phase-8 XGBoost tree ensemble fixture: an XGBClassifier "
             "(5 estimators, max_depth=3) trained on Wisconsin Breast Cancer (30 features, "
-            "2 classes) lowered via penumbra.adapters.from_sklearn into a 4-node IR graph "
+            "2 classes) lowered via penumbra.adapters.from_xgboost into a 4-node IR graph "
             "(split_cmp -> leaf_score -> leaf_sel -> logits). FHE output must equal these "
             "quantized-cleartext logits/labels bit-for-bit (AGENTS.md §1.1)."
         ),
@@ -114,7 +114,7 @@ def main() -> None:
     args.fixture.write_text(json.dumps(fixture, indent=2) + "\n")
 
     print(f"wrote {args.fixture}")
-    print("  architecture       = RandomForest(5 trees, max_depth=3) [BreastCancer 30->2]")
+    print("  architecture       = XGBClassifier(5 trees, max_depth=3) [BreastCancer 30->2]")
     print(
         f"  num_blocks         = {graph.num_blocks} "
         f"({fhe.radix_capacity_bits(graph.num_blocks)}-bit radix)"

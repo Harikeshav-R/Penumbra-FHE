@@ -97,8 +97,8 @@ fn every_committed_fixture_graph_reserializes_identically() {
         "examples/mnist/phase8_gap_cnn_fixture.json",
         "examples/mnist/phase8_tanh_fixture.json",
         "examples/faces/phase7_faces_fixture.json",
-        "examples/tabular/phase8_trees_fixture.json",
-        "examples/tabular/phase8_xgb_fixture.json",
+        "examples/trees/phase8_trees_fixture.json",
+        "examples/trees/phase8_xgb_fixture.json",
     ];
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");

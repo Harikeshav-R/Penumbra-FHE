@@ -158,7 +158,7 @@ fn run_tree_fixture(fx_rel_path: &str, label: &str) {
 #[test]
 fn fhe_matches_quantized_cleartext_trees() {
     run_tree_fixture(
-        "../examples/tabular/phase8_trees_fixture.json",
+        "../examples/trees/phase8_trees_fixture.json",
         "RandomForestClassifier (sklearn)",
     );
 }
@@ -169,7 +169,7 @@ fn fhe_matches_quantized_cleartext_trees() {
 #[ignore = "second-framework FHE gate; run with: cargo test --release --test golden_trees -- --ignored"]
 fn fhe_matches_quantized_cleartext_xgb_trees() {
     run_tree_fixture(
-        "../examples/tabular/phase8_xgb_fixture.json",
+        "../examples/trees/phase8_xgb_fixture.json",
         "XGBClassifier (XGBoost)",
     );
 }

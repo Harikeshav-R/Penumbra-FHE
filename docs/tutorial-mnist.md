@@ -101,4 +101,4 @@ During `model.predict_encrypted(x_te[0])`:
 To train and export your own models for Penumbra:
 - Inspect `examples/mnist/onnx_export.py` to see the PyTorch training loop, batch normalization folding, and `torch.onnx.export` invocation.
 - For scikit-learn models, inspect `examples/mnist/sklearn_export.py` which uses `skl2onnx`.
-- For gradient-boosted trees, inspect `examples/tabular/xgb_export.py`.
+- For gradient-boosted trees, inspect `examples/trees/xgb_export.py`.

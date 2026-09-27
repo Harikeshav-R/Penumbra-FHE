@@ -54,8 +54,8 @@ ALL_FIXTURES: list[Path] = [
     REPO_ROOT / "examples/mnist/phase8_gap_cnn_fixture.json",
     REPO_ROOT / "examples/mnist/phase8_tanh_fixture.json",
     REPO_ROOT / "examples/faces/phase7_faces_fixture.json",
-    REPO_ROOT / "examples/tabular/phase8_trees_fixture.json",
-    REPO_ROOT / "examples/tabular/phase8_xgb_fixture.json",
+    REPO_ROOT / "examples/trees/phase8_trees_fixture.json",
+    REPO_ROOT / "examples/trees/phase8_xgb_fixture.json",
 ]
 
 

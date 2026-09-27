@@ -186,7 +186,7 @@ with zero crypto-backend edits, exactly like `load_onnx` promised. The FHE golde
 (`golden_faces.rs`) is `#[ignore]`d because at 128 bootstraps/sample it is minutes per sample; the
 fast Python guard (`tests/test_faces_fixture.py`) checks fixture self-consistency on every CI run.
 
-### Phase-8 — tree ensemble, Breast Cancer (`examples/tabular/phase8_trees_fixture.json`)
+### Phase-8 — tree ensemble, Breast Cancer (`examples/trees/phase8_trees_fixture.json`)
 
 RandomForestClassifier (5 trees, max depth 3) trained on Wisconsin Breast Cancer (30 features, 2 classes), lowered to 4 IR nodes via `from_sklearn`: `Compare (split_cmp) -> Linear (leaf_score) -> Compare (leaf_sel) -> Linear (logits)`.
 
