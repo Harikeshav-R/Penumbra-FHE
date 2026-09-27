@@ -6,10 +6,10 @@ use tfhe::shortint::Ciphertext;
 use penumbra_core::ops::Op;
 use rayon::prelude::*;
 
-use super::{CtVec, EvalCtx};
+use super::{CtVec, EvalCtx, WidthAwareOp};
 use crate::backend::TfheBackend;
 use crate::keys::MESSAGE_BITS;
-
+use crate::width::{value_blocks, NodeWidths};
 /// Minimum bits needed to represent every entry of a LUT (its true output width).
 fn lut_output_bits(lut: &[u64]) -> usize {
     let max = lut.iter().copied().max().unwrap_or(0);
@@ -24,8 +24,14 @@ pub struct Activation {
     pub output_bits: usize,
 }
 
-impl Op<TfheBackend> for Activation {
-    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+impl WidthAwareOp for Activation {
+    fn eval_with_widths(
+        &self,
+        ctx: &EvalCtx,
+        inputs: &[&CtVec],
+        widths: &NodeWidths,
+    ) -> Vec<CtVec> {
+        let in_cts = inputs[0];
         let sk = ctx.sk;
         let shortint_sk = sk.as_ref();
 
@@ -63,18 +69,30 @@ impl Op<TfheBackend> for Activation {
         let table = self.lut.clone();
         let lut = shortint_sk.generate_lookup_table(move |v| *table.get(v as usize).unwrap_or(&0));
 
-        inputs
+        let nb = ctx.num_blocks;
+        let ob = widths.output_bits(0, nb);
+        let o = value_blocks(ob, nb);
+
+        let out: CtVec = in_cts
             .par_iter()
             .map(|ct| {
                 let mapped: Ciphertext = shortint_sk.apply_lookup_table(&ct.blocks()[0], &lut);
-                let mut blocks = Vec::with_capacity(ctx.num_blocks);
+                let mut blocks = Vec::with_capacity(o);
                 blocks.push(mapped);
-                for _ in 1..ctx.num_blocks {
+                for _ in 1..o {
                     blocks.push(shortint_sk.create_trivial(0));
                 }
                 SignedRadixCiphertext::from(blocks)
             })
-            .collect()
+            .collect();
+
+        vec![out]
+    }
+}
+
+impl Op<TfheBackend> for Activation {
+    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+        super::single(self.eval_with_widths(ctx, &[inputs], &NodeWidths::Uniform))
     }
 
     fn output_bits(&self, input_bits: usize) -> usize {

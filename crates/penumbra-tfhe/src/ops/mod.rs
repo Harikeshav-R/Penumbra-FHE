@@ -35,8 +35,8 @@ pub mod argmax;
 pub mod compare;
 pub mod concat;
 pub mod conv2d;
-pub(crate) mod mac;
 pub mod linear;
+pub(crate) mod mac;
 pub mod pool;
 pub mod requant;
 pub mod split;
@@ -54,44 +54,55 @@ pub use split::Split;
 
 /// Evaluation context specialized for the TFHE backend.
 pub type EvalCtx<'a> = penumbra_core::backend::EvalCtx<'a, tfhe::integer::ServerKey>;
+use crate::backend::TfheBackend;
+use crate::width::NodeWidths;
+use penumbra_core::ops::Op as CoreOp;
 
-/// Evaluates a weighted multiply-accumulate (MAC) over grouped ciphertexts.
-///
-/// Inputs sharing the same non-zero weight are pre-grouped in `groups`.
-/// Each group is summed via `sk.sum_ciphertexts_parallelized` before a single
-/// scalar multiplication by `w`, reducing the total number of scalar multiplications.
-/// The resulting group terms are then summed via a sum-tree and the bias is added.
-pub(crate) fn evaluate_weighted_mac(
-    ctx: &EvalCtx,
-    groups: std::collections::BTreeMap<i64, Vec<&tfhe::integer::SignedRadixCiphertext>>,
-    bias: i64,
-) -> tfhe::integer::SignedRadixCiphertext {
-    let sk = ctx.sk;
-    let mut group_terms: Vec<tfhe::integer::SignedRadixCiphertext> =
-        Vec::with_capacity(groups.len());
-    for (w, cts) in groups {
-        let s = if cts.len() == 1 {
-            cts[0].clone()
-        } else {
-            sk.sum_ciphertexts_parallelized(cts.iter().copied())
-                .expect("non-empty cts group")
-        };
-        let term = if w == 1 {
-            s
-        } else {
-            sk.scalar_mul_parallelized(&s, w)
-        };
-        group_terms.push(term);
+pub(crate) trait WidthAwareOp: CoreOp<TfheBackend> + Send + Sync {
+    fn eval_with_widths(&self, ctx: &EvalCtx, inputs: &[&CtVec], widths: &NodeWidths)
+        -> Vec<CtVec>;
+}
+
+pub(crate) struct WithWidths<O> {
+    pub(crate) op: O,
+    pub(crate) widths: NodeWidths,
+}
+
+pub(crate) fn single(mut v: Vec<CtVec>) -> CtVec {
+    assert_eq!(v.len(), 1, "expected 1 output tensor, got {}", v.len());
+    v.pop().unwrap()
+}
+
+impl<O: WidthAwareOp> CoreOp<TfheBackend> for WithWidths<O> {
+    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+        single(self.op.eval_with_widths(ctx, &[inputs], &self.widths))
     }
 
-    let acc = if group_terms.is_empty() {
-        sk.create_trivial_zero_radix(ctx.num_blocks)
-    } else if group_terms.len() == 1 {
-        group_terms.pop().unwrap()
-    } else {
-        sk.sum_ciphertexts_parallelized(group_terms.iter())
-            .expect("non-empty group_terms")
-    };
+    fn eval_n(&self, ctx: &EvalCtx, inputs: &[&CtVec]) -> CtVec {
+        single(self.op.eval_with_widths(ctx, inputs, &self.widths))
+    }
 
-    sk.scalar_add_parallelized(&acc, bias)
+    fn eval_multi(&self, ctx: &EvalCtx, inputs: &[&CtVec]) -> Vec<CtVec> {
+        self.op.eval_with_widths(ctx, inputs, &self.widths)
+    }
+
+    fn output_bits(&self, input_bits: usize) -> usize {
+        self.op.output_bits(input_bits)
+    }
+
+    fn output_bits_n(&self, input_bits: &[usize]) -> usize {
+        self.op.output_bits_n(input_bits)
+    }
+
+    fn output_bits_multi(&self, input_bits: &[usize]) -> Vec<usize> {
+        self.op.output_bits_multi(input_bits)
+    }
+
+    fn internal_bits_n(&self, input_bits: &[usize]) -> usize {
+        self.op.internal_bits_n(input_bits)
+    }
+
+    fn cost(&self, input_lens: &[usize]) -> Vec<(&'static str, u64)> {
+        self.op.cost(input_lens)
+    }
 }

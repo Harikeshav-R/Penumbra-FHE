@@ -2,19 +2,19 @@
 //!
 //! Covers CNNs (MNIST, faces). Like [`crate::ops::linear::Linear`], this is the *cheap*
 //! regime (`PROJECT.md` §5): the input is encrypted but the kernel is plaintext, so each
-//! output is `Σ (ciphertext × plaintext_weight) + plaintext_bias` — scalar-multiplies and
-//! additions only, **no programmable bootstrap**.
+//! output is `Σ (ciphertext × plaintext_weight) + plaintext_bias` — scalar-multiplies,
+//! additions, and deferred carry propagation (widening and carries cost PBS).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use rayon::prelude::*;
-use tfhe::integer::SignedRadixCiphertext;
 
 use penumbra_core::ops::Op;
 
-use super::{CtVec, EvalCtx};
+use super::mac::{self, mac_cache_widths, WidthCache};
+use super::{CtVec, EvalCtx, WidthAwareOp};
 use crate::backend::TfheBackend;
-
+use crate::width::{signed_blocks, NodeWidths};
 /// 2-D convolution with plaintext quantized kernel weights.
 pub struct Conv2d {
     /// Quantized kernel, row-major `[out_channels][in_channels*kernel_h*kernel_w]`.
@@ -117,17 +117,9 @@ impl Conv2d {
         (total_scalar_mul, total_ct_add)
     }
 
-    fn eval_point(
-        &self,
-        ctx: &EvalCtx,
-        inputs: &CtVec,
-        kernel: &[i64],
-        bias: i64,
-        oy: usize,
-        ox: usize,
-    ) -> SignedRadixCiphertext {
+    fn neuron_groups(&self, kernel: &[i64], oy: usize, ox: usize) -> BTreeMap<i64, Vec<usize>> {
         let in_hw = self.in_h * self.in_w;
-        let mut groups: BTreeMap<i64, Vec<&SignedRadixCiphertext>> = BTreeMap::new();
+        let mut groups: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
 
         for ic in 0..self.in_channels {
             let in_base = ic * in_hw;
@@ -145,22 +137,28 @@ impl Conv2d {
                         continue;
                     }
                     let idx = in_base + iy as usize * self.in_w + ix as usize;
-                    groups.entry(w).or_default().push(&inputs[idx]);
+                    groups.entry(w).or_default().push(idx);
                 }
             }
         }
 
-        super::evaluate_weighted_mac(ctx, groups, bias)
+        groups
     }
 }
 
-impl Op<TfheBackend> for Conv2d {
-    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+impl WidthAwareOp for Conv2d {
+    fn eval_with_widths(
+        &self,
+        ctx: &EvalCtx,
+        inputs: &[&CtVec],
+        widths: &NodeWidths,
+    ) -> Vec<CtVec> {
+        let in_cts = inputs[0];
         assert_eq!(
-            inputs.len(),
+            in_cts.len(),
             self.in_channels * self.in_h * self.in_w,
             "Conv2d input length {} != in_channels*in_h*in_w = {}*{}*{}",
-            inputs.len(),
+            in_cts.len(),
             self.in_channels,
             self.in_h,
             self.in_w
@@ -186,16 +184,43 @@ impl Op<TfheBackend> for Conv2d {
             );
         }
 
+        let nb = ctx.num_blocks;
+        let ib = widths.input_bits(0, nb);
+        let ob = widths.output_bits(0, nb);
+        let acc = signed_blocks(ob, nb);
+
         let plane = out_h * out_w;
-        (0..out_channels * plane)
+        let total_neurons = out_channels * plane;
+
+        let groups: Vec<BTreeMap<i64, Vec<usize>>> = (0..total_neurons)
             .into_par_iter()
             .map(|idx| {
                 let oc = idx / plane;
                 let oy = (idx % plane) / out_w;
                 let ox = idx % out_w;
-                self.eval_point(ctx, inputs, &self.weights[oc], self.bias[oc], oy, ox)
+                self.neuron_groups(&self.weights[oc], oy, ox)
             })
-            .collect()
+            .collect();
+
+        let needed_widths = mac_cache_widths(&groups, ib, acc);
+        let cache = WidthCache::build(ctx.sk, in_cts, &needed_widths);
+
+        let out: CtVec = groups
+            .into_par_iter()
+            .enumerate()
+            .map(|(idx, g)| {
+                let oc = idx / plane;
+                mac::evaluate_weighted_mac(ctx.sk, &cache, &g, self.bias[oc], ib, acc)
+            })
+            .collect();
+
+        vec![out]
+    }
+}
+
+impl Op<TfheBackend> for Conv2d {
+    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+        super::single(self.eval_with_widths(ctx, &[inputs], &NodeWidths::Uniform))
     }
 
     fn output_bits(&self, input_bits: usize) -> usize {

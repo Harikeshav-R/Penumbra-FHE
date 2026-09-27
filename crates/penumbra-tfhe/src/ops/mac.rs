@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), allow(dead_code))]
-
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -106,9 +104,13 @@ pub(crate) fn evaluate_weighted_mac(
     }
 
     if bias > 0 {
-        pos.push(sk.create_trivial_radix::<u64, SignedRadixCiphertext>(bias.unsigned_abs(), acc_blocks));
+        pos.push(
+            sk.create_trivial_radix::<u64, SignedRadixCiphertext>(bias.unsigned_abs(), acc_blocks),
+        );
     } else if bias < 0 {
-        neg.push(sk.create_trivial_radix::<u64, SignedRadixCiphertext>(bias.unsigned_abs(), acc_blocks));
+        neg.push(
+            sk.create_trivial_radix::<u64, SignedRadixCiphertext>(bias.unsigned_abs(), acc_blocks),
+        );
     }
 
     let p = if pos.is_empty() {
@@ -121,7 +123,8 @@ pub(crate) fn evaluate_weighted_mac(
     if neg.is_empty() {
         p
     } else {
-        let n = sk.unchecked_sum_ciphertexts_vec_parallelized(neg)
+        let n = sk
+            .unchecked_sum_ciphertexts_vec_parallelized(neg)
             .unwrap_or_else(|| sk.create_trivial_zero_radix(acc_blocks));
         sk.sub_parallelized(&p, &n)
     }
@@ -135,7 +138,7 @@ mod tests {
     fn test_mac_cache_widths() {
         let mut g1 = BTreeMap::new();
         g1.insert(3, vec![0, 1]); // k=2, in_bits=2 => sum_bits = 3 => value_blocks(3, 7) = 2
-        g1.insert(-5, vec![2]);   // k=1, in_bits=2 => sum_bits = 2 => value_blocks(2, 7) = 2
+        g1.insert(-5, vec![2]); // k=1, in_bits=2 => sum_bits = 2 => value_blocks(2, 7) = 2
         let widths = mac_cache_widths([&g1], 2, 7);
         assert_eq!(widths, [2].into_iter().collect());
     }
@@ -149,8 +152,8 @@ mod tests {
 
         let mut groups = BTreeMap::new();
         groups.insert(3, vec![0, 2]); // 3 * (3 + 2) = 15
-        groups.insert(-2, vec![1]);   // -2 * (-1) = 2
-        let bias = -5;                // cleartext: 15 + 2 - 5 = 12
+        groups.insert(-2, vec![1]); // -2 * (-1) = 2
+        let bias = -5; // cleartext: 15 + 2 - 5 = 12
 
         let widths = mac_cache_widths([&groups], 3, 7);
         let cache = WidthCache::build(&sk, &encrypted, &widths);
