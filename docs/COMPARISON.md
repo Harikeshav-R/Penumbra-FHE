@@ -136,7 +136,7 @@ Stated in advance, and to be restated alongside any published result.
 | Phase-6 sklearn | 40.56 s | 0.51 s | 79.8x |
 | Phase-7 faces | 370.55 s | 2.30 s | 161.1x |
 
-*(Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`, via [`docs/BENCHMARKS.md` Table A](./BENCHMARKS.md#table-a-latency-wall-clock-per-sample). Means over N = 2 samples in `--release`, Apple M3 Pro, FFT64Neon HAL; each mean includes the first, cold sample. Ratios derive from unrounded JSON means (e.g. 41.2x, 153.0x). The logreg ordering is contradicted by Criterion — see [Logreg timing reconciliation](./BENCHMARKS.md#logreg-timing-reconciliation).)*
+*(Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`, via [`docs/BENCHMARKS.md` Table A](./BENCHMARKS.md#table-a-latency-wall-clock-per-sample). Means over N = 2 samples in `--release`, Apple M3 Pro, FFT64Neon HAL; each mean includes the first, cold sample. Ratios derive from unrounded JSON means (e.g. 41.2x, 153.0x); dividing the 2-decimal rounded table values yields 41.1x and 152.9x due to intermediate rounding. The logreg ordering is contradicted by Criterion — see [Logreg timing reconciliation](./BENCHMARKS.md#logreg-timing-reconciliation).)*
 
 ### Accuracy
 
