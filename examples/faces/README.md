@@ -34,7 +34,7 @@ The 16×16 downsample is deliberate: FHE cost ≈ number of bootstraps, here
 `CONV_CH × OUT_H × OUT_W = 8 × 4 × 4 = 128` requant PBS/sample — comparable to the digit CNN's
 108, so a committed golden sample stays feasible (minutes, not hours). This example contains
 **no cryptography** — only a model graph and quantized weights; the crypto lives entirely in the
-`runtime/` crate.
+backend crates (`crates/penumbra-tfhe`, `crates/penumbra-ckks`).
 
 ## Results (honest, not headline)
 
@@ -48,6 +48,24 @@ The 16×16 downsample is deliberate: FHE cost ≈ number of bootstraps, here
 Full numbers and methodology are in [`docs/BENCHMARKS.md`](../../docs/BENCHMARKS.md). The gap is
 the cost of capping activations at a single 2-bit block (`MESSAGE_BITS`, the hard TFHE-backend limit)
 on an 8-way task from tiny 16×16 inputs.
+
+## Run it (one command)
+
+```bash
+uv run python examples/faces/run.py            # [--model KEY] [--samples N] [--backend tfhe|ckks]
+```
+
+Prerequisite is `uv sync` only: it builds the PyO3 extension from source and requires no network
+access and no `ml` extra. The command replays the committed fixture's pre-quantized `test_inputs`
+in-process through keygen → encrypt → evaluate → decrypt via `penumbra.client.run_encrypted`.
+Under TFHE (default), the decrypted outputs are checked bit-for-bit against the quantized-cleartext
+reference `evaluate_graph_int`, exiting with code 1 on any mismatch (`AGENTS.md` §1.1). Under CKKS,
+evaluation is report-only (max |err| and label agreement) and requires a nightly source build
+(`RUSTUP_TOOLCHAIN=nightly uv run --with "maturin>=1.9,<2.0" maturin develop --release --features ckks`)
+executed with `uv run --no-sync python ...`; the formal CKKS gate is the Rust golden against
+declared bounds in `crates/penumbra-ckks/src/bounds.rs`.
+Expected wall-clock latency is ~371 s/sample under TFHE (`classic` profile), measured on Apple M3 Pro
+(`docs/BENCHMARKS.md`).
 
 ## Regenerating
 

@@ -4,8 +4,8 @@ A runnable demo of Penumbra-FHE's deployment model (`PROJECT.md` §11, `ROADMAP.
 encrypted inference across a **real process boundary**, where the server evaluates the model
 on ciphertext and **never sees the plaintext input/output or the secret key**.
 
-This example contains **no cryptography** — the crypto lives entirely in the `runtime/` crate.
-The demo just orchestrates the roles.
+This example contains **no cryptography** — the crypto lives entirely in the backend crates
+(`crates/penumbra-tfhe`, `crates/penumbra-ckks`). The demo just orchestrates the roles.
 
 ## What it shows
 
@@ -19,13 +19,13 @@ The demo just orchestrates the roles.
 └────────────────────────┘                    └─────────────────────────┘
 ```
 
-Passing a `KeySet` to `model.predict_encrypted(x, keys=ks)` selects the **split** path: the
-Python bridge drives the runtime's `encrypt` (client) → `serve` (server) → `decrypt` (client)
-binaries as *separate processes* over files. The `serve` process is handed only the public
-`server.key`, the graph, and the encrypted inputs — it is structurally unable to decrypt. The
-keys are generated once and **reused** across inferences (keygen is the expensive per-model
-step). A real deployment swaps the local `serve` process for an RPC to a remote server, with
-the Python side unchanged.
+The demo exercises the **split** path: the client encrypts and decrypts in-process via
+`penumbra._penumbra` and spawns `examples/client_server/server.py` as a separate Python process
+over files. The server process receives only the public `server.key`, the serialized graph,
+and the input ciphertext files (`demo.py:62-90`) — it is structurally unable to decrypt.
+The keys are generated once and **reused** across inferences (keygen is the expensive per-model
+step). A real deployment swaps the local server process for an RPC to a remote server, with
+the client interface unchanged.
 
 The demo verifies the **golden invariant** (`AGENTS.md` §1.1) on the `tfhe` backend: the
 decrypted output equals the quantized-cleartext oracle

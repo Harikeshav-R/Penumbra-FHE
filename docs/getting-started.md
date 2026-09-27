@@ -76,6 +76,32 @@ To see a simulated untrusted server evaluating ciphertext without access to the 
 ```bash
 uv run python examples/client_server/demo.py
 ```
+## Run the examples
+
+Each example directory includes a self-contained runner that replays the committed test fixtures
+in-process under FHE (keygen → encrypt → evaluate → decrypt) and validates results against the
+quantized-cleartext oracle:
+
+```bash
+# MNIST digit classification (CNN, logistic regression, MLP):
+uv run python examples/mnist/run.py
+
+# Olivetti face recognition CNN:
+uv run python examples/faces/run.py
+
+# Wisconsin Breast Cancer tabular MLP:
+uv run python examples/tabular/run.py
+
+# Wisconsin Breast Cancer tree ensembles (Random Forest, XGBoost):
+uv run python examples/trees/run.py
+```
+
+See the example directories for detailed walkthroughs, architecture diagrams, and reproduction commands:
+- [MNIST Examples](https://github.com/Harikeshav-R/Penumbra-FHE/tree/main/examples/mnist)
+- [Faces Example](https://github.com/Harikeshav-R/Penumbra-FHE/tree/main/examples/faces)
+- [Tabular MLP Example](https://github.com/Harikeshav-R/Penumbra-FHE/tree/main/examples/tabular)
+- [Tree Ensembles Example](https://github.com/Harikeshav-R/Penumbra-FHE/tree/main/examples/trees)
+
 
 ## Optional: CKKS Backend
 
