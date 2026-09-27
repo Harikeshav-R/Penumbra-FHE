@@ -79,7 +79,7 @@ cnn 4.0, QAT 10, digits/ONNX 38, faces 74, in quantized-integer logit units. On 
 fixtures (`docs/results/phase12-4-comparison.json`) the post-fix values are cnn 3, QAT 28,
 digits/ONNX 35, faces 74.
 
-Keys: TFHE server key 114.84 MiB; CKKS server key 1,782.50 MiB (1.74 GiB).
+Keys: TFHE server key 114.84 MB; CKKS server key 1,782.50 MB (1.74 GiB).
 
 ### 2.3 Defects found in the evidence (fixed by Phase 13 onward)
 
