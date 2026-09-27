@@ -11,6 +11,7 @@ pub mod backend;
 pub mod encrypt;
 pub mod keys;
 pub mod ops;
+pub(crate) mod width;
 
 pub use backend::TfheBackend;
 pub use encrypt::{

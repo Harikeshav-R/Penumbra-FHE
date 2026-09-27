@@ -35,6 +35,7 @@ pub mod argmax;
 pub mod compare;
 pub mod concat;
 pub mod conv2d;
+pub(crate) mod mac;
 pub mod linear;
 pub mod pool;
 pub mod requant;
