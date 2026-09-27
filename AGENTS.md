@@ -9,6 +9,13 @@
 > [`docs/BACKENDS.md`](./docs/BACKENDS.md) (the backend boundary and per-backend
 > correctness). This file does not repeat them — it tells you how to behave while executing
 > them.
+>
+> **Current work — the paper track (`ROADMAP.md` Phases 13–19):** the project is producing a
+> research paper comparing TFHE and CKKS, with Penumbra as the platform. Before touching any
+> task in those phases, read [`docs/PAPER.md`](./docs/PAPER.md). It holds the goal, the
+> starting evidence and known defects, prior work, the settled decision register (D1–D21),
+> claim-wording rules, and guardrails. Its decisions are the owner's; do not reopen or
+> deviate from one without asking.
 
 ---
 
@@ -309,7 +316,7 @@ penumbra-fhe/
 │   └── penumbra-bench/                   # the shared comparison harness
 ├── examples/{mnist,faces}/               # use cases — graphs only, no crypto
 ├── tests/                                # golden exactness, conformance, unsupported-op
-└── docs/                                 # BACKENDS, COMPARISON, IR-SPEC, SUPPORTED-OPS, ...
+└── docs/                                 # BACKENDS, COMPARISON, IR-SPEC, SUPPORTED-OPS, PAPER (paper-track plan), ...
 ```
 
 Until that refactor lands, all Rust code lives in `runtime/src/` (`keys.rs · ir.rs · ops/ ·

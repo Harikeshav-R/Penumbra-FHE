@@ -23,6 +23,12 @@
   of the still-unstarted Phases 10–11, because the scheme comparison it produces is the
   current priority. It was appended rather than inserted so that every existing "Phase N"
   citation — in these docs and in source comments — stays valid. See the dependency graph.
+- **Phases 13–19 are the paper track.** They carry out a research paper comparing TFHE and
+  CKKS, with Penumbra as the experimental platform. Every decision behind them — and the
+  evidence, prior work, and guardrails — is recorded in [`docs/PAPER.md`](./docs/PAPER.md).
+  **Read it before starting any of these phases.** Its decisions (D1–D21) are settled; only
+  the owner can reopen one. The paper's LaTeX source lives in a separate repository; these
+  phases hold only the library changes, measurements, and publication steps.
 
 ### Phase overview
 
@@ -41,6 +47,13 @@
 | 10 | Performance & params | Profiling, PBS reduction, param tuning | 2 weeks |
 | 11 | Hardening & release | Docs, tests, packaging, v1.0 | 2 weeks |
 | 12 | Second backend (CKKS) & scheme comparison | Both backends run the same models under one harness; published comparison numbers | 4 weeks |
+| 13 | Evidence audit | Every published number traceable; logreg timing contradiction explained | 1 week |
+| 14 | TFHE linear-path spike + per-tensor radix width | Bit-exact TFHE with right-sized radix; before/after numbers | 2 weeks (time-boxed) |
+| 15 | Harness & protocol hardening | Criterion-canonical latency, peak memory, PBS split, pre-declared CKKS bounds, security estimates | 2 weeks |
+| 16 | Full runs & external calibration | Final results JSON on a frozen commit; Concrete-ML calibration row | 1 week |
+| 17 | Paper writing | Complete draft within the venue page limit (separate repo) | 4–6 weeks (setup/related work alongside 14–16) |
+| 18 | External review | Feedback from a professor and upstream maintainers, addressed | 2–4 weeks |
+| 19 | Publication & artifact | ePrint preprint, Zenodo DOI, WAHC 2027 submission | 1 week + venue wait |
 
 ---
 
@@ -664,6 +677,451 @@ Keep this **mechanical**. It is a boundary-drawing exercise, not a rewrite.
 
 ---
 
+## Phase 13 — Evidence Audit: Doc Fixes & Timing Reconciliation
+
+**Goal:** Every number the paper could cite is correct, current, and traceable to a committed
+results file and commit. The logreg timing contradiction is explained in writing. No new
+measurements yet; this phase repairs the evidence base inherited from Phase 12.
+
+> **Read first:** [`docs/PAPER.md`](./docs/PAPER.md) §2.3 (the six defects) and D6.
+> Branch: `docs/<short-description>` or `fix/<short-description>`.
+
+### Tasks
+
+- [ ] **Stale CKKS errors.** Replace the pre-fix CKKS error table in `docs/NOTES-ckks.md`
+      (digits 188, faces 105, cnn 15.3) with the post-fix values from
+      `docs/results/phase12-4-comparison.json` (cnn 4.0, QAT 10, digits/ONNX 38, faces 74).
+      Alternatively keep the old table, explicitly labelled as pre-fix history, with the fix
+      commit (`3f6bd689`, floor-midpoint correction in
+      `crates/penumbra-ckks/src/ops/polymap.rs`) named.
+- [ ] **Wrong "0 bootstraps" prose.** Correct `docs/COMPARISON.md` Discussion §2 (line ~180 at
+      `ec06e73`). TFHE linear layers are not PBS-free: the measured counters show 48,888 PBS
+      for digits `Conv2d` and 19,137 for `Linear` (`docs/BENCHMARKS.md` Table B;
+      `crates/penumbra-tfhe/tests/measured_pbs.rs`). Attribute them to radix carry
+      propagation.
+- [ ] **Mismatched runs.** The same prose quotes 338 s / 287 s for digits `Conv2d`/`Linear`,
+      but Table B shows 149.2 s / 51.5 s, and Table A's total is 222.3 s. Identify which run
+      and results JSON each figure came from. Make every figure in `docs/COMPARISON.md`,
+      `docs/BENCHMARKS.md`, and `docs/NOTES-*.md` cite one named JSON file in `docs/results/`
+      plus its commit. Remove or relabel any figure that can't be traced.
+- [ ] **Explain the logreg timing contradiction.** Table A (per-sample report, N = 2) gives
+      TFHE 0.521 s < CKKS 0.647 s. The Criterion check (`docs/BENCHMARKS.md`, "Variance check")
+      gives TFHE 488.8 ms [470, 510] > CKKS 350.4 ms [347, 354], with non-overlapping CIs.
+      Determine exactly what each path times:
+      - key preparation or DFT-domain key loading;
+      - `build_op`;
+      - thread-pool warm-up and first-iteration effects;
+      - thread counts;
+      - whether the report's N = 2 includes a cold first sample.
+      Reproduce both on the pinned M3 Pro in `--release`, and write the explanation into
+      `docs/BENCHMARKS.md`.
+- [ ] **Mark the logreg verdict provisional.** Until Phase 16 produces Criterion-canonical
+      numbers, the claim "TFHE wins on shallow models" in `docs/COMPARISON.md` Verdict (line
+      ~204 at `ec06e73`) is unproven. Mark it provisional with a pointer to this phase.
+- [ ] **State the sample size.** Note in `docs/COMPARISON.md` that current accuracy figures use
+      N = 2 samples and are superseded by the Phase 15–16 protocol.
+- [ ] **Broken table anchors.** `mkdocs build` reports that four links from
+      `docs/COMPARISON.md` to `docs/BENCHMARKS.md` Tables A–D point to anchors that don't
+      exist. Fix the anchors so readers land on the cited table.
+
+### Exit Criteria
+
+- Every numeric claim in `docs/COMPARISON.md`, `docs/BENCHMARKS.md`, `docs/NOTES-ckks.md`, and
+  `docs/NOTES-tfhe.md` names its source results file and commit, or is removed.
+- The cause of the logreg disagreement is written down with evidence from a reproduction.
+- No code change to any backend or to `penumbra-core` in this phase (a harness bug found during
+  the reconciliation is fixed in Phase 15, under that phase's rules).
+- `uv run mkdocs build --strict` passes.
+
+### Pitfalls
+
+- **Picking the favourable number.** The job is to explain the gap, not to choose whichever
+  path supports the existing verdict.
+- **Overwriting history.** Pre-fix numbers can stay if they are labelled. Deleting them loses
+  the before/after evidence D17 relies on.
+
+---
+
+## Phase 14 — TFHE Linear-Path Spike & Per-Tensor Radix Width
+
+**Goal:** Remove the main implementation confound on the TFHE side. Today every value in a
+model is an 11-block (22-bit) radix ciphertext on digits, sized to the widest accumulator, so
+every multiply-add pays carry-propagation PBS across all blocks. After this phase each tensor
+has the width its bit-width analysis requires. TFHE stays **bit-for-bit exact**, and both the
+pre-fix and post-fix numbers are recorded.
+
+> **Read first:** [`docs/PAPER.md`](./docs/PAPER.md) §2.4 (why TFHE is slow here), D14
+> (design, resolved), D17 (time box and before/after), §6 (guardrails).
+> **Time box: 2 weeks total, spike included. Freeze at the end regardless of the gain.**
+> Branch: `perf/tfhe-per-tensor-radix`.
+
+### Tasks
+
+#### 14.0 — Spike (≤ 2 days, throwaway)
+
+- [ ] Write a throwaway microbenchmark in `penumbra-tfhe` (not merged) that runs, in
+      `--release` on the pinned M3 Pro:
+      - one digits `Conv2d` output neuron (a 9-term weighted MAC + bias);
+      - one digits `Linear` output neuron (a 108-term weighted MAC + bias).
+      Use the real quantized weights from `examples/mnist/phase5_digits_fixture.json`.
+- [ ] Measure three variants, recording wall-clock and measured PBS for each:
+      - **(a) baseline:** today's `evaluate_weighted_mac`
+        (`crates/penumbra-tfhe/src/ops/mod.rs`), with every operand at the global
+        `num_blocks = 11`;
+      - **(b) per-tensor width:** inputs at their `propagate_bit_widths` width, sign-extended
+        only as far as the accumulator needs;
+      - **(c) = (b) + deferred carries:** `unchecked_*` adds/scalar-muls with one propagate
+        once the carry space is exhausted.
+- [ ] Check that every variant decrypts to exactly the reference value.
+- [ ] Record the results and the decision in `docs/NOTES-tfhe.md`. Deferred carries go into
+      14.1 **only if** (c) beats (b) by ≥ 1.2×.
+
+#### 14.1 — Per-tensor radix width in `penumbra-tfhe`
+
+- [ ] Derive per-tensor widths inside the backend from
+      `penumbra_core::propagate_bit_widths` (`crates/penumbra-core/src/bitwidth.rs`). Convert
+      bits to blocks with `MESSAGE_BITS` and include sign handling. **No IR field, no schema
+      bump, no `penumbra-core` change.**
+- [ ] Encrypt inputs at the input tensor's width (`crates/penumbra-tfhe/src/encrypt.rs`). The
+      ciphertext wire format already records its block count; confirm that decrypt and the
+      scheme header still validate.
+- [ ] `Linear`/`Conv2d`: sign-extend operands to the accumulator width only where the MAC
+      needs it, then evaluate the MAC at that width.
+- [ ] `Requant`/`Activation`: narrow to the output width after the lookup.
+- [ ] `Add`, `Concat`, `Pool`, `Argmax`, `Compare`, `Split`: align operand widths explicitly.
+      Never rely on implicit width equality.
+- [ ] Add deferred carries only if 14.0 passed the ≥ 1.2× threshold.
+- [ ] Keep `Graph::num_blocks` and `check_graph_bit_width_budget` as the model-level ceiling
+      and the loud over-budget failure (`AGENTS.md` §1.3). Per-tensor width must never exceed
+      it.
+- [ ] **Tests:**
+      - every TFHE golden test stays green, **bit-for-bit and unedited**;
+      - the property/fuzz corpus stays green;
+      - add a regression test showing that a narrow tensor (e.g. a 2-bit ReLU output) is
+        carried at its own width, not at `num_blocks`;
+      - `measured_pbs.rs` still passes.
+- [ ] **Before/after numbers:**
+      - the "before" numbers are the existing `docs/results/phase12-4-comparison.json` and
+        Phase 10 JSONs; **never overwrite them**;
+      - write the "after" run to a new file, e.g. `docs/results/phase14-tfhe-per-tensor.json`,
+        produced by `penumbra-bench` on the pinned machine;
+      - record the per-model speedup and the PBS reduction in `docs/NOTES-tfhe.md` and
+        `docs/PERFORMANCE.md`.
+- [ ] Update `docs/BACKENDS.md` if the TFHE backend's internal width model is described there.
+
+### Exit Criteria
+
+- TFHE is bit-for-bit exact on every committed model; golden tests unedited and green.
+- The diff touches only `crates/penumbra-tfhe/`, its tests, and docs. **No IR, `penumbra-core`,
+  Python, or CKKS change.**
+- Pre-fix and post-fix TFHE latency and PBS are both committed as separate results files.
+- `cargo fmt`, `cargo clippy -D warnings` clean.
+
+### Pitfalls
+
+- **Changing `MESSAGE_BITS` or using `MESSAGE_4_CARRY_4`.** Rejected: it changes the IR's
+  `clamp_lut` domain and the meaning of `num_blocks`, a Layer-2 change made for a backend
+  reason (`docs/PAPER.md` D14).
+- **Approximate rounding.** Concrete-ML-style roundPBS with a nonzero error probability
+  breaks the bit-exact gate. Forbidden (`AGENTS.md` §1.1).
+- **Optimizing past the time box.** The finding is how far one implementation choice moves the
+  number (D17), not reaching parity with CKKS.
+- **Sign extension bugs.** Signed radix widening must preserve two's-complement value. When
+  the golden test fails, debug the cleartext width derivation first.
+
+---
+
+## Phase 15 — Harness & Protocol Hardening
+
+**Goal:** `penumbra-bench` produces every metric the paper needs, through **one code path for
+both backends**. CKKS bounds are declared before any test-set run. Both parameter sets have a
+security estimate from the same tool.
+
+> **Read first:** [`docs/PAPER.md`](./docs/PAPER.md) D3, D6, D7, D10, D16, D19.
+> Branch: `feat/bench-paper-metrics` (and `test/ckks-calibrated-bounds` for the bounds work, if
+> split).
+
+### Tasks
+
+- [ ] **Criterion as the only source of headline latency (D6).**
+      - Criterion benches in `penumbra-bench` for every model × backend, ≥ 10 samples, using
+        the Phase 13 explanation to exclude one-time setup consistently for both backends.
+      - Emit median and 95% CI into the results JSON.
+      - Pin and record the thread count (`RAYON_NUM_THREADS`), machine, OS, rustc version, HAL
+        backend, and commit in every output.
+      - The per-sample report path keeps the per-op breakdown and cost proxies only, and is
+        labelled that way.
+- [ ] **Peak server memory (D10).** Measure peak RSS of server-side evaluation (keys loaded +
+      eval) per model per backend, in a separate process per measurement so runs don't
+      contaminate each other. Add it to the results JSON and to `docs/BENCHMARKS.md` Table C.
+- [ ] **TFHE PBS split (D16).** Report **lookup PBS** (one per logical table lookup in
+      `Requant`, `Activation`, `Compare`, `Argmax`) and **carry PBS** (measured total − lookup
+      PBS) per op and per model. Add both to the JSON and the cost-proxy table.
+- [ ] **Calibration split for CKKS bounds (D7).**
+      - Extend the committed fixtures (Python/Layer-3 data only; no IR change) with a
+        calibration set **separate from** the test inputs.
+      - Fix the margin rule before any test run: bound = p99(calibration |err|) × margin, with
+        the margin value committed first.
+      - Recompute the bounds in `crates/penumbra-ckks/src/bounds.rs` with a derivation comment
+        per model.
+      - The golden tests keep asserting at those bounds.
+- [ ] **CKKS accuracy metrics (D7).**
+      - **Label-flip rate** vs `evaluate_graph_int`.
+      - The |err| distribution relative to each sample's **top-2 logit margin** (median, p95,
+        max).
+      - Absolute |err| distribution.
+      - Emitted per model into the results JSON.
+- [ ] **Evaluation protocol (D3).**
+      - Harness modes for: CKKS encrypted over the **full test split**; TFHE bit-exact
+        spot-check on **n = 30** samples per model (fixed, seeded selection).
+      - TFHE full-test-set accuracy computed in cleartext via the quantized reference.
+      - Float and quantized accuracy on the full test split (`docs/MODEL-ZOO.md` columns).
+- [ ] **Security estimates (D19).**
+      - Run the [lattice-estimator](https://github.com/malb/lattice-estimator) (Sage) on the
+        TFHE `classic` parameter set (both its LWE and GLWE components) and on the CKKS set
+        (N = 16384, log q = 360, ternary secret, the configured error distribution).
+      - Commit the script and its output, and record the estimates in `docs/NOTES-tfhe.md`,
+        `docs/NOTES-ckks.md`, and `SECURITY.md`.
+      - **Do not retune** if they differ; report both.
+- [ ] Update `docs/BENCHMARKS.md` (method section) and `docs/COMPARISON.md` (Method, Metrics)
+      to describe the new protocol.
+
+### Exit Criteria
+
+- One `penumbra-bench` invocation per backend emits: Criterion latency (median + CI), peak RSS,
+  key/ciphertext sizes, cost proxies (with the TFHE PBS split), and accuracy metrics. Both
+  backends go through the same code path.
+- CKKS bounds are derived from the calibration split. The derivation is committed **before**
+  the Phase 16 test-set runs.
+- Security estimates for both parameter sets are committed.
+- TFHE golden bit-exact and CKKS golden at the new bounds are green; fmt/clippy and ruff/black
+  clean; `mkdocs build --strict` passes.
+
+### Pitfalls
+
+- **Peeking at the test set while setting bounds.** Any look at test-set CKKS error before the
+  bounds are committed invalidates D7.
+- **Backend-specific harness code.** Metrics collected differently per backend reintroduce the
+  two-measurement-path problem. Instrument at the shared seam.
+- **RSS contamination.** Measuring several models in one process reports the maximum, not each
+  model's own peak.
+
+---
+
+## Phase 16 — Full Comparison Runs & External Calibration
+
+**Goal:** Produce the final numbers for the paper on a frozen commit, plus one external
+calibration row showing how Penumbra's TFHE compares with Concrete-ML on the same machine.
+
+> **Read first:** [`docs/PAPER.md`](./docs/PAPER.md) D3, D11, D12, D15, D17, D18, §6.
+> Branch: `docs/paper-results`.
+
+### Tasks
+
+- [ ] **Freeze** the library commit used for the runs and record its hash. Any later library
+      change means rerunning this phase.
+- [ ] **Run the full protocol** on the pinned M3 Pro, `--release`, machine otherwise idle,
+      pinned thread count, both backends, all committed models:
+      - Criterion latency;
+      - peak RSS;
+      - sizes and cost proxies;
+      - CKKS full-test-set accuracy metrics;
+      - TFHE n = 30 bit-exact spot-checks.
+      Commit the results as new JSON in `docs/results/`, e.g.
+      `docs/results/phase16-paper-final.json`.
+- [ ] **Trees (D11).**
+      - Run `phase8_trees` on TFHE.
+      - Capture the CKKS depth-budget rejection message verbatim as the finding.
+      - Word it as "leveled CKKS at these parameters".
+- [ ] **28×28 MNIST gate (D18).**
+      - Build a small 28×28 MNIST CNN: a new graph and fixture through the normal Layer-3 path
+        (`examples/mnist/`, Python quantization, ONNX); **no backend change**.
+      - Time one post-fix TFHE sample.
+      - If ≤ 10 min per sample: add it to the model suite, run the full protocol on it, and
+        pass its golden test on both backends.
+      - Otherwise: don't add it, and record the measured time as a stated scale limit in
+        `docs/COMPARISON.md` threats.
+- [ ] **Concrete-ML calibration (D15).**
+      - In a separate environment in the **paper repo** (not a Penumbra dependency), train or
+        import the same architectures and run Concrete-ML in **exact mode**: no
+        `rounding_threshold_bits`, `p_error` at its minimum.
+      - Record latency and accuracy on the same M3 Pro.
+      - Report it as a calibration row **outside** the controlled comparison.
+      - If it won't install on macOS arm64, record the failure and cite published numbers
+        (`docs/PAPER.md` §3) instead.
+- [ ] **Before/after TFHE (D17).** Tabulate pre-fix (Phase 12/13 results) vs post-fix (this
+      phase) TFHE latency and PBS per model. Compare the within-scheme change (N×) with the
+      cross-scheme gap (M×).
+- [ ] **Update the write-ups.**
+      - `docs/BENCHMARKS.md`: new tables with named source files.
+      - `docs/COMPARISON.md`:
+        - rewrite the Results and Verdict from the new numbers;
+        - replace the provisional logreg verdict;
+        - make the threats cover the single machine (D12), slot utilization ≤ 256/8192 (D10),
+          leveled CKKS (D11), and model scale (D18).
+
+### Exit Criteria
+
+- Every number the paper will use exists in a committed results JSON tied to the frozen
+  commit.
+- Golden gates pass on the frozen commit (TFHE bit-for-bit; CKKS at its pre-declared bounds).
+- `docs/COMPARISON.md` and `docs/BENCHMARKS.md` reflect the final numbers; `mkdocs build
+  --strict` passes.
+
+### Pitfalls
+
+- **A busy machine.** Background load skews Criterion. Run overnight, idle, on power.
+- **Mixing commits.** Numbers from before and after the freeze must not share a table unless
+  labelled as before/after.
+- **Treating the calibration row as a result.** Concrete-ML uses a different quantizer and
+  cannot be held to Penumbra's reference. It is context, not comparison.
+
+---
+
+## Phase 17 — Paper Writing
+
+**Goal:** A complete draft that fits the target venue's format, every number traceable to
+Phase 16 results. Written in a **separate repository** (`docs/PAPER.md` D20).
+
+> **Read first:** [`docs/PAPER.md`](./docs/PAPER.md) D1, D2, D21, §3 (prior work), §5
+> (claim-wording rules).
+> **Parallelism (D21):** the setup and related-work tasks start alongside Phase 14. Results and
+> discussion wait for Phase 16.
+
+### Tasks
+
+- [ ] Create the paper repository with the ACM `sigconf` template. Target WAHC-style limits:
+      12 pages including references (confirm against the WAHC 2027 CFP when published).
+- [ ] **Can start now (alongside Phase 14):**
+      - **Introduction:** motivation; the controlled-comparison contribution; the
+        positioning statement (`docs/PAPER.md` §3).
+      - **Background, written for non-FHE ML readers:**
+        - TFHE: LWE ciphertexts, PBS as table lookup, radix blocks and carry propagation;
+        - CKKS: slots, SIMD, levels/rescaling, polynomial approximation, BSGS rotations.
+      - **Setup & method:**
+        - the shared IR;
+        - the quantized reference and the two comparators;
+        - the harness;
+        - parameters and security-estimate methodology (numbers from Phase 15);
+        - the sample protocol (D3);
+        - the bound-declaration rule (D7).
+      - **Related work:** HE-MAN, Viand et al. SoK, HEIR, PEGASUS, CHIMERA, LOHEN, TT-TFHE,
+        Concrete-ML (Chillotti et al.), EVA, LoLa, CryptoNets. Pull citations from
+        `docs/PAPER.md` §3 and verify each against the primary source.
+- [ ] **After Phase 16:**
+      - **Results:**
+        - latency with CIs;
+        - peak memory;
+        - key and ciphertext sizes;
+        - the accuracy split (quantization error vs CKKS approximation error, label-flip rate,
+          margin-relative error);
+        - cost proxies with the TFHE lookup/carry PBS split;
+        - TFHE before/after;
+        - trees;
+        - the Concrete-ML calibration row.
+      - **Discussion:**
+        - when to pick which scheme (D1);
+        - how sensitive scheme comparisons are to implementation choices (D17);
+        - what batching would change (described, not claimed).
+      - **Threats to validity and limitations:** carry forward `docs/COMPARISON.md`'s list,
+        updated.
+- [ ] Generate every figure and table with a script from the Phase 16 results JSON. No
+      hand-typed numbers.
+- [ ] Apply the claim-wording rules (`docs/PAPER.md` §5) in a dedicated pass.
+- [ ] No AI/agent authorship attribution anywhere (`AGENTS.md` §8).
+
+### Exit Criteria
+
+- A complete draft within the page limit; every number generated from committed results.
+- A self-check against `docs/PAPER.md` §5 is done and recorded in the paper repo.
+
+### Pitfalls
+
+- **Letting results reshape the method.** The method section is written before the final
+  numbers exist. Change it afterwards only for factual corrections.
+- **Overclaiming the latency headline.** Scheme-level latency statements need the cost-proxy
+  backing and the post-fix TFHE (D2).
+
+---
+
+## Phase 18 — External Review
+
+**Goal:** At least one FHE-literate reader, plus upstream maintainers, check the work before
+reviewers do. This stands in for the supervisor the project does not have (`docs/PAPER.md`
+D9).
+
+### Tasks
+
+- [ ] Approach a professor at the owner's university working in cryptography, systems, or
+      security. Ask for an informal read of the draft and, if they are an active arXiv author
+      in `cs`, an **arXiv endorsement** for `cs.CR`.
+- [ ] Ask the **tfhe-rs / Zama community** (forum or Discord) one narrow question: is the
+      post-Phase-14 exact plaintext-weight dot product idiomatic, and is there a faster exact
+      path in tfhe-rs 1.8.1? Include a minimal code snippet.
+- [ ] Ask **poulpy's maintainers** one narrow question: are the CKKS usage choices (Option B
+      BSGS packing, `PowerBasis` polynomial evaluation, `DEFAULT_PARAMS` in
+      `crates/penumbra-ckks/src/params.rs`) reasonable for this workload?
+- [ ] Log every piece of feedback and its resolution (fixed, or rebutted with reasons) in the
+      paper repo.
+- [ ] Any feedback that requires a library change goes back through Phases 14–16 under their
+      rules. That includes a rerun if results change.
+
+### Exit Criteria
+
+- At least one external read completed; both upstream questions asked, and answers recorded or
+  noted as unanswered.
+- All feedback resolved or rebutted in writing.
+
+### Pitfalls
+
+- **Asking for a full review.** Upstream maintainers answer narrow questions; they won't
+  review a paper.
+- **Silently absorbing a methodology change.** If feedback changes a D-decision in
+  `docs/PAPER.md`, the owner decides and the register is updated.
+
+---
+
+## Phase 19 — Publication & Artifact
+
+**Goal:** The work is public, citable, and reproducible: an ePrint preprint, a DOI-backed
+artifact, and a WAHC 2027 submission.
+
+> **Read first:** [`docs/PAPER.md`](./docs/PAPER.md) D4/D8, D13, and the undergraduate
+> logistics.
+
+### Tasks
+
+- [ ] **Artifact (D13).**
+      - Tag the frozen Phase 16 commit in this repo.
+      - Archive it on Zenodo (GitHub release integration) for a DOI.
+      - The paper repo's script rebuilds every table and figure from this repo's
+        `docs/results/*.json`.
+      - The README states the exact toolchain: nightly rustc version, `poulpy-ckks 0.8.3`,
+        `tfhe 1.8.1`, the HAL backend, and the machine.
+- [ ] **IACR ePrint** submission (target Feb–Mar 2027). Only after Phases 14–16 are complete
+      (D8).
+- [ ] **arXiv `cs.CR`** once an endorsement is secured (Phase 18).
+- [ ] **WAHC 2027:**
+      - check the CFP when published (deadline, page limit, anonymization, dual-submission
+        policy regarding the ePrint preprint);
+      - format and submit;
+      - look for student registration or travel grants.
+- [ ] Link the preprint and DOI from `docs/COMPARISON.md` and `README.md`.
+- [ ] Tick the Definition-of-Done item on the published comparison once the preprint is live.
+
+### Exit Criteria
+
+- The ePrint is live; the artifact has a DOI; the WAHC 2027 submission is made (or a documented
+  decision to target a different venue).
+
+### Pitfalls
+
+- **Anonymization conflicts.** Check the venue's rules on preprints and on linking the public
+  repo before submitting.
+- **Artifact drift.** The DOI must point to the frozen Phase 16 commit, not a later `main`.
+
+---
+
 ## Cross-Cutting Practices (apply in every phase)
 
 - **The golden invariant is sacred:** every model, every phase — encrypted output matches the
@@ -702,12 +1160,23 @@ P0 ──▶ P1 ──▶ P2 ──▶ P3 ──▶ P4 ──▶ P5 ──▶ P6
 P12 internals (spike-first, each stage gates the next):
     12.0 spike ──▶ 12.1 workspace + Backend trait ──▶ 12.2 CKKS backend
                                                     ──▶ 12.3 shared harness ──▶ 12.4 numbers
+
+Paper track (docs/PAPER.md), after P11 and P12:
+    P13 evidence audit ──▶ P14 TFHE spike + per-tensor width ──▶ P15 harness & protocol
+        ──▶ P16 final runs + calibration ──▶ P17 results/discussion ──▶ P18 external review
+        ──▶ P19 publication & artifact
+    P17 setup + related work ── runs in parallel from P14 onward (no dependency on results)
+    P18 feedback needing a library change ──▶ back through P14–P16 (rerun)
 ```
 
 **P12 forks after P9 and runs ahead of P10–P11**, which are unstarted. It needs P9's
 client/server split and key management, and P6–P7's committed models, but nothing from P10 or
 P11. Note the feedback edge: **P10 (performance) inherits two backends to tune**, and P11's
 release scope now includes documenting both.
+
+**P13–P19 are sequential except P17's setup/related-work writing**, which starts alongside
+P14 because it depends on no result. P15's bounds derivation must be committed before P16
+touches the test set. P16 freezes the library commit that P19's artifact DOI points to.
 
 ## Definition of Done (the whole project)
 

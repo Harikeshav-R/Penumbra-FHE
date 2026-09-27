@@ -58,6 +58,7 @@ nav:
       - Model zoo: MODEL-ZOO.md
       - Benchmarks: BENCHMARKS.md
       - "TFHE vs CKKS comparison": COMPARISON.md
+      - "Paper plan: TFHE vs CKKS": PAPER.md
       - TFHE notes: NOTES-tfhe.md
       - CKKS notes: NOTES-ckks.md
       - Development: DEVELOPMENT.md
