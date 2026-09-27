@@ -119,3 +119,7 @@ required-features = ["ckks"]
 [[test]]
 name = "ckks_primitives"
 required-features = ["ckks"]
+
+[[test]]
+name = "ckks_golden_tabular_mlp"
+required-features = ["ckks"]

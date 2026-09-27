@@ -14,13 +14,8 @@ use penumbra_core::backend::EvalCtx;
 use penumbra_core::ir::Graph;
 use serde_json::Value;
 
-fn as_i64_vec(v: &Value) -> Vec<i64> {
-    v.as_array()
-        .expect("array")
-        .iter()
-        .map(|x| x.as_i64().expect("int"))
-        .collect()
-}
+mod common;
+use common::as_i64_vec;
 
 #[test]
 fn ckks_within_declared_bound_on_every_accepted_property_corpus_model() {
