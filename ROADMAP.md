@@ -515,8 +515,8 @@ and a clear statement of scope.
 - [x] **CONTRIBUTING.md:** how to add an op (the canonical extension path: registry entry +
       impl per backend + bit-width rule + golden test) and how to add a backend.
       *Note:* file-level add-op and add-backend paths plus the release process.
-- [ ] Tag **v1.0**.
-      *Note:* pending: run CONTRIBUTING.md → Versioning & releases after merge to main.
+- [x] Tag **v1.0.0**.
+      *Note:* tagged `v1.0.0` following CONTRIBUTING.md release process after merge to main.
 
 ### Exit Criteria
 
