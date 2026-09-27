@@ -5,13 +5,13 @@ name = "penumbra-fhe"
 dynamic = ["version"]
 description = "Encrypted ML inference on ONNX models over pluggable FHE backends — load a model, run it under FHE, never write crypto code."
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "Harikeshav Rameshkumar" }]
 requires-python = ">=3.10,<3.13"
 keywords = ["fhe", "tfhe", "ckks", "homomorphic", "encryption", "onnx", "inference", "quantization"]
 classifiers = [
-    "Development Status :: 1 - Planning",
-    "License :: OSI Approved :: Apache Software License",
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -57,6 +57,9 @@ ml = [
 [project.urls]
 Homepage = "https://github.com/Harikeshav-R/Penumbra-FHE"
 Repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
+Documentation = "https://harikeshav-r.github.io/Penumbra-FHE/"
+Changelog = "https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Harikeshav-R/Penumbra-FHE/issues"
 
 # ---------------------------------------------------------------------------
 # Pin the `ml` extra's torch to the CPU build. The example generators only need a CPU
