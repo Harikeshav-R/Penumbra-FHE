@@ -15,3 +15,6 @@ pub const PHASE8_TANH: f64 = 35.0;
 pub const PHASE8_BRANCH: f64 = 66.0;
 pub const PHASE8_BN_CNN: f64 = 27.0;
 pub const PHASE8_GAP_CNN: f64 = 247.0;
+
+/// Property corpus (tests/fixtures/property_corpus.json): max over every accepted model and sample.
+pub const PROPERTY_CORPUS: f64 = 19.0;

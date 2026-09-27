@@ -125,4 +125,26 @@ fn every_committed_fixture_graph_reserializes_identically() {
             "IR drift detected on {rel_path}: Rust re-serialization differs from committed JSON"
         );
     }
+
+    // Also cover every model graph in the committed property corpus
+    let corpus_path = root.join("tests/fixtures/property_corpus.json");
+    let text = std::fs::read_to_string(&corpus_path)
+        .unwrap_or_else(|e| panic!("cannot read corpus at {}: {e}", corpus_path.display()));
+    let corpus: Value = serde_json::from_str(&text)
+        .unwrap_or_else(|e| panic!("invalid JSON in {}: {e}", corpus_path.display()));
+    let models = corpus["models"].as_array().expect("models array");
+    for model in models {
+        let name = model["name"].as_str().unwrap_or("unknown");
+        let committed_graph = &model["graph"];
+        let parsed_graph = Graph::from_json(&committed_graph.to_string()).unwrap_or_else(|e| {
+            panic!("failed to deserialize Graph from corpus model {name}: {e}")
+        });
+        let reserialized_json = parsed_graph.to_json();
+        let reserialized_val: Value = serde_json::from_str(&reserialized_json)
+            .unwrap_or_else(|e| panic!("invalid re-serialized JSON for corpus model {name}: {e}"));
+        assert_eq!(
+            reserialized_val, *committed_graph,
+            "IR drift detected on corpus model {name}: Rust re-serialization differs from committed JSON"
+        );
+    }
 }
