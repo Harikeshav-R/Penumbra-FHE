@@ -67,3 +67,19 @@ fn tree_ensemble_chained_compares_rejected_by_depth_budget() {
         "error must name budget exceeded: {err}"
     );
 }
+
+#[test]
+fn xgb_tree_ensemble_rejected_by_depth_budget() {
+    let text = include_str!("../../../examples/tabular/phase8_xgb_fixture.json");
+    let fx: serde_json::Value = serde_json::from_str(text).expect("valid fixture");
+    let graph = Graph::from_json(&fx["graph"].to_string()).expect("valid graph");
+
+    let backend = CkksBackend::new(DEFAULT_PARAMS);
+    let err = check_graph_depth_budget(&backend, &graph)
+        .expect_err("XGBoost tree ensemble must exceed CKKS depth budget");
+    assert!(err.contains("ckks"), "error must name backend: {err}");
+    assert!(
+        err.contains("budget exceeded"),
+        "error must name budget exceeded: {err}"
+    );
+}
