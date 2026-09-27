@@ -17,6 +17,11 @@ dist/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+site/
 
 # Virtual envs / uv
 .venv/
