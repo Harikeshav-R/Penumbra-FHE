@@ -17,14 +17,17 @@ mechanisms:
 
 - **Primary cost:** Programmable Bootstrapping (PBS). In shortint radix arithmetic,
   `runtime ≈ number of bootstraps` ([`PROJECT.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/PROJECT.md) §5).
-- **Radix carry propagation:** Each integer tensor element is decomposed across `num_blocks` radix
-  blocks (`MESSAGE_BITS = 2` bits per block). While scalar additions and plaintext-weight scalar
-  multiplications are homomorphic linear combinations, accumulating multi-block integers requires
-  carry propagation across block boundaries. Each carry propagation step issues approximately 2 PBS
-  operations per block.
-- **Scaling behavior:** Evaluation cost scales roughly quadratically with `num_blocks`: wider
-  accumulators require more blocks, which lengthens every carry-propagation chain and increases the
-  number of PBS operations per matrix multiply.
+- **Per-tensor radix sizing:** Each tensor is sized to the block count its Layer-2 derived
+  bit width requires (`value_blocks` for values, `signed_blocks` for accumulators), bounded
+  by the model-level ceiling `num_blocks` (Phase 14). Inputs arrive encrypted at `num_blocks`
+  and are trimmed on entry for free ($0$ PBS). Narrow tensors evaluate with substantially
+  shorter carry chains and fewer PBS operations.
+- **Radix carry propagation:** While scalar additions and plaintext-weight scalar
+  multiplications are homomorphic linear combinations, accumulating multi-block integers
+  requires carry propagation across block boundaries. Phase 14 defers carry propagation
+  across weight groups and applies progressive widening, cutting PBS operations by 33% to 70%.
+- **Scaling behavior:** Evaluation cost scales with each tensor's radix width. Per-tensor
+  radix widths yield an overall 2.37x speedup across the test suite compared to the uniform global radix.
 - **Lookup tables (LUTs):** Standalone nonlinearities and `Requant` operations issue 1 PBS per
   output block. For 2-bit activations (`act_bits = 2`), a `Requant` consumes exactly 1 PBS per
   activation element.
@@ -67,10 +70,10 @@ while requiring 2.6x to 3.4x larger evaluation keys (302–392 MB vs 114.84 MB).
 
 ### Radix Width (`num_blocks`)
 
-`num_blocks` is **never set by hand**; it is derived by `penumbra.bitwidth.minimal_num_blocks` to fit
-the widest accumulator or transient Requant peak in the graph. Reducing `num_blocks` is the single
-most effective lever for accelerating TFHE inference. Three parameters control it:
-
+`num_blocks` is **never set by hand**; it is derived by `penumbra.bitwidth.minimal_num_blocks` as the
+**model-level radix ceiling** (central bit-width budget) to fit the widest accumulator or transient
+Requant peak in the graph. In Phase 14, each tensor is sized to its derived bit width
+($\le \text{num\_blocks}$); `num_blocks` acts as the upper bound. Three parameters control it:
 1. **`input_bits`:** Graph input integer width. Reducing input bits from 4 to 2 or 3 directly
    narrows initial accumulators.
 2. **Per-layer `n_bits` (`weight_bits`):** Configured via `Model.quantize(..., n_bits=[w1, w2])`.
@@ -94,6 +97,28 @@ most effective lever for accelerating TFHE inference. Three parameters control i
 | `phase6_sklearn` | `linear0` output: 20 bits (4 in + 8 w + 6 fan-in + 2 guard) | `in=4, w=[8]` | 10 blocks (accuracy bound) |
 | `phase7_faces` | `conv0__requant` internal peak: 21 bits (`mult` up to 29) | `in=4, w=[6, 6]` | 11 blocks (accuracy bound) |
 
+
+#### Per-Tensor Radix Width Speedup (Phase 14)
+
+Comparing the uniform global radix baseline against per-tensor radix widths on an Apple M3 Pro
+(11 threads, 2 samples per model). Sources: `docs/results/phase14-tfhe-baseline.json` (`488f76c`) vs
+`docs/results/phase14-tfhe-per-tensor.json` (`b13d0af`):
+
+| Model | Baseline Eval (s) | Post-fix Eval (s) | Speedup | Baseline PBS | Post-fix PBS | PBS Reduction |
+|---|---:|---:|---:|---:|---:|---:|
+| `phase2_logreg` | 0.439 | 0.354 | **1.24x** | 137 | 91 | -33.6% |
+| `phase4_cnn` | 25.440 | 17.484 | **1.46x** | 9,104 | 6,134 | -32.6% |
+| `phase5_digits` | 215.055 | 87.534 | **2.46x** | 75,153 | 31,663 | -57.9% |
+| `phase5_qat` | 165.394 | 81.166 | **2.04x** | 56,470 | 28,558 | -49.4% |
+| `phase6_onnx` | 215.041 | 88.239 | **2.44x** | 75,153 | 31,663 | -57.9% |
+| `phase6_sklearn` | 41.131 | 15.422 | **2.67x** | 13,376 | 4,704 | -64.8% |
+| `phase7_faces` | 373.256 | 141.570 | **2.64x** | 128,571 | 50,559 | -60.7% |
+| `phase8_trees` | 10.914 | 5.200 | **2.10x** | 4,156 | 1,699 | -59.1% |
+| `phase8_branch` | 134.025 | 40.967 | **3.27x** | 47,202 | 14,157 | -70.0% |
+| `phase8_bn_cnn` | 204.966 | 100.924 | **2.03x** | 70,897 | 34,686 | -51.1% |
+| `phase8_gap_cnn` | 406.451 | 180.198 | **2.26x** | 139,388 | 65,629 | -52.9% |
+| `phase11_tabular_mlp` | 31.042 | 10.509 | **2.95x** | 10,351 | 3,615 | -65.1% |
+| **Total / Overall** | **1823.155** | **769.566** | **2.37x** | **629,958** | **273,158** | **-56.6%** |
 ### Activation Bit-Width (`act_bits`)
 
 Post-Requant activations are capped at `MESSAGE_BITS = 2` (values in $[0, 3]$). This is a hard

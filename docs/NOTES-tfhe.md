@@ -97,6 +97,57 @@ Measured with 7 timed runs per variant after 1 warm-up (11 threads, Apple M3 Pro
 - **R2:** $S(\text{winner}) / S(c) = 7.052 / 4.781 = 1.4752 \ge 1.20 \implies$ **deferred carries included**.
 - **Final decision:** `mac=b' deferred=yes`.
 
+### Width rules & representation
+
+Layer-2 bit-width analysis bounds each tensor value's magnitude: $|v| < 2^{\text{bits}}$. With $2$ bits per `shortint` radix block (`MESSAGE_BITS = 2`) and model ceiling $N = \text{num\_blocks}$:
+
+- **`value_blocks(bits, cap)`** $= \lceil(\text{bits} + 1) / 2\rceil$, clamped to $[1, \text{cap}]$. Adds 1 sign bit. Used for inputs and all intermediate tensors except linear accumulators.
+- **`signed_blocks(bits, cap)`** $= \lceil\text{bits} / 2\rceil$, clamped to $[1, \text{cap}]$. Used for `Linear` and `Conv2d` accumulators. *Proof:* bit-growth rule $\max(\text{sum\_bits}, \text{bias\_bits}) + 2$ yields $|\text{acc}| < 2^{m+1}$, fitting signed range $[-2^{m+1}, 2^{m+1}-1]$ in $m + 2 = \text{out\_bits}$ signed bits without an extra sign bit.
+- **`scalar_blocks(v, cap)`** $= \text{value_blocks}(\text{magnitude\_bits}(v), \text{cap})$. Sizing for plaintext comparison thresholds and clamp bounds.
+- **Input working width:** $\text{tensor\_blocks}(\text{cts}, \text{bits}, N) = \max_{x \in \text{cts}} \min(\text{actual\_blocks}(x), \text{value\_blocks}(\text{bits}, N))$. Graph inputs arrive encrypted at model ceiling $N$ and are trimmed for free ($0$ PBS) to their derived width on arrival.
+- **Resizing:** `resize(sk, ct, blocks)` returns `Cow::Borrowed` when widths match; trimming costs $0$ PBS, while sign-extension costs $1$ PBS (`cast_to_signed`).
+- **Ceiling:** every width is bounded above by `num_blocks`. When clamping bites, behaviour is identical to the global-radix baseline.
+
+### Core seam (`Backend::build_op_with_bits`)
+
+To inform Layer-1 op construction of Layer-2 derived bit widths without breaking backend neutrality or leaking crypto into Layer 2, `penumbra-core` added a default-implemented method:
+
+```rust
+fn build_op_with_bits(
+    &self,
+    spec: &OpSpec,
+    input_bits: &[usize],
+    output_bits: &[usize],
+) -> Result<Box<dyn Op<Self>>, String> {
+    self.build_op(spec)
+}
+```
+
+The topological eval loop passes each node its derived input/output bit widths in declaration order. Backends that ignore bit widths (e.g. CKKS) take the default; TFHE wraps the op with `WithWidths` to size radix blocks per tensor. Clients still encrypt inputs at `num_blocks`; the server trims oversized ciphertexts on arrival for free ($0$ PBS).
+
+### Before / after benchmark results (Phase 14)
+
+Measured across all 12 models in the test suite on an Apple M3 Pro (11 threads, 2 samples per model).
+Sources: pre-fix baseline `docs/results/phase14-tfhe-baseline.json` (`488f76c`) vs post-fix `docs/results/phase14-tfhe-per-tensor.json` (`b13d0af`):
+
+| Model | Baseline Eval (s) | Post-fix Eval (s) | Speedup | Baseline PBS | Post-fix PBS | PBS Reduction | Conv2d PBS Δ | Linear PBS Δ | Requant PBS Δ |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `phase2_logreg` | 0.439 | 0.354 | **1.24x** | 137 | 91 | -33.6% | - | -46 | - |
+| `phase4_cnn` | 25.440 | 17.484 | **1.46x** | 9,104 | 6,134 | -32.6% | -1920 | -1082 | +0 |
+| `phase5_digits` | 215.055 | 87.534 | **2.46x** | 75,153 | 31,663 | -57.9% | -31293 | -11333 | -864 |
+| `phase5_qat` | 165.394 | 81.166 | **2.04x** | 56,470 | 28,558 | -49.4% | -24804 | -3216 | +108 |
+| `phase6_onnx` | 215.041 | 88.239 | **2.44x** | 75,153 | 31,663 | -57.9% | -31293 | -11333 | -864 |
+| `phase6_sklearn` | 41.131 | 15.422 | **2.67x** | 13,376 | 4,704 | -64.8% | - | -8672 | - |
+| `phase7_faces` | 373.256 | 141.570 | **2.64x** | 128,571 | 50,559 | -60.7% | -59648 | -18492 | +128 |
+| `phase8_trees` | 10.914 | 5.200 | **2.10x** | 4,156 | 1,699 | -59.1% | - | -2390 | - |
+| `phase8_branch` | 134.025 | 40.967 | **3.27x** | 47,202 | 14,157 | -70.0% | - | -32117 | -464 |
+| `phase8_bn_cnn` | 204.966 | 100.924 | **2.03x** | 70,897 | 34,686 | -51.1% | -31968 | -4531 | +144 |
+| `phase8_gap_cnn` | 406.451 | 180.198 | **2.26x** | 139,388 | 65,629 | -52.9% | -71496 | -4071 | +256 |
+| `phase11_tabular_mlp` | 31.042 | 10.509 | **2.95x** | 10,351 | 3,615 | -65.1% | - | -6744 | +8 |
+| **Total / Overall** | **1823.155** | **769.566** | **2.37x** | **629,958** | **273,158** | **-56.6%** | | | |
+
+Every model preserves bit-for-bit exactness (`max_abs_err` unchanged across all runs).
+
 ## CI implication
 
 The golden test runs in the release CI job. Because per-sample FHE cost is high, the

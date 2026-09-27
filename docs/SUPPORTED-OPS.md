@@ -15,9 +15,10 @@ What differs is how each op is realized and what it costs; see
 [Backend support](#backend-support) below and [`docs/BACKENDS.md`](./BACKENDS.md).
 Validated end-to-end models: [`docs/MODEL-ZOO.md`](./MODEL-ZOO.md).
 
-Notation (**TFHE backend**, the reference): a value is carried as a **signed radix integer**
-of `num_blocks` blocks; under the default profile each block holds `MESSAGE_BITS = 2` bits, so
-the radix capacity is `num_blocks × 2` bits. `Linear`/`Conv` are *cheap* (plaintext-weight
+Notation (**TFHE backend**, the reference): a value is carried as a **signed radix integer**;
+no tensor exceeds `num_blocks` blocks (the model ceiling), and each tensor is sized to its derived
+bit width; under the default profile each block holds `MESSAGE_BITS = 2` bits, so the radix capacity
+ceiling is `num_blocks × 2` bits. `Linear`/`Conv` are *cheap* (plaintext-weight
 arithmetic, no bootstrap); `Activation`/`Requant`/`Compare` are *expensive* (one programmable
 bootstrap per value). Runtime ≈ number of bootstraps (`PROJECT.md` §5). The "TFHE realization"
 and bit-width columns in the tables below describe this backend specifically.

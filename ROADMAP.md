@@ -745,10 +745,10 @@ measurements yet; this phase repairs the evidence base inherited from Phase 12.
 ## Phase 14 — TFHE Linear-Path Spike & Per-Tensor Radix Width
 
 **Goal:** Remove the main implementation confound on the TFHE side. Today every value in a
-model is an 11-block (22-bit) radix ciphertext on digits, sized to the widest accumulator, so
-every multiply-add pays carry-propagation PBS across all blocks. After this phase each tensor
-has the width its bit-width analysis requires. TFHE stays **bit-for-bit exact**, and both the
-pre-fix and post-fix numbers are recorded.
+model is sized to the widest accumulator (e.g. 9-block (18-bit) radix on digits, 11-block on
+faces/branch), so every multiply-add pays carry-propagation PBS across all blocks. After this phase
+each tensor has the width its bit-width analysis requires. TFHE stays **bit-for-bit exact**, and both
+the pre-fix and post-fix numbers are recorded.
 
 > **Read first:** [`docs/PAPER.md`](./docs/PAPER.md) §2.4 (why TFHE is slow here), D14
 > (design, resolved), D17 (time box and before/after), §6 (guardrails).
@@ -759,61 +759,52 @@ pre-fix and post-fix numbers are recorded.
 
 #### 14.0 — Spike (≤ 2 days, throwaway)
 
-- [ ] Write a throwaway microbenchmark in `penumbra-tfhe` (not merged) that runs, in
+- [x] Write a throwaway microbenchmark in `penumbra-tfhe` (not merged) that runs, in
       `--release` on the pinned M3 Pro:
       - one digits `Conv2d` output neuron (a 9-term weighted MAC + bias);
       - one digits `Linear` output neuron (a 108-term weighted MAC + bias).
       Use the real quantized weights from `examples/mnist/phase5_digits_fixture.json`.
-- [ ] Measure three variants, recording wall-clock and measured PBS for each:
+- [x] Measure four variants, recording wall-clock and measured PBS for each:
       - **(a) baseline:** today's `evaluate_weighted_mac`
-        (`crates/penumbra-tfhe/src/ops/mod.rs`), with every operand at the global
-        `num_blocks = 11`;
-      - **(b) per-tensor width:** inputs at their `propagate_bit_widths` width, sign-extended
-        only as far as the accumulator needs;
-      - **(c) = (b) + deferred carries:** `unchecked_*` adds/scalar-muls with one propagate
-        once the carry space is exhausted.
-- [ ] Check that every variant decrypts to exactly the reference value.
-- [ ] Record the results and the decision in `docs/NOTES-tfhe.md`. Deferred carries go into
-      14.1 **only if** (c) beats (b) by ≥ 1.2×.
+        (`crates/penumbra-tfhe/src/ops/mod.rs`), with every operand at the global ceiling
+        `num_blocks = 9`;
+      - **(b) widen-once:** inputs at `acc_blocks`;
+      - **(b′) progressive widening:** groups summed at their minimum width and resized to `acc_blocks`;
+      - **(c) deferred carries on top of winner:** preshifted radix copies, block shifts, and deferred carry propagation.
+- [x] Check that every variant decrypts to exactly the reference value.
+- [x] Record the results and the decision in `docs/NOTES-tfhe.md` (`docs/results/phase14-spike-mac.json`).
+      b′ beat b (1.64x ≥ 1.05x), and c beat b′ (1.48x ≥ 1.20x) → `mac=b' deferred=yes`.
 
 #### 14.1 — Per-tensor radix width in `penumbra-tfhe`
 
-- [ ] Derive per-tensor widths inside the backend from
-      `penumbra_core::propagate_bit_widths` (`crates/penumbra-core/src/bitwidth.rs`). Convert
-      bits to blocks with `MESSAGE_BITS` and include sign handling. **No IR field, no schema
-      bump, no `penumbra-core` change.**
-- [ ] Encrypt inputs at the input tensor's width (`crates/penumbra-tfhe/src/encrypt.rs`). The
-      ciphertext wire format already records its block count; confirm that decrypt and the
-      scheme header still validate.
-- [ ] `Linear`/`Conv2d`: sign-extend operands to the accumulator width only where the MAC
-      needs it, then evaluate the MAC at that width.
-- [ ] `Requant`/`Activation`: narrow to the output width after the lookup.
-- [ ] `Add`, `Concat`, `Pool`, `Argmax`, `Compare`, `Split`: align operand widths explicitly.
+- [x] Derive per-tensor widths inside the backend from Layer-2 widths passed via `Backend::build_op_with_bits`
+      (D14 Amendment, owner decision 2026-09-27). Convert bits to blocks with `MESSAGE_BITS` and include sign handling.
+      **No IR field, no schema bump.**
+- [x] Input sizing: clients continue encrypting at model ceiling `num_blocks`, and the server trims oversized
+      inputs to the input tensor's width for free ($0$ PBS) on arrival (D14 Amendment).
+- [x] `Linear`/`Conv2d`: progressive widening across weight groups with deferred carry propagation.
+- [x] `Requant`/`Activation`: narrow to the output width after the lookup.
+- [x] `Add`, `Concat`, `Pool`, `Argmax`, `Compare`, `Split`: align operand widths explicitly.
       Never rely on implicit width equality.
-- [ ] Add deferred carries only if 14.0 passed the ≥ 1.2× threshold.
-- [ ] Keep `Graph::num_blocks` and `check_graph_bit_width_budget` as the model-level ceiling
-      and the loud over-budget failure (`AGENTS.md` §1.3). Per-tensor width must never exceed
-      it.
-- [ ] **Tests:**
+- [x] Add deferred carries (passed the ≥ 1.2× threshold at 1.48×).
+- [x] Keep `Graph::num_blocks` and `check_graph_bit_width_budget` as the model-level ceiling
+      and the loud over-budget failure (`AGENTS.md` §1.3). Per-tensor width must never exceed it.
+- [x] **Tests:**
       - every TFHE golden test stays green, **bit-for-bit and unedited**;
       - the property/fuzz corpus stays green;
-      - add a regression test showing that a narrow tensor (e.g. a 2-bit ReLU output) is
-        carried at its own width, not at `num_blocks`;
+      - add a regression test (`crates/penumbra-tfhe/tests/per_tensor_width.rs`) showing that a narrow
+        tensor (e.g. a 2-bit Requant output) is carried at 2 blocks, not at `num_blocks = 8`;
       - `measured_pbs.rs` still passes.
-- [ ] **Before/after numbers:**
-      - the "before" numbers are the existing `docs/results/phase12-4-comparison.json` and
-        Phase 10 JSONs; **never overwrite them**;
-      - write the "after" run to a new file, e.g. `docs/results/phase14-tfhe-per-tensor.json`,
-        produced by `penumbra-bench` on the pinned machine;
-      - record the per-model speedup and the PBS reduction in `docs/NOTES-tfhe.md` and
-        `docs/PERFORMANCE.md`.
-- [ ] Update `docs/BACKENDS.md` if the TFHE backend's internal width model is described there.
-
+- [x] **Before/after numbers:**
+      - committed pre-fix baseline `docs/results/phase14-tfhe-baseline.json` (commit `488f76c`);
+      - committed post-fix run `docs/results/phase14-tfhe-per-tensor.json` (commit `b13d0af`);
+      - recorded per-model speedup (2.37x overall, up to 3.27x) and PBS reduction (-56.6%) in
+        `docs/NOTES-tfhe.md` and `docs/PERFORMANCE.md`.
+- [x] Update `docs/BACKENDS.md` with `build_op_with_bits` and per-tensor budget notes.
 ### Exit Criteria
 
 - TFHE is bit-for-bit exact on every committed model; golden tests unedited and green.
-- The diff touches only `crates/penumbra-tfhe/`, its tests, and docs. **No IR, `penumbra-core`,
-  Python, or CKKS change.**
+- The diff touches only `crates/penumbra-tfhe/`, its tests, the approved `Backend::build_op_with_bits` seam in `penumbra-core` (D14 Amendment), and docs/benchmarks. **No IR, schema, Python, or CKKS change.**
 - Pre-fix and post-fix TFHE latency and PBS are both committed as separate results files.
 - `cargo fmt`, `cargo clippy -D warnings` clean.
 

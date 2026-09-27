@@ -89,6 +89,7 @@ what a general FHE API might look like. Every row below is a real call site.
 | key wire serialize | `keys.rs:45`, `:96` | `TaggedKey` over `bincode` | `TaggedKey` over `bincode` |
 | ciphertext (de)serialize | `wire.rs` / `encrypt.rs` | `TaggedCts` over `bincode` (shared Layer 2) | `TaggedCts` over `bincode` (shared Layer 2) |
 | budget preflight | `backend.rs:27` | `check_graph_bit_width_budget` | `check_graph_depth_budget` |
+| op build with derived widths | `eval.rs` (every node) | `Backend::build_op_with_bits` → per-tensor radix widths | default (ignores widths) |
 | op cost proxy | `ops/*.rs` | analytic `Op::cost` | analytic `Op::cost` |
 ### The two hard rows
 
@@ -190,7 +191,7 @@ layer named (`AGENTS.md` §1.3). They are not the same budget.
 
 | | TFHE | CKKS |
 |---|---|---|
-| The budget | radix capacity: `num_blocks × MESSAGE_BITS` bits | multiplicative depth / level budget, and scale precision |
+| The budget | model ceiling; each tensor carries only its derived width (`num_blocks × MESSAGE_BITS` bits ceiling) | multiplicative depth / level budget, and scale precision |
 | What consumes it | accumulator growth (`b + log2(N)`) | every ciphertext-plaintext multiply and every polynomial degree |
 | What restores it | `Requant` (a PBS) narrows back to `MESSAGE_BITS` | rescale, or bootstrapping |
 | Enforced by | `Backend::check_graph_budget` (radix check) | `Backend::check_graph_budget` (depth/scale check) |

@@ -110,8 +110,9 @@ Keys: TFHE server key 114.84 MB; CKKS server key 1,782.50 MB (1.74 GiB).
   equal weights, then one `scalar_mul_parallelized` per distinct weight. Rayon runs over output
   neurons and pixels.
 - **Radix width is global per model** (`Graph::num_blocks`, `crates/penumbra-core/src/ir.rs:43`),
-  sized to the widest accumulator. On digits every value, including 2-bit ReLU outputs, is an
-  11-block (22-bit) signed radix ciphertext.
+  sized to the widest accumulator. In the Phase-5 digits fixture `num_blocks = 9` (18-bit signed
+  radix; 11 blocks was used in older `phase12-4` fixtures, while faces and branch models use 11 blocks).
+  Every value, including 2-bit ReLU outputs, historically carried the full block width.
 - **Carry propagation dominates the bootstraps.** Measured PBS on digits (Table B,
   `docs/BENCHMARKS.md:254-256`): Conv2d 48,888, Linear 19,137, Requant 7,128. About 90% are carry
   PBS inside linear layers, not activation lookups. `crates/penumbra-tfhe/tests/measured_pbs.rs`
@@ -251,6 +252,11 @@ Each entry: the decision, then why. Rejected alternatives are listed where they 
      change the IR (§2.4). Also rejected: any approximate or probabilistic rounding
      (roundPBS-style with a nonzero error rate), which would break TFHE's bit-exact gate.
 
+  4. **Amendment (Phase 14, owner decision 2026-09-27):** Added a minimal backend-neutral core seam
+     `Backend::build_op_with_bits` to `penumbra-core`. Because `build_op(&OpSpec)` and
+     `Op::eval_multi(ctx, inputs)` cannot access the graph, Layer 2 passes derived bit widths at op
+     build time. Clients continue encrypting at `num_blocks`, and the server trims oversized inputs
+     on arrival for free ($0$ PBS), replacing client-side multi-width encryption.
   *Why:* every PBS today pays for 11 blocks when 1–5 would do. How much the fix gains is unknown
   (could be 2× or 10×), and it drives D17 and D18, so measure before building.
 
@@ -316,9 +322,10 @@ Each entry: the decision, then why. Rejected alternatives are listed where they 
 
 These restate `AGENTS.md` for the concrete temptations of this track:
 
-- **No IR change, no `penumbra-core` change for a backend reason.** In particular, do not change
-  `MESSAGE_BITS` and do not add per-tensor width fields to the IR. Widths are derived inside
-  `penumbra-tfhe` from `propagate_bit_widths`.
+- **No IR change, no schema change, and no backend-specific `penumbra-core` branching.** In particular,
+  do not change `MESSAGE_BITS` and do not add per-tensor width fields to the IR. The only approved
+  `penumbra-core` change is the backend-neutral `Backend::build_op_with_bits` seam (D14 Amendment,
+  owner decision 2026-09-27) passing derived Layer-2 bit widths to `build_op_with_bits`.
 - **TFHE stays bit-exact.** The golden tests stay green, unedited, through Phase 14.
 - **No parameter retuning** to match security estimates or to win benchmarks.
 - **One measurement path.** Every paper number comes from `penumbra-bench` on the pinned M3 Pro
@@ -345,7 +352,7 @@ These restate `AGENTS.md` for the concrete temptations of this track:
 ## 8. Open unknowns (to be resolved by the phases, not assumed)
 
 - The cause of the logreg timing disagreement (Phase 13).
-- The actual gain from per-tensor radix width (Phase 14 spike).
+- The actual gain from per-tensor radix width: resolved in Phase 14; 2.37x overall speedup, up to 3.27x, cutting PBS 56.6% (see `docs/NOTES-tfhe.md#per-tensor-radix-width-phase-14`).
 - Whether post-fix TFHE fits the 28×28 rule (Phase 16).
 - Whether Concrete-ML runs on macOS arm64 (Phase 16).
 - The lattice-estimator results for both parameter sets (Phase 15).
