@@ -62,3 +62,4 @@ nav:
       - CKKS notes: NOTES-ckks.md
       - Development: DEVELOPMENT.md
       - "Investigation: Phase 7 CKKS error": INVESTIGATION-phase7-ckks-error.md
+      - Changelog: changelog.md
