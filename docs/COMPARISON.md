@@ -136,7 +136,7 @@ Stated in advance, and to be restated alongside any published result.
 | Phase-6 sklearn | 40.56 s | 0.51 s | 79.8x |
 | Phase-7 faces | 370.55 s | 2.30 s | 161.1x |
 
-*(Derived from [`docs/BENCHMARKS.md` Table A](./BENCHMARKS.md#table-a--latency-wall-clock-per-sample). Means over 2 samples in `--release`, Apple M3 Pro, FFT64Neon HAL).*
+*(Derived from [`docs/BENCHMARKS.md` Table A](./BENCHMARKS.md#table-a-latency-wall-clock-per-sample). Means over 2 samples in `--release`, Apple M3 Pro, FFT64Neon HAL).*
 
 ### Accuracy
 
@@ -150,11 +150,11 @@ Stated in advance, and to be restated alongside any published result.
 | Phase-6 sklearn | 0.8944 | 0.8806 | *= quantized, exactly* | 0.000155 | 0.0005 | 2/2 |
 | Phase-7 faces | 0.9500 | 0.9000 | *= quantized, exactly* | 74.000 | 120.0 | 2/2 |
 
-*(Derived from [`docs/BENCHMARKS.md` Table D](./BENCHMARKS.md#table-d--accuracy-and-error)).*
+*(Derived from [`docs/BENCHMARKS.md` Table D](./BENCHMARKS.md#table-d-accuracy-and-error)).*
 
 ### Overhead
 
-Summary of key and ciphertext dimensions across the suite (see [`docs/BENCHMARKS.md` Table C](./BENCHMARKS.md#table-c--sizes--scheme-cost-proxies) for the full per-model table):
+Summary of key and ciphertext dimensions across the suite (see [`docs/BENCHMARKS.md` Table C](./BENCHMARKS.md#table-c-sizes-and-scheme-cost-proxies) for the full per-model table):
 
 - **Ciphertext sizes:**
   - TFHE encodes each integer element as a radix ciphertext (`num_blocks` shortint ciphertexts). Input ciphertexts scale linearly with input tensor length and radix blocks (from 3.96 MB on 36-element inputs to 44.22 MB on 256-element inputs; `phase2_logreg` is 6.03 MB with 6 blocks). Output ciphertexts range from 96.5 KB (scalar) to 1.57 MB.
@@ -176,7 +176,7 @@ The study answers the three motivating sub-questions (§1) with concrete data on
    - **Overhead:** The latency advantage of CKKS on multi-layer networks is paid for in server key storage: CKKS requires **1.78 GB** of server keys (Galois automorphism and relin keys) compared to TFHE's **114.84 MB** (a 15.5x key storage overhead), and client keys are 128.1 KB vs. 23.4 KB. Ciphertext size exhibits a crossover: for small inputs, TFHE is comparable (3.96 MB vs 4.75 MB), but for larger inputs (256-element faces), TFHE's non-batched representation balloons to 44.22 MB while CKKS remains fixed at 4.75 MB per SIMD ciphertext.
 
 2. **Where the cost actually goes (Table B and Cost Proxies):**
-   In [`docs/BENCHMARKS.md` Table B](./BENCHMARKS.md#table-b--per-op-type-eval-breakdown-mean-seconds-per-sample), TFHE's latency is dominated by two components:
+   In [`docs/BENCHMARKS.md` Table B](./BENCHMARKS.md#table-b-per-op-type-eval-breakdown-mean-seconds-per-sample), TFHE's latency is dominated by two components:
    - **Multi-block radix linear algebra:** on `phase5_digits`, `Conv2d` took 338.2 s and `Linear` took 287.0 s under TFHE, despite having 0 bootstraps inside the linear algebra. Because each multiplication involves scalar-multiplying 11 independent shortint ciphertexts and accumulating carry chains, the CPU is overwhelmed by sequential radix arithmetic.
    - **Programmable Bootstrapping (PBS) in `Requant`:** on `phase5_digits`, 108 bootstraps took 54.6 s (~0.50 s/PBS).
    Under CKKS (Option B), BSGS diagonal multiplexing packs entire matrices into a single ciphertext, replacing thousands of element-wise operations with 24–53 rotations (taking ~0.9–1.3 s total for `Conv2d`). Polynomial activation approximation (depth 4–5, 6–9 poly evals) evaluates in ~0.7–1.1 s.

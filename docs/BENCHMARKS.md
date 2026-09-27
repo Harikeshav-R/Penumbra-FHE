@@ -220,7 +220,7 @@ Three things must be stated wherever a cross-backend number appears:
 3. **The maturity asymmetry.** `tfhe-rs` is a mature production library; `poulpy-ckks` is at
    0.8.x, and its Penumbra backend is new.
 
-### Table A — Latency (Wall-Clock per Sample)
+### Table A: Latency (Wall-Clock per Sample)
 
 | Model | Backend | Profile | Keygen (s) | Encrypt (s) | Eval total (s) | of which op-build (s) | Decrypt (s) | TFHE / CKKS eval |
 |---|---|---|---:|---:|---:|---:|---:|---:|
@@ -241,7 +241,7 @@ Three things must be stated wherever a cross-backend number appears:
 
 *Variance check (`phase2_logreg`, Criterion 10 samples):* `tfhe` mean 488.82 ms (95% CI [470.38 ms, 510.38 ms], −74.0% change); `ckks` mean 350.44 ms (95% CI [347.15 ms, 354.35 ms], −15.1% change).
 
-### Table B — Per-Op-Type Eval Breakdown (Mean Seconds per Sample)
+### Table B: Per-Op-Type Eval Breakdown (Mean Seconds per Sample)
 
 Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/results/phase10-parallel-tuned-sweep.json`](./results/phase10-parallel-tuned-sweep.json) for the full 7-model op breakdown):
 
@@ -264,7 +264,7 @@ Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/r
 | phase7_faces | ckks | Linear | 1 | 0.0000 | 0.1582 | - |
 | phase7_faces | ckks | Requant | 1 | 0.0084 | 0.7193 | - |
 
-### Table C — Sizes & Scheme Cost Proxies
+### Table C: Sizes and Scheme Cost Proxies
 
 | Model | Backend | Input CT | Output CT | Client Key | Server Key | Cost Proxy Counters |
 |---|---|---:|---:|---:|---:|---|
@@ -283,7 +283,7 @@ Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/r
 | phase7_faces | tfhe | 44.22 MB | 1.38 MB | 23.4 KB | 114.84 MB | bootstraps: 128, cmp_pbs_ops: 384, ct_add: 1962, scalar_add: 264, scalar_mul: 1500, measured pbs: 128571 |
 | phase7_faces | ckks | 4.75 MB | 4.75 MB | 128.1 KB | 1782.50 MB | depth_levels: 7, poly_evals: 6, rescales: 7, rotations: 53 |
 
-### Table D — Accuracy and Error
+### Table D: Accuracy and Error
 
 | Model | Float | Quantized (shared ref) | TFHE | CKKS max \|err\| | CKKS mean \|err\| | Declared bound | CKKS labels |
 |---|---:|---:|---|---:|---:|---:|---|
