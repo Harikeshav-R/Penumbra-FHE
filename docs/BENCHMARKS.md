@@ -18,16 +18,13 @@ with Phase 12 and get their own columns; see [Cross-backend comparison](#cross-b
   accuracy equals the quantized accuracy *exactly* (bit-for-bit), so there is no separate "FHE
   accuracy" column. Under CKKS there **will** be one — an approximate scheme adds its own
   error term on top of the quantization gap.
-- **Latency** is wall-clock for the encrypted forward pass of **one** sample, from the golden
-  tests (`cargo test --release`), on the development machine. It is indicative, not a
-  controlled benchmark; absolute numbers vary by CPU. The committed test batches are kept tiny
-  (`N_TEST`) precisely because each FHE sample is expensive.
+- **Latency** is the harness `Eval total` (`GraphProfile::total`) from the `penumbra-bench-report` results files listed in [Results provenance](#results-provenance); from Phase 16 headline latency comes from Criterion only (`docs/PAPER.md` D6).
 - **Crypto profile:** the tuned default `PARAM_MESSAGE_2_CARRY_2_KS_PBS` (`classic` profile,
   `MESSAGE_BITS = 2`, p-fail = 2^-129.581, algorithmic cost ~ 113). The parameter sweep evaluated
   discrete-Gaussian noise and multi-bit PBS parameter sets (grouping factors 2, 3, 4 with
   deterministic execution); `classic` was confirmed as the tuned default because outer rayon
   parallelism already saturates available CPU cores, where classic's lower serial cost outperforms
-  multi-bit blind rotation while preserving 128-bit security and the smallest server key (114.84 MB).
+  multi-bit blind rotation while preserving 128-bit security and the smallest server key (114.84 MB; `phase10-param-sweep-classic.json` @ `9b38c1b`).
   `num_blocks` is sized by the library to the model's widest accumulator.
 - **Cost proxy:** bootstraps per sample — `runtime ≈ number of bootstraps` (`PROJECT.md` §5).
   This is a **TFHE** proxy; CKKS's is multiplicative depth, rotations, and rescales.
@@ -67,10 +64,10 @@ cargo +nightly run -p penumbra-bench --features ckks --release --bin penumbra-be
 # JSON output for machine consumption:
 cargo run -p penumbra-bench --release --bin penumbra-bench-report -- --models phase2_logreg --format json
 ```
-> ℹ️ The [Cross-backend comparison](#cross-backend-comparison) section below now carries
-> shared-harness numbers measured from a single binary. The per-model `Latency / sample (encrypted)`
-> rows in the sections immediately below remain hand-recorded TFHE golden-test wall clock
-> and are indicative only — cite the cross-backend tables for anything comparative.
+> ℹ️ The [Cross-backend comparison](#cross-backend-comparison) section below carries
+> shared-harness numbers measured from a single binary. The per-model rows in the sections
+> immediately below cite their results file; figures without a committed results file carry †
+> (see [Results provenance](#results-provenance)). Cite the cross-backend tables for anything comparative.
 
 ## Models
 
@@ -84,8 +81,12 @@ cargo run -p penumbra-bench --release --bin penumbra-bench-report -- --models ph
 | Quantized accuracy | 1.00 |
 | Quantization gap | 0.00 |
 | Radix | 6 blocks (12-bit signed, minimized Phase 10) |
-| Latency / sample (encrypted) | ~0.52 s (was ~1.99 s pre-minimization, ~30 s baseline) |
+| Latency / sample (encrypted) | ~0.52 s (was ~1.99 s pre-minimization (phase10-parallel-tuned-sweep.json @ 9b38c1b), ~30 s baseline†) |
 | Bootstraps / sample | comparison plus carry-propagation PBS in radix arithmetic (136 PBS in `Linear`, 1 in `Argmax`, 137 total) |
+
+*Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`.*
+
+> † **Historical, not citable.** ~30 s baseline (unoptimized prototype latency) — introduced in 8537d14; no committed results file.
 ### Phase-4 — small CNN, 10-class (`examples/mnist/phase4_cnn_fixture.json`)
 
 `Conv2d(1→2, 3×3) → Requant+ReLU (auto-inserted) → Pool(avg 2×2) → Linear(8→10 logits)`,
@@ -97,18 +98,24 @@ synthetic 6×6 ten-class template data; the client decrypts the 10 logits and ar
 | Quantized accuracy | 0.96 |
 | Quantization gap | ~0.02 |
 | Radix | 7 blocks (14-bit signed) |
-| Latency / sample (encrypted) | ~27.1 s (was ~3–4 min baseline) |
-| Dominant cost | radix MAC carry-propagation bootstraps in `Conv2d` and `Linear`; `Requant` is ~9 % of runtime |
+| Latency / sample (encrypted) | ~27.1 s (was ~3–4 min baseline†) |
+| Dominant cost | radix MAC carry-propagation bootstraps in `Conv2d` and `Linear`; `Requant` is ~12 % of eval time (3.17 s of 27.15 s) |
+
+*Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`.*
 
 As measured ground truth via `tfhe`'s `pbs-stats` counter reveals, the CNN's cost is
 dominated by the internal carry-propagation bootstraps issued during radix addition and
-scalar multiplication in `Conv2d` and `Linear`, while `Requant` accounts for only ~9 % of
-runtime (1024 PBS out of 9104 total). The MAC loop's carry propagation makes multi-block radix
-operations bootstrap-bearing (~2 PBS per block per add). Phase 10 optimizes this by grouping
+scalar multiplication in `Conv2d` and `Linear`, while `Requant` accounts for only ~12 % of
+eval time (3.17 s of 27.15 s; 1024 PBS out of 9104 total). The MAC loop's carry propagation makes multi-block radix
+operations bootstrap-bearing (~2 PBS per block per add†). Phase 10 optimizes this by grouping
 inputs by weight value and evaluating multi-term sums via `sum_ciphertexts_parallelized`, cutting
-carry propagation and latency by ~50 %. Evaluating per-element work in parallel across cores via
-`rayon` (Phase 10) further cuts CNN evaluation latency from 38.912 s to 26.899 s (a 1.45x speedup),
+`phase4_cnn` latency 44.4 % (69.987 s → 38.912 s; `phase12-4-comparison.json` @ `dc20d05` vs `phase10-tfhe-sweep.json` @ `78f5db7`, different toolchains — see the Full-Sweep caveat below). Evaluating per-element work in parallel across cores via
+`rayon` (Phase 10) further cuts CNN evaluation latency from 38.912 s to 26.899 s (a 1.45x speedup; `phase10-tfhe-sweep.json` @ `78f5db7` vs `phase10-parallel-tuned-sweep.json` @ `9b38c1b`),
 with `Conv2d`, `Requant`, and `Pool` outputs processed concurrently.
+
+> † **Historical, not citable.**
+> - ~3–4 min baseline (unoptimized prototype latency) — introduced in 8537d14; no committed results file.
+> - ~2 PBS per block per add (rule-of-thumb estimate) — introduced in eb158a0; no committed results file.
 
 ### Phase-5 — real handwritten digits, PTQ (`examples/mnist/phase5_digits_fixture.json`)
 
@@ -119,23 +126,30 @@ The first example on a **real dataset** and a **real trained PyTorch model**: sc
 | Metric | Value |
 |---|---|
 | Float accuracy | ~0.96 (0.9639) |
-| Quantized accuracy | 0.9167 (test batch; ~0.95 train split) |
+| Quantized accuracy | 0.9167 (test batch; ~0.95 train split†) |
 | Quantization gap | ~0.047 |
 | Weight / activation bits | (5, 6)-bit weights (conv, head; minimized Phase 10), 2-bit activations |
 | Calibration | MSE (clip minimizing round-trip error), per-channel weights, `max_mult_bits = 1` |
-| Radix | 9 blocks (18-bit signed; down from 11 blocks / 22-bit) |
-| Bootstraps / sample | 75,153 PBS total (108 `Requant` PBS, 12 ch × 3×3; down from 109,045 PBS) |
-| Latency / sample (encrypted) | ~222 s (was ~315 s pre-minimization, ~680 s baseline) |
+| Radix | 9 blocks (18-bit signed; down from 11 blocks / 22-bit, phase10-parallel-tuned-sweep.json @ 9b38c1b) |
+| Bootstraps / sample | 75,153 PBS total (108 `Requant` PBS, 12 ch × 3×3; down from 109,045 PBS, phase10-parallel-tuned-sweep.json @ 9b38c1b) |
+| Latency / sample (encrypted) | ~222 s (was ~315 s pre-minimization (phase10-parallel-tuned-sweep.json @ 9b38c1b), ~680 s baseline (phase12-4-comparison.json @ dc20d05)) |
 
-The remaining ~0.02 gap is the cost of capping activations at a single 2-bit block
+*Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`.*
+
+The remaining ~0.02 gap† is the cost of capping activations at a single 2-bit block
 (`MESSAGE_BITS`) — the hard TFHE-backend limit. Three service levers close most of the naive gap:
 6-bit **per-channel** weights, **MSE** activation calibration (the clip minimizing round-trip
 quantization error, not the raw peak), and — the big one — quantizing the head against the
 **post-Requant activation scale** (not the wide pre-Requant accumulator scale; getting that wrong
-mis-scales the head bias by the requant ratio and was worth ~0.22 accuracy alone). The FHE golden
+mis-scales the head bias by the requant ratio and was worth ~0.22 accuracy alone†). The FHE golden
 test (`golden_digits.rs`) is `#[ignore]`d because at ~108 bootstraps/sample it is minutes per
 sample; the fast Python guard (`tests/test_real_digits_fixture.py`) checks fixture
 self-consistency on every CI run.
+
+> † **Historical, not citable.**
+> - ~0.95 train split — introduced in 8537d14; no committed results file.
+> - remaining ~0.02 gap — introduced in 4d033d2; no committed results file.
+> - worth ~0.22 accuracy alone — introduced in 625f7cf; no committed results file.
 
 ### Phase-5 — real handwritten digits, QAT (`examples/mnist/phase5_qat_fixture.json`)
 
@@ -149,15 +163,19 @@ exported through the same PTQ service (so the int graph and the golden gate are 
 | Quantization gap | ~0.00 (-0.0028) |
 | Weight / activation bits | (5, 4)-bit weights (conv, head; minimized Phase 10), 2-bit activations |
 | Calibration | MSE, per-channel weights, `max_mult_bits = 1` |
-| Radix | 8 blocks (16-bit signed; down from 11 blocks / 22-bit) |
-| Bootstraps / sample | 56,470 PBS total (108 `Requant` PBS; down from 119,096 PBS) |
-| Latency / sample (encrypted) | ~179 s (was ~337 s pre-minimization, ~688 s baseline) |
+| Radix | 8 blocks (16-bit signed; down from 11 blocks / 22-bit, phase10-parallel-tuned-sweep.json @ 9b38c1b) |
+| Bootstraps / sample | 56,470 PBS total (108 `Requant` PBS; down from 119,096 PBS, phase10-parallel-tuned-sweep.json @ 9b38c1b) |
+| Latency / sample (encrypted) | ~179 s (was ~337 s pre-minimization (phase10-parallel-tuned-sweep.json @ 9b38c1b), ~688 s baseline (phase12-4-comparison.json @ dc20d05)) |
+
+*Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`.*
 
 With the head correctly quantized against the post-Requant scale, QAT closes the gap essentially
 completely on this task — the quantized model matches (and here slightly exceeds, within
-small-test-set noise on ~360 samples) the float model, the quantization acting as a mild
+small-test-set noise on ~360 samples†) the float model, the quantization acting as a mild
 regularizer. The example proves the QAT path runs end to end through the exact int export and the
 golden invariant.
+
+> † **Historical, not citable.** ~360 samples (approximate test set size) — introduced in ae6b671; no committed results file.
 
 ### Phase-7 — closed-set faces, Olivetti (`examples/faces/phase7_faces_fixture.json`)
 
@@ -177,7 +195,9 @@ it touched **no `runtime/src/ops/` and no `eval.rs`** — the narrow waist held 
 | Calibration | MSE (clip minimizing round-trip error), per-channel weights |
 | Radix | 11 blocks (22-bit signed) |
 | Bootstraps / sample | 128,571 PBS total (128 `Requant` PBS, 8 ch × 4×4) |
-| Latency / sample (encrypted) | ~371 s (was ~730 s baseline) |
+| Latency / sample (encrypted) | ~371 s (was ~730 s baseline (phase12-4-comparison.json @ dc20d05)) |
+
+*Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`.*
 
 The ~0.05 gap is the cost of an 8-way decision from tiny 16×16 inputs with activations capped at a
 single 2-bit block (`MESSAGE_BITS`, the hard TFHE-backend limit). The value of this example is **not**
@@ -196,15 +216,21 @@ RandomForestClassifier (5 trees, max depth 3) trained on Wisconsin Breast Cancer
 | Quantized accuracy | 0.9561 (gap +0.0000) |
 | Weight / leaf bits | 8-bit inputs, 4-bit leaf scales |
 | Radix | 7 blocks (14-bit signed) |
-| Bootstraps / sample | 0 bootstraps (no Requant/LUT PBS; 67 comparison PBSs total) |
-| Latency / sample (encrypted) | ~10.4 s (TFHE, classic profile) |
+| Bootstraps / sample | 67 comparison PBSs total† (no Requant/activation lookups) |
+| Latency / sample (encrypted) | ~10.4 s† (TFHE, classic profile) |
 | Backend support | TFHE exact (bit-for-bit); CKKS op implemented, but chained sharp steps exceed level budget for 4-node tree graph |
 
-Unlike neural networks where accumulator growth forces Requant (bootstraps) and MAC operations cause carry propagation, tree ensembles evaluate as pure threshold comparisons (`Compare`) and sparse indicator linear maps (`Linear`). Total comparison PBS count is `n_splits + n_leaves` (67 PBS), running in ~10.4 s per sample with zero bootstraps.
+*Source: `examples/trees/phase8_trees_fixture.json` (`accuracy`, `graph.num_blocks`) @ `b68b018`.*
+
+Unlike neural networks where accumulator growth forces Requant (bootstraps) and MAC operations cause carry propagation, tree ensembles evaluate as pure threshold comparisons (`Compare`) and sparse indicator linear maps (`Linear`). Total comparison PBS count is `n_splits + n_leaves` (67 PBS†), running in ~10.4 s† per sample with no Requant/activation lookups.
+
+> † **Historical, not citable.**
+> - 67 comparison PBSs total — introduced in f12d63d; no committed results file.
+> - ~10.4 s latency — introduced in f12d63d; no committed results file.
 
 ## Cross-backend comparison
 
-**Measured on Apple M3 Pro, macOS 25.6.0, `rustc 1.100.0-nightly (bba531001 2026-09-20)`, HAL backend `FFT64Neon` (`poulpy-ckks 0.8.3`), commit `9b38c1b`, 2026-09-24, `--samples 2`. Raw artifact: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json).**
+**Measured on Apple M3 Pro, macOS 25.6.0, `rustc 1.100.0-nightly (bba531001 2026-09-20)`, HAL backend `FFT64Neon` (`poulpy-ckks 0.8.3`), commit `9b38c1b`, 2026-09-24, `--samples 2`. Raw artifact: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json). Provenance caveat: [Results provenance](#results-provenance).**
 
 > ℹ️ **Phase 10 final sweep:** Both TFHE and CKKS numbers in Tables A, B, C, and D are freshly measured from one nightly-built binary path on the pinned development machine across all seven bit-width-minimized fixtures.
 This document owns the **numbers**; [`docs/COMPARISON.md`](./COMPARISON.md) owns the
@@ -220,17 +246,17 @@ Three things must be stated wherever a cross-backend number appears:
 3. **The maturity asymmetry.** `tfhe-rs` is a mature production library; `poulpy-ckks` is at
    0.8.x, and its Penumbra backend is new.
 
-### Table A — Latency (Wall-Clock per Sample)
+### Table A: Latency (Wall-Clock per Sample)
 
 | Model | Backend | Profile | Keygen (s) | Encrypt (s) | Eval total (s) | of which op-build (s) | Decrypt (s) | TFHE / CKKS eval |
 |---|---|---|---:|---:|---:|---:|---:|---:|
 | phase2_logreg | tfhe | classic | 0.500 | 0.017 | 0.521 | 0.000 | 0.000 | 0.8x |
 | phase2_logreg | ckks | - | 2.153 | 0.007 | 0.647 | 0.001 | 0.001 | — |
-| phase4_cnn | tfhe | classic | 0.524 | 0.011 | 27.149 | 0.000 | 0.000 | 41.1x |
+| phase4_cnn | tfhe | classic | 0.524 | 0.011 | 27.149 | 0.000 | 0.000 | 41.2x |
 | phase4_cnn | ckks | - | 2.184 | 0.007 | 0.660 | 0.001 | 0.001 | — |
 | phase5_digits | tfhe | classic | 0.500 | 0.025 | 222.328 | 0.000 | 0.000 | 162.6x |
 | phase5_digits | ckks | - | 2.176 | 0.005 | 1.367 | 0.013 | 0.001 | — |
-| phase5_qat | tfhe | classic | 0.496 | 0.022 | 178.933 | 0.000 | 0.000 | 152.9x |
+| phase5_qat | tfhe | classic | 0.496 | 0.022 | 178.933 | 0.000 | 0.000 | 153.0x |
 | phase5_qat | ckks | - | 2.301 | 0.009 | 1.170 | 0.011 | 0.001 | — |
 | phase6_onnx | tfhe | classic | 0.501 | 0.025 | 217.966 | 0.000 | 0.000 | 162.1x |
 | phase6_onnx | ckks | - | 2.095 | 0.007 | 1.345 | 0.013 | 0.001 | — |
@@ -239,11 +265,96 @@ Three things must be stated wherever a cross-backend number appears:
 | phase7_faces | tfhe | classic | 0.520 | 0.126 | 370.552 | 0.000 | 0.000 | 161.1x |
 | phase7_faces | ckks | - | 2.458 | 0.007 | 2.300 | 0.008 | 0.000 | — |
 
-*Variance check (`phase2_logreg`, Criterion 10 samples):* `tfhe` mean 488.82 ms (95% CI [470.38 ms, 510.38 ms], −74.0% change); `ckks` mean 350.44 ms (95% CI [347.15 ms, 354.35 ms], −15.1% change).
+*Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`. Ratios are calculated from unrounded mean evaluation times in the source JSON (e.g. 27.1493 s / 0.6595 s = 41.2x; 178.9332 s / 1.1697 s = 153.0x); dividing the 3-decimal rounded table values yields 41.1x and 152.9x due to intermediate rounding.*
 
-### Table B — Per-Op-Type Eval Breakdown (Mean Seconds per Sample)
+### Logreg timing reconciliation
 
-Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/results/phase10-parallel-tuned-sweep.json`](./results/phase10-parallel-tuned-sweep.json) for the full 7-model op breakdown):
+#### 1. The Disagreement
+On `phase2_logreg`, the report sweep (Table A) and Criterion report opposite performance orderings:
+- **Table A (`penumbra-bench-report`, $N = 2$):** TFHE **0.521 s** < CKKS **0.647 s** (ratio 0.8x; TFHE faster; [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`).
+- **2026-09-24 Criterion (10 samples, 60 s measurement):** TFHE **488.82 ms** (95% CI [470.38 ms, 510.38 ms]) > CKKS **350.44 ms** (95% CI [347.15 ms, 354.35 ms]) (mean, 95% CI; [`docs/results/phase10-criterion-logreg.json`](./results/phase10-criterion-logreg.json) @ `9b38c1b`).
+
+Both harnesses evaluate the exact same graph via `Session::eval` → `evaluate_graph_profiled`.
+
+#### 2. What Each Path Times
+
+| Feature | Report path (`penumbra-bench-report`, Table A) | Criterion path (`crates/penumbra-bench/benches/inference.rs`) |
+|---|---|---|
+| Keygen, incl. DFT-domain key preparation (`crates/penumbra-ckks/src/keys.rs:136-171` `glwe_secret_prepare`, `prepare_tensor_key`, `glwe_automorphism_key_prepare`) | outside the timer; once per backend per process (`Session::new`, `crates/penumbra-bench/src/session.rs:22-33`) | same (`inference.rs:30,47`) |
+| Encrypt | outside `eval_secs`; fresh ciphertext per sample (`report.rs:136-138`) | once before the benchmark; the same ciphertext every iteration (`inference.rs:33,50`) |
+| Timed region | `GraphProfile::total` = `crates/penumbra-core/src/eval.rs:93-191`: every node's `build_op` + `eval_multi` + profiling bookkeeping | the whole `Session::eval` call (`inference.rs:36-39`): additionally the input clone (`session.rs:55`), `optimize_graph` (`eval.rs:85`), output clone (`eval.rs:194-200`), drops |
+| `build_op` (CKKS: `prepare_linear_map`, `crates/penumbra-ckks/src/backend.rs:108-118`) | inside, every sample | inside, every iteration |
+| Per-node profiling + `measured_counters` | active | active (same call) |
+| Decrypt | outside | not executed |
+| Warm-up | none: sample 0 is the first eval of that backend's session | 1 s warm-up (`inference.rs:24`), 10 samples, `SamplingMode::Flat`, 60 s measurement (`inference.rs:22-25`) |
+| Inputs | samples cycle fixture `test_inputs` (logreg has 4) (`report.rs:134`) | input 0 only (`inference.rs:19`) |
+| Aggregation | arithmetic mean of `eval_secs` over N samples (`report.rs:340`); Table A used N = 2 | Criterion mean / median per iteration |
+| Backend order in process | order of `--backends` (`bin/report.rs:175-182,227`) | TFHE arm, then CKKS arm |
+| Threads | TFHE: rayon global pool, default size (no `ThreadPoolBuilder`/`RAYON_NUM_THREADS` anywhere in `crates/`); CKKS: single-threaded (`poulpy-cpu-arm` enabled with `enable-neon`,`enable-ckks` only, no `enable-rayon`: `crates/penumbra-ckks/Cargo.toml:46`; `ActiveBackend = FFT64Neon`: `crates/penumbra-ckks/src/hal.rs:2`) | same |
+
+#### 3. Historical Per-Sample Evidence
+Historical per-sample data committed in `docs/results/phase10-final-sweep.json` (`phase2_logreg`, $N = 2$):
+- **TFHE:** sample 0 eval **573.3 ms**, sample 1 eval **469.3 ms** (in `Linear`: 557.6 ms → 453.0 ms).
+- **CKKS:** sample 0 eval **903.9 ms**, sample 1 eval **389.6 ms** (in `Linear`: 740.4 ms → 266.3 ms; `build_op` $\le$ 1.6 ms).
+
+Averaging sample 0 and sample 1 yielded 521.3 ms for TFHE and 646.7 ms for CKKS, masking the warm behavior.
+
+#### 4. Reproduction
+Measured on 2026-09-26, commit `accc268`, Apple M3 Pro, macOS 26.6.2 (Darwin 25.6.0), `rustc 1.100.0-nightly (bba531001 2026-09-20)`. Thread environment: `RAYON_NUM_THREADS` unset: TFHE uses the rayon global pool at its default size (11 cores); CKKS (`FFT64Neon`, no `enable-rayon`) evaluates on one thread.
+
+Commands executed:
+```bash
+cargo +nightly build -p penumbra-bench --features ckks --release --bin penumbra-bench-report
+for i in 1 2 3 4 5; do
+  ./target/release/penumbra-bench-report --models phase2_logreg --backends tfhe,ckks --samples 4 --format json --out target/bench-results/p13/tc-$i.json
+  ./target/release/penumbra-bench-report --models phase2_logreg --backends ckks,tfhe --samples 4 --format json --out target/bench-results/p13/ct-$i.json
+done
+PENUMBRA_BENCH_MODELS=phase2_logreg cargo +nightly bench -p penumbra-bench --features ckks
+```
+
+*Results from `docs/results/phase13-logreg-timing.json` @ `accc268`:*
+
+| Order | Backend | Sample 0 (ms), mean [min, max] | Samples 1–3 (ms) | Mean of samples 0–1, as Table A (ms) | Max `build_op` per sample (ms) |
+|---|---|---:|---:|---:|---:|
+| ckks,tfhe | ckks | 476.3 [446.7, 502.9] | 347.6 [344.7, 354.9] | 412.1 [398.9, 424.0] | 1.30 |
+| ckks,tfhe | tfhe | 465.3 [450.1, 475.6] | 466.6 [447.2, 492.5] | 468.8 [461.3, 477.7] | 0.01 |
+| tfhe,ckks | ckks | 517.9 [489.5, 573.7] | 347.6 [343.8, 366.7] | 432.2 [416.9, 461.3] | 1.31 |
+| tfhe,ckks | tfhe | 464.7 [449.2, 480.7] | 465.8 [429.9, 515.9] | 461.9 [445.3, 470.1] | 0.02 |
+
+| Order | Backend | Op | Sample 0 eval (ms, mean) | Samples 1–3 eval (ms, mean) |
+|---|---|---|---:|---:|
+| ckks,tfhe | ckks | Linear | 361.0 | 234.6 |
+| ckks,tfhe | ckks | Argmax | 114.1 | 111.8 |
+| ckks,tfhe | tfhe | Linear | 449.3 | 450.5 |
+| ckks,tfhe | tfhe | Argmax | 16.0 | 16.1 |
+| tfhe,ckks | ckks | Linear | 399.1 | 234.5 |
+| tfhe,ckks | ckks | Argmax | 117.4 | 111.9 |
+| tfhe,ckks | tfhe | Linear | 448.8 | 449.7 |
+| tfhe,ckks | tfhe | Argmax | 15.9 | 16.0 |
+
+| Backend | Criterion mean (ms) [95% CI] | Criterion median (ms) [95% CI] |
+|---|---:|---:|
+| tfhe | 480.78 [465.57, 502.71] | 474.04 [464.74, 482.50] |
+| ckks | 351.64 [343.04, 361.07] | 343.31 [341.74, 365.39] |
+
+*Source: [`docs/results/phase13-logreg-timing.json`](./results/phase13-logreg-timing.json) @ `accc268`.*
+
+#### 5. Explanation
+Applying the five analysis rules to the measured reproduction data:
+- **R1 (Cold first sample):** For CKKS, sample 0 mean (476.3 ms in `ckks,tfhe`, 517.9 ms in `tfhe,ckks`) substantially exceeds the maximum of samples 1–3 (354.9 ms and 366.7 ms, with mean 347.6 ms in both orders). The cold-sample penalty is 128.7 ms (`ckks,tfhe`) and 170.3 ms (`tfhe,ckks`). The per-op breakdown isolates this penalty almost entirely to `Linear`: sample 0 eval takes 361.0 ms (`ckks,tfhe`) and 399.1 ms (`tfhe,ckks`) vs 234.6 ms / 234.5 ms on warm samples 1–3. For TFHE, sample 0 mean (465.3 ms / 464.7 ms) is essentially identical to samples 1–3 mean (466.6 ms / 465.8 ms).
+- **R2 (Ordering):** Comparing the warm samples-1–3 means, CKKS evaluates in **347.6 ms** while TFHE evaluates in **466.6 ms** (`ckks,tfhe`) / **465.8 ms** (`tfhe,ckks`). This matches Criterion's ordering (CKKS 351.64 ms < TFHE 480.78 ms). Table A's logreg ordering (TFHE < CKKS) was an artifact of averaging a cold first sample with $N = 2$.
+- **R3 (Process order):** CKKS's sample-0 penalty is larger when running second in the process (170.3 ms penalty, mean 517.9 ms) than when running first (128.7 ms penalty, mean 476.3 ms). The cold cost is intrinsic to CKKS's first evaluation in a process (internal scratch arena initialization and FFT planning). TFHE's sample 0 is unaffected by process order (465.3 ms vs 464.7 ms).
+- **R4 (`build_op` and keys):** In both backends, `build_op` is negligible ($\le$ 1.31 ms for CKKS, $\le$ 0.02 ms for TFHE). Keygen and DFT-domain key preparation take place outside both timers. Neither factor explains the discrepancy.
+- **R5 (Residual):** Warm CKKS report evaluation (347.6 ms) falls directly inside Criterion's 95% confidence interval ([343.04 ms, 361.07 ms]). For TFHE, warm report evaluation (~466 ms) is slightly below Criterion mean (480.78 ms [465.57, 502.71]). The residual difference is accounted for by harness differences: Criterion includes the input/output clones and `optimize_graph` call inside its timing block, reuses a single encrypted ciphertext, and evaluates input 0 exclusively, whereas `penumbra-bench-report` measures only `GraphProfile::total`, uses fresh ciphertexts per sample, and cycles through inputs 0–3.
+- **Threads:** TFHE utilizes the Rayon global thread pool (11 threads on this host); CKKS evaluates on a single thread (`FFT64Neon`, no `enable-rayon`). Thread configurations are identical across both harnesses.
+
+#### 6. Consequence
+Per `docs/PAPER.md` D6, headline latency for the paper will come exclusively from Criterion benchmarks (Phase 16). The `penumbra-bench-report` path is retained for per-op breakdowns and cost proxy metrics. Harness improvements (such as adding an unmeasured warm-up sample to the report CLI) are deferred to Phase 15.
+
+
+### Table B: Per-Op-Type Eval Breakdown (Mean Seconds per Sample)
+
+Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b` for the full 7-model op breakdown):
 
 | Model | Backend | Op Type | Calls | Build (s) | Eval (s) | PBS (measured) |
 |---|---|---|---:|---:|---:|---:|
@@ -264,7 +375,9 @@ Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/r
 | phase7_faces | ckks | Linear | 1 | 0.0000 | 0.1582 | - |
 | phase7_faces | ckks | Requant | 1 | 0.0084 | 0.7193 | - |
 
-### Table C — Sizes & Scheme Cost Proxies
+*Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`.*
+
+### Table C: Sizes and Scheme Cost Proxies
 
 | Model | Backend | Input CT | Output CT | Client Key | Server Key | Cost Proxy Counters |
 |---|---|---:|---:|---:|---:|---|
@@ -283,7 +396,9 @@ Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/r
 | phase7_faces | tfhe | 44.22 MB | 1.38 MB | 23.4 KB | 114.84 MB | bootstraps: 128, cmp_pbs_ops: 384, ct_add: 1962, scalar_add: 264, scalar_mul: 1500, measured pbs: 128571 |
 | phase7_faces | ckks | 4.75 MB | 4.75 MB | 128.1 KB | 1782.50 MB | depth_levels: 7, poly_evals: 6, rescales: 7, rotations: 53 |
 
-### Table D — Accuracy and Error
+*Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`. Sizes use the binary units penumbra-bench prints (1 KB = 1,024 B, 1 MB = 2^20 B).*
+
+### Table D: Accuracy and Error
 
 | Model | Float | Quantized (shared ref) | TFHE | CKKS max \|err\| | CKKS mean \|err\| | Declared bound | CKKS labels |
 |---|---:|---:|---|---:|---:|---:|---|
@@ -292,8 +407,12 @@ Breakdown for `phase2_logreg`, `phase5_digits`, and `phase7_faces` (see [`docs/r
 | phase5_digits | 0.9639 | 0.9167 | = quantized, exactly (err = 0.0) | 38.000 | 12.700 | 60.0 | 2/2 |
 | phase5_qat | 0.9333 | 0.9361 | = quantized, exactly (err = 0.0) | 10.000 | 4.800 | 15.0 | 2/2 |
 | phase6_onnx | 0.9639 | 0.9167 | = quantized, exactly (err = 0.0) | 38.000 | 12.700 | 60.0 | 2/2 |
-| phase6_sklearn | 0.8944 | 0.8806 | = quantized, exactly (err = 0.0) | 0.000155 | 0.000042 | 0.0005 | 2/2 |
+| phase6_sklearn | 0.8944 | 0.8806 | = quantized, exactly (err = 0.0) | 0.000 † | 0.000 † | 0.0005 | 2/2 |
 | phase7_faces | 0.9500 | 0.9000 | = quantized, exactly (err = 0.0) | 74.000 | 31.312 | 120.0 | 2/2 |
+
+*Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`; Declared bound column: [`crates/penumbra-ckks/src/bounds.rs`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/4e1a320/crates/penumbra-ckks/src/bounds.rs) @ `4e1a320`.*
+
+> † **Historical, not citable.** phase6_sklearn CKKS max |err| 0.000155 and mean |err| 0.000042 — introduced in 8537d14; phase10-final-sweep.json records 0.000 for both samples.
 
 ### Phase 10 — Bootstrap reduction
 
@@ -305,8 +424,12 @@ Measured on Apple M3 Pro, commit `78f5db7` (optimized) vs commit `24acfdc` (inst
 
 | Model | Baseline Eval (s) | Optimized Eval (s) | Speedup | Baseline PBS | Optimized PBS | PBS Reduction |
 |---|---:|---:|---:|---:|---:|---:|
-| phase2_logreg | 11.731 | 4.238 | 2.77x | 3326 | 1269 | -61.8% |
-| phase4_cnn | 71.076 | 38.912 | 1.83x | 17811 | 10328 | -42.0% |
+| phase2_logreg | 11.731 † | 4.238 | 2.77x † | 3326 † | 1269 | -61.8% † |
+| phase4_cnn | 71.076 † | 38.912 | 1.83x † | 17811 † | 10328 | -42.0% † |
+
+*Source: Optimized columns from [`docs/results/phase10-tfhe-sweep.json`](./results/phase10-tfhe-sweep.json) @ `78f5db7`.*
+
+> † **Historical, not citable.** Baseline Eval (11.731 s, 71.076 s), Baseline PBS (3326, 17811), and derived Speedup/PBS Reduction cells — introduced in eb158a0; no committed results file for commit 24acfdc.
 
 #### 2. Full-Sweep Comparison (Phase 10 vs Phase 12.4 Baseline Arm)
 
@@ -322,6 +445,8 @@ Measured on Apple M3 Pro, commit `78f5db7` (optimized) vs commit `24acfdc` (inst
 | phase6_sklearn | 159.067 | 43.253 | 3.68x | -72.8% | 13376 |
 | phase7_faces | 730.216 | 437.005 | 1.67x | -40.2% | 128571 |
 
+*Source: Phase 12.4 TFHE from [`docs/results/phase12-4-comparison.json`](./results/phase12-4-comparison.json) @ `dc20d05`; Phase 10 TFHE and Phase 10 Measured PBS from [`docs/results/phase10-tfhe-sweep.json`](./results/phase10-tfhe-sweep.json) @ `78f5db7`.*
+
 ### Phase 10 — Parallelism and parameter tuning
 
 Following bootstrap reduction, Phase 10 tasks 3 and 4 parallelized per-element operations across CPU cores with `rayon` and evaluated `tfhe-rs` parameter profiles to establish a tuned default.
@@ -332,10 +457,14 @@ Measured on Apple M3 Pro (11 cores), commit `6605986` (parallel) vs `78f5db7` (p
 
 | Model | Baseline Eval (s) | Parallel Eval (s) | Speedup | Latency Reduction | Baseline PBS | Parallel PBS | PBS Delta |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| phase2_logreg | 4.238 | 1.992 | 2.13x | -53.0% | 555 | 555 | 0 |
-| phase4_cnn | 38.912 | 26.899 | 1.45x | -30.9% | 9104 | 9104 | 0 |
+| phase2_logreg | 4.238 | 1.992 | 2.13x | -53.0% | 1269 | 555 | -714 |
+| phase4_cnn | 38.912 | 26.899 | 1.45x | -30.9% | 10328 | 9104 | -1224 |
 
-As required by the golden invariant, ground-truth measured PBS counts are identical before and after the parallel refactor (555 on `phase2_logreg`, 9104 on `phase4_cnn`). Parallelism changes only *when* operations run across threads, not *what* operations are performed.
+*Source: Baseline Eval from [`docs/results/phase10-tfhe-sweep.json`](./results/phase10-tfhe-sweep.json) @ `78f5db7`; Parallel Eval and PBS from [`docs/results/phase10-parallel-tuned-sweep.json`](./results/phase10-parallel-tuned-sweep.json) (committed in `9b38c1b`; commit 6605986 is not recorded in the file).*
+
+The committed baseline run measured 1,269 / 10,328 PBS and the parallel run 555 / 9,104, so these two files are not an equal-PBS pair; the earlier statement that PBS was identical before and after the refactor (555 / 9,104) has no committed baseline file† (`9b38c1b`).
+
+> † **Historical, not citable.** Identical PBS before and after parallel refactor (555 / 9104) — introduced in 9b38c1b; no committed baseline file with those PBS counts.
 
 #### 2. Crypto Parameter Profile Sweep
 
@@ -349,6 +478,8 @@ Measured across all five 128-bit secure parameter profiles at `MESSAGE_BITS = 2`
 | multibit3 | TUniform / Group 3 | 2^-128.235 | 2.817 | 47.122 | 0.640x | 392.31 MB | 555 (logreg), 9104 (CNN) |
 | multibit4 | TUniform / Group 4 | 2^-134.345 | 2.052 | 32.209 | 0.907x | 302.07 MB | 555 (logreg), 9104 (CNN) |
 
+
+*Source: [`docs/results/phase10-param-sweep-classic.json`](./results/phase10-param-sweep-classic.json) (and matching `-gaussian`, `-multibit2`, `-multibit3`, `-multibit4` files) committed in `9b38c1b`.*
 **Decision rule and outcome:** Multi-bit PBS profiles trade a higher serial algorithmic cost (group-2 ~188, group-3 ~143, group-4 ~100 vs classic ~113) for internal multi-threaded blind rotation. Because outer `rayon` parallelization over independent outputs already saturates available CPU cores, multi-bit PBS experiences thread contention with the outer pool, leading to lower net throughput and larger server keys (302–392 MB vs 114.84 MB). Under the decision rule requiring $S(p) \ge 1.15$, no multi-bit candidate qualifies. The `classic` parameter set (`PARAM_MESSAGE_2_CARRY_2_KS_PBS`) is confirmed as the tuned default profile.
 
 ### Phase 10 — Bit-width minimization
@@ -362,7 +493,7 @@ Selection methodology: coordinate descent with a maximum accuracy drop tolerance
 
 #### Before / After Bit-Width Minimization (Apple M3 Pro, Classic Profile, `--samples 2`)
 
-| Model | Plan `(in, w, mult)` [before → after] | Blocks [before → after] | PBS [before → after] | Eval (s) [before → after] | Speedup | Quant acc [before → after] |
+| Model | Plan `(in, w, mult)` [before† → after] | Blocks [before → after] | PBS [before → after] | Eval (s) [before → after] | Speedup | Quant acc [before† → after] |
 |---|---|---:|---:|---:|---:|---:|
 | phase2_logreg | `(4, [4], 5)` → `(2, [2], 5)` | 8 → 6 | 555 → 137 | 1.992 → 0.521 | 3.82x | 1.0000 → 1.0000 |
 | phase4_cnn | `(4, [4], 5)` → `(4, [4], 5)` | 7 → 7 | 9104 → 9104 | 26.899 → 27.149 | 0.99x | 0.9570 → 0.9570 |
@@ -372,7 +503,13 @@ Selection methodology: coordinate descent with a maximum accuracy drop tolerance
 | phase6_sklearn | `(4, [8], 5)` → `(4, [8], 5)` | 10 → 10 | 13376 → 13376 | 40.859 → 40.561 | 1.01x | 0.8806 → 0.8806 |
 | phase7_faces | `(4, [6, 6], 5)` → `(4, [6, 6], 5)` | 11 → 11 | 128571 → 128571 | 359.971 → 370.552 | 0.97x | 0.9000 → 0.9000 |
 
-Across all seven committed models, bit-width minimization achieves a **1.46x geometric-mean speedup** on TFHE evaluation latency. For models with multi-channel convolutional layers (`phase5_digits`, `phase5_qat`, `phase6_onnx`), capping `max_mult_bits = 1` compressed the transient multiply peak from 21 bits down to 18 or 16 bits, shedding 2 to 3 radix blocks (saving ~92 s to ~158 s per inference) with negligible impact on accuracy. On `phase2_logreg`, dropping input and weight bits to 2 reduced radix blocks from 8 to 6, yielding a **3.82x speedup** (0.521 s vs 1.992 s) and dropping PBS from 555 to 137.
+*Source: "after" columns and Quant acc after from [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`; Blocks, PBS, and Eval "before" from [`docs/results/phase10-parallel-tuned-sweep.json`](./results/phase10-parallel-tuned-sweep.json) @ `9b38c1b`.*
+
+> † **Historical, not citable.**
+> - Plan before and Quant acc before columns — introduced in 8537d14; phase10-parallel-tuned-sweep.json does not record bit_plan or accuracy.
+> - from 21 bits (transient multiply peak estimate) — introduced in 8537d14; no committed results file.
+
+Across all seven committed models, bit-width minimization achieves a **1.46x geometric-mean speedup** on TFHE evaluation latency. For models with multi-channel convolutional layers (`phase5_digits`, `phase5_qat`, `phase6_onnx`), capping `max_mult_bits = 1` compressed the transient multiply peak from 21 bits† down to 18 or 16 bits, shedding 2 to 3 radix blocks (saving ~92 s to ~158 s per inference) with negligible impact on accuracy. On `phase2_logreg`, dropping input and weight bits to 2 reduced radix blocks from 8 to 6, yielding a **3.82x speedup** (0.521 s vs 1.992 s) and dropping PBS from 555 to 137.
 
 ### Phase 10 — IR load cost and the binary-format decision
 
@@ -395,7 +532,27 @@ Across all seven committed models, bit-width minimization achieves a **1.46x geo
 | phase7_faces | tfhe | 27.6 KB | 0.58 | 370.5519 | 0.0002% |
 | phase7_faces | ckks | 27.6 KB | 0.58 | 2.3004 | 0.0251% |
 
+
+*Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`.*
 **Decision:** Across all models and both backends, IR load time is under **0.6 ms** (0.38 ms – 0.58 ms) and accounts for at most **0.084%** of evaluation time (and less than 0.002% on multi-layer models). Wire sizes are compact (5.0 KB – 27.6 KB). Because IR loading is orders of magnitude below the noise floor of encrypted evaluation, introducing a binary IR format is unnecessary. Penumbra retains its backend-neutral, human-readable JSON IR format (`SCHEMA_VERSION = 0.6.0`, `AGENTS.md` §5).
+
+## Results provenance
+
+Every figure in this document, `COMPARISON.md`, and `NOTES-*.md` cites one of these files and the commit shown; sizes are binary units as printed by `penumbra-bench` (1 KB = 1,024 B, 1 MB = 2^20 B).
+
+| File | Run commit (`meta.commit`) | Committed in | Caveat |
+|---|---|---|---|
+| `docs/results/phase12-4-comparison.json` as of `4d033d2` (pre-fix version; read with `git show 4d033d2:docs/results/phase12-4-comparison.json`) | `dc20d05` | `4d033d2` | Pre-fix CKKS arm. CKKS max \|err\| per sample: cnn 15/10, digits 188/209, qat 238/234, onnx 188/209, sklearn 0/0, faces 105/192 (faces sample 1 label mismatch). Declared bounds then (`git show 4d033d2:crates/penumbra-ckks/src/bounds.rs`): logreg 0.5, cnn 30, digits 250, qat 300, onnx 250, sklearn 1e-3, faces 150. |
+| `docs/results/phase12-4-comparison.json` (current) | TFHE `dc20d05`; CKKS `meta.ckks_rerun.commit` = `3f6bd68` | `7d04993` | CKKS arm re-run on a working tree holding the uncommitted floor-bias fix, committed as `7d04993` ("fix(ckks): correct Requant target floor bias…"). `3f6bd68` itself is docs-only. Pre-Phase-10 fixtures (digits/qat/onnx/faces 11 blocks). CKKS max \|err\|: cnn 3/2, digits 25/35, qat 28/28, onnx 25/35, sklearn 0/0, faces 74/40, all labels match. TFHE digits op_type_secs: Conv2d 338.2062, Linear 287.042, Requant 54.6112; no measured PBS counters in this file. |
+| `docs/results/phase10-tfhe-sweep.json` | `78f5db7` | `eb158a0` | TFHE only. logreg 4.238 s / 1269 PBS; cnn 38.912 s / 10328 PBS. |
+| `docs/results/phase10-parallel-classic.json` | not recorded | `9b38c1b` | Byte-identical content to `phase10-param-sweep-classic.json`. |
+| `docs/results/phase10-parallel-tuned-sweep.json` | not recorded | `9b38c1b` | Pre-minimization fixtures; no `accuracy`/`bit_plan` fields. logreg 1.992 s / 555 PBS; cnn 26.899 s / 9104; digits 314.796 s / 109045; qat 336.504 / 119096; onnx 309.756 / 109045; sklearn 40.859 / 13376; faces 359.971 / 128571. |
+| `docs/results/phase10-param-sweep-{classic,gaussian,multibit2,multibit3,multibit4}.json` | not recorded | `9b38c1b` | Profile sweep (logreg + cnn). |
+| `docs/results/phase10-final-sweep.json` | `9b38c1b` | `8537d14` | HEAD `9b38c1b` did **not** contain the measured fixtures: the JSON has logreg/digits/qat at 6/9/8 blocks, `9b38c1b`'s fixtures are 8/11/11; the measured fixtures were first committed in `9f4b996` (2026-09-24 16:37). `meta.machine` "macOS 25.6.0" is the Darwin kernel version (`uname -r`), not the macOS product version. |
+| `docs/results/phase10-criterion-logreg.json` | `9b38c1b` | `accc268` | Written 16:28-16:29 local time on 2026-09-24, after the final report sweep and before commit `3ea5ed3`. HEAD was `9b38c1b`; the working tree held uncommitted Phase-10 minimized fixtures. `change_estimates` compare against an earlier Criterion run whose data was not kept. `rustc` not recorded. |
+| `docs/results/phase13-logreg-timing.json` | `accc268` | `19aa416` | ROADMAP Phase 13 logreg timing reconciliation: 5 report processes per backend order (4 samples each), interleaved, plus one Criterion run; one build; machine otherwise idle. |
+
+Figures marked † or introduced by a **Historical, not citable** note have no committed results file and must not be cited.
 
 ## Reproducing
 
@@ -430,8 +587,8 @@ cargo +nightly run -p penumbra-ckks --features ckks --release --example calibrat
 cargo +nightly test -p penumbra-ckks --features ckks --release
 
 # Time the encrypted forward pass (release; the golden tests carry the timing):
-cargo test --workspace --release --test golden_logreg -- --nocapture                  # ~0.5 s/sample
-cargo test --workspace --release --test golden_cnn    -- --nocapture                  # ~27 s/sample
+cargo test --workspace --release --test golden_logreg -- --nocapture                  # latency: Table A
+cargo test --workspace --release --test golden_cnn    -- --nocapture                  # latency: Table A
 cargo test --workspace --release --test golden_digits -- --ignored --nocapture        # minutes/sample (real digits)
 cargo test --workspace --release --test golden_qat    -- --ignored --nocapture        # minutes/sample (QAT)
 cargo test --workspace --release --test golden_faces  -- --ignored --nocapture        # minutes/sample (faces)

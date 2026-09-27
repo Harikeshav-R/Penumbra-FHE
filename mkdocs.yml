@@ -7,6 +7,7 @@ edit_uri: edit/main/docs/
 docs_dir: docs
 exclude_docs: |
   agents/
+  superpowers/
 theme:
   name: material
   features: [navigation.sections, navigation.top, navigation.footer, content.code.copy, search.highlight]
@@ -64,3 +65,5 @@ nav:
       - Development: DEVELOPMENT.md
       - "Investigation: Phase 7 CKKS error": INVESTIGATION-phase7-ckks-error.md
       - Changelog: changelog.md
+validation:
+  anchors: warn

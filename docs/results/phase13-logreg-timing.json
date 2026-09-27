@@ -1,0 +1,5010 @@
+{
+  "meta": {
+    "machine": "Apple M3 Pro, macOS 26.6.2 (Darwin 25.6.0)",
+    "hw_ncpu": 11,
+    "rustc": "rustc 1.100.0-nightly (bba531001 2026-09-20)",
+    "commit": "accc26831c0443debf93fd521304f75fcce0674b",
+    "date": "2026-09-27",
+    "threads": "RAYON_NUM_THREADS unset: TFHE uses the rayon global pool at its default size (hw.ncpu); CKKS (FFT64Neon, no enable-rayon) evaluates on one thread",
+    "note": "ROADMAP Phase 13 logreg timing reconciliation: 5 report processes per backend order (4 samples each), interleaved, plus one Criterion run; one build; machine otherwise idle."
+  },
+  "report_processes": [
+    {
+      "order": "tfhe,ckks",
+      "process": 1,
+      "harness": "penumbra-bench-report --models phase2_logreg --backends tfhe,ckks --samples 4 --format json",
+      "report": {
+        "meta": {
+          "os": "macos",
+          "arch": "aarch64",
+          "release": true,
+          "backends_compiled": [
+            "tfhe",
+            "ckks"
+          ],
+          "ckks_hal": "FFT64Neon",
+          "samples_requested": 4
+        },
+        "runs": [
+          {
+            "backend": "tfhe",
+            "profile": "classic",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 0.5083725,
+            "client_key_bytes": 23940,
+            "server_key_bytes": 120419227,
+            "input_ct_bytes": 6322708,
+            "output_ct_bytes": 98812,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.016698,
+                "eval_secs": 0.48068825,
+                "decrypt_secs": 4.625e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.6e-05,
+                    "eval_secs": 0.464782125,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.83e-07,
+                    "eval_secs": 0.015880292,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.016032666,
+                "eval_secs": 0.449261292,
+                "decrypt_secs": 4.958e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 9.17e-07,
+                    "eval_secs": 0.433062875,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 6.25e-07,
+                    "eval_secs": 0.016186458,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.016143584,
+                "eval_secs": 0.480466917,
+                "decrypt_secs": 7.667e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1e-06,
+                    "eval_secs": 0.463412833,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 8.75e-07,
+                    "eval_secs": 0.0170425,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.018521417,
+                "eval_secs": 0.515897375,
+                "decrypt_secs": 4.875e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 3.875e-06,
+                    "eval_secs": 0.49964475,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.41e-07,
+                    "eval_secs": 0.016237458,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.016336677,
+              "Linear": 0.46522564575
+            },
+            "op_type_build_secs": {
+              "Argmax": 6.56e-07,
+              "Linear": 5.448e-06
+            },
+            "cost_proxy": {
+              "cmp_pbs_ops": 1,
+              "ct_add": 31,
+              "scalar_add": 1,
+              "scalar_mul": 1
+            },
+            "measured_totals": {
+              "pbs": 137
+            },
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 0.000408958
+          },
+          {
+            "backend": "ckks",
+            "profile": "deg15",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 2.362791,
+            "client_key_bytes": 131196,
+            "server_key_bytes": 1869089408,
+            "input_ct_bytes": 4980843,
+            "output_ct_bytes": 4980843,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.011627292,
+                "eval_secs": 0.573728708,
+                "decrypt_secs": 0.000732209,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 4.9458e-05,
+                    "eval_secs": 0.451811458,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001208417,
+                    "eval_secs": 0.120629042,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.003959959,
+                "eval_secs": 0.348834291,
+                "decrypt_secs": 0.000645,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.1041e-05,
+                    "eval_secs": 0.235797458,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001202084,
+                    "eval_secs": 0.111797,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.003853,
+                "eval_secs": 0.347671792,
+                "decrypt_secs": 0.00064325,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.1875e-05,
+                    "eval_secs": 0.23424,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001187208,
+                    "eval_secs": 0.112211791,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.003879458,
+                "eval_secs": 0.366653292,
+                "decrypt_secs": 0.000660083,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.1958e-05,
+                    "eval_secs": 0.248812333,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001221166,
+                    "eval_secs": 0.116586333,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.1153060415,
+              "Linear": 0.29266531225
+            },
+            "op_type_build_secs": {
+              "Argmax": 0.00120471875,
+              "Linear": 2.8583e-05
+            },
+            "cost_proxy": {
+              "depth_levels": 5,
+              "poly_evals": 1,
+              "rescales": 5,
+              "rotations": 16
+            },
+            "measured_totals": {},
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 0.000408958
+          }
+        ]
+      }
+    },
+    {
+      "order": "tfhe,ckks",
+      "process": 2,
+      "harness": "penumbra-bench-report --models phase2_logreg --backends tfhe,ckks --samples 4 --format json",
+      "report": {
+        "meta": {
+          "os": "macos",
+          "arch": "aarch64",
+          "release": true,
+          "backends_compiled": [
+            "tfhe",
+            "ckks"
+          ],
+          "ckks_hal": "FFT64Neon",
+          "samples_requested": 4
+        },
+        "runs": [
+          {
+            "backend": "tfhe",
+            "profile": "classic",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 0.48713325,
+            "client_key_bytes": 23940,
+            "server_key_bytes": 120419227,
+            "input_ct_bytes": 6322708,
+            "output_ct_bytes": 98812,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.016375167,
+                "eval_secs": 0.469736792,
+                "decrypt_secs": 4.375e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.25e-06,
+                    "eval_secs": 0.453761416,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 7.5e-07,
+                    "eval_secs": 0.015959792,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.016114,
+                "eval_secs": 0.470386417,
+                "decrypt_secs": 4.834e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.041e-06,
+                    "eval_secs": 0.454487916,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.84e-07,
+                    "eval_secs": 0.01588775,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.016092083,
+                "eval_secs": 0.477979291,
+                "decrypt_secs": 5.042e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 7.08e-07,
+                    "eval_secs": 0.461783542,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.41e-07,
+                    "eval_secs": 0.016185166,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.017183459,
+                "eval_secs": 0.481387541,
+                "decrypt_secs": 4.792e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.334e-06,
+                    "eval_secs": 0.465539416,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.41e-07,
+                    "eval_secs": 0.015836375,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.01596727075,
+              "Linear": 0.4588930725
+            },
+            "op_type_build_secs": {
+              "Argmax": 6.040000000000001e-07,
+              "Linear": 1.3332500000000001e-06
+            },
+            "cost_proxy": {
+              "cmp_pbs_ops": 1,
+              "ct_add": 31,
+              "scalar_add": 1,
+              "scalar_mul": 1
+            },
+            "measured_totals": {
+              "pbs": 137
+            },
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 9.25e-05
+          },
+          {
+            "backend": "ckks",
+            "profile": "deg15",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 1.929405375,
+            "client_key_bytes": 131196,
+            "server_key_bytes": 1869089408,
+            "input_ct_bytes": 4980843,
+            "output_ct_bytes": 4980843,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.006806167,
+                "eval_secs": 0.489504333,
+                "decrypt_secs": 0.000703834,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 3.6833e-05,
+                    "eval_secs": 0.368360333,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001228833,
+                    "eval_secs": 0.119862167,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.003887459,
+                "eval_secs": 0.345525291,
+                "decrypt_secs": 0.00064525,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.0917e-05,
+                    "eval_secs": 0.233013041,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001194875,
+                    "eval_secs": 0.111278958,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.003897417,
+                "eval_secs": 0.345866084,
+                "decrypt_secs": 0.000643917,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.1958e-05,
+                    "eval_secs": 0.232832583,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001216291,
+                    "eval_secs": 0.111784916,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.003876875,
+                "eval_secs": 0.350355625,
+                "decrypt_secs": 0.000659041,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.0625e-05,
+                    "eval_secs": 0.236791167,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001214792,
+                    "eval_secs": 0.112318625,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.1138111665,
+              "Linear": 0.267749281
+            },
+            "op_type_build_secs": {
+              "Argmax": 0.00121369775,
+              "Linear": 2.5083249999999997e-05
+            },
+            "cost_proxy": {
+              "depth_levels": 5,
+              "poly_evals": 1,
+              "rescales": 5,
+              "rotations": 16
+            },
+            "measured_totals": {},
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 9.25e-05
+          }
+        ]
+      }
+    },
+    {
+      "order": "tfhe,ckks",
+      "process": 3,
+      "harness": "penumbra-bench-report --models phase2_logreg --backends tfhe,ckks --samples 4 --format json",
+      "report": {
+        "meta": {
+          "os": "macos",
+          "arch": "aarch64",
+          "release": true,
+          "backends_compiled": [
+            "tfhe",
+            "ckks"
+          ],
+          "ckks_hal": "FFT64Neon",
+          "samples_requested": 4
+        },
+        "runs": [
+          {
+            "backend": "tfhe",
+            "profile": "classic",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 0.493796666,
+            "client_key_bytes": 23940,
+            "server_key_bytes": 120419227,
+            "input_ct_bytes": 6322708,
+            "output_ct_bytes": 98812,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.016690542,
+                "eval_secs": 0.462978,
+                "decrypt_secs": 5.459e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.667e-06,
+                    "eval_secs": 0.447003417,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 8.34e-07,
+                    "eval_secs": 0.015947583,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.016173666,
+                "eval_secs": 0.471737375,
+                "decrypt_secs": 4.708e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.208e-06,
+                    "eval_secs": 0.455538916,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.83e-07,
+                    "eval_secs": 0.016183708,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.01600525,
+                "eval_secs": 0.465698333,
+                "decrypt_secs": 4.542e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.333e-06,
+                    "eval_secs": 0.449777375,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 6.67e-07,
+                    "eval_secs": 0.015908959,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.015964458,
+                "eval_secs": 0.450960458,
+                "decrypt_secs": 4.542e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 9.17e-07,
+                    "eval_secs": 0.435048625,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 7.08e-07,
+                    "eval_secs": 0.015896417,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.01598416675,
+              "Linear": 0.44684208325
+            },
+            "op_type_build_secs": {
+              "Argmax": 6.979999999999999e-07,
+              "Linear": 1.53125e-06
+            },
+            "cost_proxy": {
+              "cmp_pbs_ops": 1,
+              "ct_add": 31,
+              "scalar_add": 1,
+              "scalar_mul": 1
+            },
+            "measured_totals": {
+              "pbs": 137
+            },
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 7.5125e-05
+          },
+          {
+            "backend": "ckks",
+            "profile": "deg15",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 1.9255707499999999,
+            "client_key_bytes": 131196,
+            "server_key_bytes": 1869089408,
+            "input_ct_bytes": 4980843,
+            "output_ct_bytes": 4980843,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.005317917,
+                "eval_secs": 0.542494375,
+                "decrypt_secs": 0.000738833,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 5.4541e-05,
+                    "eval_secs": 0.422957708,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001249667,
+                    "eval_secs": 0.118215167,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.003899209,
+                "eval_secs": 0.346256167,
+                "decrypt_secs": 0.000668916,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.6959e-05,
+                    "eval_secs": 0.233784958,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001238875,
+                    "eval_secs": 0.111194375,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.004034417,
+                "eval_secs": 0.346189125,
+                "decrypt_secs": 0.000745875,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.2167e-05,
+                    "eval_secs": 0.234105584,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.00118625,
+                    "eval_secs": 0.110863292,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.003931292,
+                "eval_secs": 0.34871275,
+                "decrypt_secs": 0.000633625,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.2667e-05,
+                    "eval_secs": 0.2346275,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001183292,
+                    "eval_secs": 0.11286675,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.113284896,
+              "Linear": 0.2813689375
+            },
+            "op_type_build_secs": {
+              "Argmax": 0.0012145209999999999,
+              "Linear": 3.15835e-05
+            },
+            "cost_proxy": {
+              "depth_levels": 5,
+              "poly_evals": 1,
+              "rescales": 5,
+              "rotations": 16
+            },
+            "measured_totals": {},
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 7.5125e-05
+          }
+        ]
+      }
+    },
+    {
+      "order": "tfhe,ckks",
+      "process": 4,
+      "harness": "penumbra-bench-report --models phase2_logreg --backends tfhe,ckks --samples 4 --format json",
+      "report": {
+        "meta": {
+          "os": "macos",
+          "arch": "aarch64",
+          "release": true,
+          "backends_compiled": [
+            "tfhe",
+            "ckks"
+          ],
+          "ckks_hal": "FFT64Neon",
+          "samples_requested": 4
+        },
+        "runs": [
+          {
+            "backend": "tfhe",
+            "profile": "classic",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 0.495486417,
+            "client_key_bytes": 23940,
+            "server_key_bytes": 120419227,
+            "input_ct_bytes": 6322708,
+            "output_ct_bytes": 98812,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.017605083,
+                "eval_secs": 0.461054041,
+                "decrypt_secs": 4.834e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.959e-06,
+                    "eval_secs": 0.445133834,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.42e-07,
+                    "eval_secs": 0.01590575,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.016533583,
+                "eval_secs": 0.46263175,
+                "decrypt_secs": 4.542e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1e-06,
+                    "eval_secs": 0.446848625,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.83e-07,
+                    "eval_secs": 0.01577125,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.015939542,
+                "eval_secs": 0.463682208,
+                "decrypt_secs": 4.666e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 9.16e-07,
+                    "eval_secs": 0.447920125,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.83e-07,
+                    "eval_secs": 0.015751542,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.016152792,
+                "eval_secs": 0.480001667,
+                "decrypt_secs": 4.625e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 9.17e-07,
+                    "eval_secs": 0.464065708,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 3.75e-07,
+                    "eval_secs": 0.015924666,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.015838302,
+              "Linear": 0.450992073
+            },
+            "op_type_build_secs": {
+              "Argmax": 5.2075e-07,
+              "Linear": 1.448e-06
+            },
+            "cost_proxy": {
+              "cmp_pbs_ops": 1,
+              "ct_add": 31,
+              "scalar_add": 1,
+              "scalar_mul": 1
+            },
+            "measured_totals": {
+              "pbs": 137
+            },
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 7.2625e-05
+          },
+          {
+            "backend": "ckks",
+            "profile": "deg15",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 1.957840375,
+            "client_key_bytes": 131196,
+            "server_key_bytes": 1869089408,
+            "input_ct_bytes": 4980843,
+            "output_ct_bytes": 4980843,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.00557525,
+                "eval_secs": 0.493866958,
+                "decrypt_secs": 0.000724583,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.925e-05,
+                    "eval_secs": 0.377305333,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001257792,
+                    "eval_secs": 0.115250166,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.003858334,
+                "eval_secs": 0.34775725,
+                "decrypt_secs": 0.0006475,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.3667e-05,
+                    "eval_secs": 0.233831833,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001290708,
+                    "eval_secs": 0.112596583,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.003813958,
+                "eval_secs": 0.344860458,
+                "decrypt_secs": 0.000655792,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.7583e-05,
+                    "eval_secs": 0.232767875,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001184917,
+                    "eval_secs": 0.110865208,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.003838125,
+                "eval_secs": 0.343798083,
+                "decrypt_secs": 0.00065875,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.4625e-05,
+                    "eval_secs": 0.232185791,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001079416,
+                    "eval_secs": 0.110499833,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.1123029475,
+              "Linear": 0.269022708
+            },
+            "op_type_build_secs": {
+              "Argmax": 0.00120320825,
+              "Linear": 2.628125e-05
+            },
+            "cost_proxy": {
+              "depth_levels": 5,
+              "poly_evals": 1,
+              "rescales": 5,
+              "rotations": 16
+            },
+            "measured_totals": {},
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 7.2625e-05
+          }
+        ]
+      }
+    },
+    {
+      "order": "tfhe,ckks",
+      "process": 5,
+      "harness": "penumbra-bench-report --models phase2_logreg --backends tfhe,ckks --samples 4 --format json",
+      "report": {
+        "meta": {
+          "os": "macos",
+          "arch": "aarch64",
+          "release": true,
+          "backends_compiled": [
+            "tfhe",
+            "ckks"
+          ],
+          "ckks_hal": "FFT64Neon",
+          "samples_requested": 4
+        },
+        "runs": [
+          {
+            "backend": "tfhe",
+            "profile": "classic",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 0.493474667,
+            "client_key_bytes": 23940,
+            "server_key_bytes": 120419227,
+            "input_ct_bytes": 6322708,
+            "output_ct_bytes": 98812,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.016406584,
+                "eval_secs": 0.449249125,
+                "decrypt_secs": 5.084e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.083e-06,
+                    "eval_secs": 0.433482875,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 9.17e-07,
+                    "eval_secs": 0.015754375,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.015921666,
+                "eval_secs": 0.441279459,
+                "decrypt_secs": 4.791e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 6.25e-07,
+                    "eval_secs": 0.425552875,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5e-07,
+                    "eval_secs": 0.0157165,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.015939458,
+                "eval_secs": 0.445050292,
+                "decrypt_secs": 4.917e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 7.08e-07,
+                    "eval_secs": 0.429277584,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 2.92e-07,
+                    "eval_secs": 0.015762542,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.015894666,
+                "eval_secs": 0.429918333,
+                "decrypt_secs": 4.666e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 7.08e-07,
+                    "eval_secs": 0.414144959,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 3.33e-07,
+                    "eval_secs": 0.01576325,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.01574916675,
+              "Linear": 0.42561457324999996
+            },
+            "op_type_build_secs": {
+              "Argmax": 5.105e-07,
+              "Linear": 1.031e-06
+            },
+            "cost_proxy": {
+              "cmp_pbs_ops": 1,
+              "ct_add": 31,
+              "scalar_add": 1,
+              "scalar_mul": 1
+            },
+            "measured_totals": {
+              "pbs": 137
+            },
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 7.3917e-05
+          },
+          {
+            "backend": "ckks",
+            "profile": "deg15",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 1.907833833,
+            "client_key_bytes": 131196,
+            "server_key_bytes": 1869089408,
+            "input_ct_bytes": 4980843,
+            "output_ct_bytes": 4980843,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.006131833,
+                "eval_secs": 0.489703875,
+                "decrypt_secs": 0.000734,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 3.35e-05,
+                    "eval_secs": 0.375212209,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001208292,
+                    "eval_secs": 0.113229167,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.003836042,
+                "eval_secs": 0.344093417,
+                "decrypt_secs": 0.000661291,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.8625e-05,
+                    "eval_secs": 0.230864125,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001190959,
+                    "eval_secs": 0.111991125,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.003937291,
+                "eval_secs": 0.34390825,
+                "decrypt_secs": 0.000671667,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.5083e-05,
+                    "eval_secs": 0.232141292,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001194208,
+                    "eval_secs": 0.110536375,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.003881375,
+                "eval_secs": 0.343810167,
+                "decrypt_secs": 0.000652292,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.3042e-05,
+                    "eval_secs": 0.232011125,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001105708,
+                    "eval_secs": 0.110660792,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.11160436475,
+              "Linear": 0.26755718775000004
+            },
+            "op_type_build_secs": {
+              "Argmax": 0.00117479175,
+              "Linear": 2.7562500000000002e-05
+            },
+            "cost_proxy": {
+              "depth_levels": 5,
+              "poly_evals": 1,
+              "rescales": 5,
+              "rotations": 16
+            },
+            "measured_totals": {},
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 7.3917e-05
+          }
+        ]
+      }
+    },
+    {
+      "order": "ckks,tfhe",
+      "process": 1,
+      "harness": "penumbra-bench-report --models phase2_logreg --backends ckks,tfhe --samples 4 --format json",
+      "report": {
+        "meta": {
+          "os": "macos",
+          "arch": "aarch64",
+          "release": true,
+          "backends_compiled": [
+            "tfhe",
+            "ckks"
+          ],
+          "ckks_hal": "FFT64Neon",
+          "samples_requested": 4
+        },
+        "runs": [
+          {
+            "backend": "ckks",
+            "profile": "deg15",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 1.994460125,
+            "client_key_bytes": 131196,
+            "server_key_bytes": 1869089408,
+            "input_ct_bytes": 4980843,
+            "output_ct_bytes": 4980843,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.008179042,
+                "eval_secs": 0.469832292,
+                "decrypt_secs": 0.000769959,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.675e-05,
+                    "eval_secs": 0.355043167,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001202667,
+                    "eval_secs": 0.113540583,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.003923667,
+                "eval_secs": 0.346660333,
+                "decrypt_secs": 0.000645292,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.1458e-05,
+                    "eval_secs": 0.233452167,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001227958,
+                    "eval_secs": 0.111947042,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.003914583,
+                "eval_secs": 0.345584125,
+                "decrypt_secs": 0.000674917,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.975e-05,
+                    "eval_secs": 0.232917917,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001194125,
+                    "eval_secs": 0.111431541,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.003858125,
+                "eval_secs": 0.346566959,
+                "decrypt_secs": 0.000649,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.0667e-05,
+                    "eval_secs": 0.234311375,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.0011915,
+                    "eval_secs": 0.111028125,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.11198682274999999,
+              "Linear": 0.2639311565
+            },
+            "op_type_build_secs": {
+              "Argmax": 0.0012040624999999998,
+              "Linear": 2.465625e-05
+            },
+            "cost_proxy": {
+              "depth_levels": 5,
+              "poly_evals": 1,
+              "rescales": 5,
+              "rotations": 16
+            },
+            "measured_totals": {},
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 0.00030275
+          },
+          {
+            "backend": "tfhe",
+            "profile": "classic",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 0.4874235,
+            "client_key_bytes": 23940,
+            "server_key_bytes": 120419227,
+            "input_ct_bytes": 6322708,
+            "output_ct_bytes": 98812,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.016491042,
+                "eval_secs": 0.466762584,
+                "decrypt_secs": 4.5e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 4.791e-06,
+                    "eval_secs": 0.45090925,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 6.67e-07,
+                    "eval_secs": 0.015837958,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.016339292,
+                "eval_secs": 0.474080291,
+                "decrypt_secs": 4.958e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 9.58e-07,
+                    "eval_secs": 0.45699325,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 7.91e-07,
+                    "eval_secs": 0.01707225,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.016871958,
+                "eval_secs": 0.485506834,
+                "decrypt_secs": 4.833e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.25e-06,
+                    "eval_secs": 0.469432209,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.41e-07,
+                    "eval_secs": 0.016061292,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.016090583,
+                "eval_secs": 0.467779125,
+                "decrypt_secs": 4.667e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 9.16e-07,
+                    "eval_secs": 0.451530333,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 6.25e-07,
+                    "eval_secs": 0.016236209,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.01630192725,
+              "Linear": 0.4572162605
+            },
+            "op_type_build_secs": {
+              "Argmax": 6.559999999999999e-07,
+              "Linear": 1.97875e-06
+            },
+            "cost_proxy": {
+              "cmp_pbs_ops": 1,
+              "ct_add": 31,
+              "scalar_add": 1,
+              "scalar_mul": 1
+            },
+            "measured_totals": {
+              "pbs": 137
+            },
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 0.00030275
+          }
+        ]
+      }
+    },
+    {
+      "order": "ckks,tfhe",
+      "process": 2,
+      "harness": "penumbra-bench-report --models phase2_logreg --backends ckks,tfhe --samples 4 --format json",
+      "report": {
+        "meta": {
+          "os": "macos",
+          "arch": "aarch64",
+          "release": true,
+          "backends_compiled": [
+            "tfhe",
+            "ckks"
+          ],
+          "ckks_hal": "FFT64Neon",
+          "samples_requested": 4
+        },
+        "runs": [
+          {
+            "backend": "ckks",
+            "profile": "deg15",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 1.9102477919999998,
+            "client_key_bytes": 131196,
+            "server_key_bytes": 1869089408,
+            "input_ct_bytes": 4980843,
+            "output_ct_bytes": 4980843,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.007661083,
+                "eval_secs": 0.486874333,
+                "decrypt_secs": 0.00072225,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.6791e-05,
+                    "eval_secs": 0.370837792,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001201792,
+                    "eval_secs": 0.114785708,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.004032375,
+                "eval_secs": 0.346165666,
+                "decrypt_secs": 0.000655292,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.3083e-05,
+                    "eval_secs": 0.233536417,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001199125,
+                    "eval_secs": 0.111397166,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.0038485,
+                "eval_secs": 0.346194291,
+                "decrypt_secs": 0.000648042,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.8583e-05,
+                    "eval_secs": 0.233284208,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001213083,
+                    "eval_secs": 0.111657166,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.003880875,
+                "eval_secs": 0.346284625,
+                "decrypt_secs": 0.000656041,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.5167e-05,
+                    "eval_secs": 0.234173125,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001217667,
+                    "eval_secs": 0.110857875,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.11217447875,
+              "Linear": 0.2679578855
+            },
+            "op_type_build_secs": {
+              "Argmax": 0.0012079167499999999,
+              "Linear": 2.5906000000000002e-05
+            },
+            "cost_proxy": {
+              "depth_levels": 5,
+              "poly_evals": 1,
+              "rescales": 5,
+              "rotations": 16
+            },
+            "measured_totals": {},
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 7.0583e-05
+          },
+          {
+            "backend": "tfhe",
+            "profile": "classic",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 0.485208459,
+            "client_key_bytes": 23940,
+            "server_key_bytes": 120419227,
+            "input_ct_bytes": 6322708,
+            "output_ct_bytes": 98812,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.016596625,
+                "eval_secs": 0.471157209,
+                "decrypt_secs": 4.5e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 4.5e-06,
+                    "eval_secs": 0.455311792,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 7.09e-07,
+                    "eval_secs": 0.015830834,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.016167666,
+                "eval_secs": 0.451451375,
+                "decrypt_secs": 5.875e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.166e-06,
+                    "eval_secs": 0.435534083,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 8.75e-07,
+                    "eval_secs": 0.0159055,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.016218334,
+                "eval_secs": 0.452276541,
+                "decrypt_secs": 4.667e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.292e-06,
+                    "eval_secs": 0.436369459,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5e-07,
+                    "eval_secs": 0.015895959,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.016448958,
+                "eval_secs": 0.467603167,
+                "decrypt_secs": 5.208e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1e-06,
+                    "eval_secs": 0.451053583,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 7.5e-07,
+                    "eval_secs": 0.016535583,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.016041969,
+              "Linear": 0.44456722925
+            },
+            "op_type_build_secs": {
+              "Argmax": 7.085e-07,
+              "Linear": 1.9895e-06
+            },
+            "cost_proxy": {
+              "cmp_pbs_ops": 1,
+              "ct_add": 31,
+              "scalar_add": 1,
+              "scalar_mul": 1
+            },
+            "measured_totals": {
+              "pbs": 137
+            },
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 7.0583e-05
+          }
+        ]
+      }
+    },
+    {
+      "order": "ckks,tfhe",
+      "process": 3,
+      "harness": "penumbra-bench-report --models phase2_logreg --backends ckks,tfhe --samples 4 --format json",
+      "report": {
+        "meta": {
+          "os": "macos",
+          "arch": "aarch64",
+          "release": true,
+          "backends_compiled": [
+            "tfhe",
+            "ckks"
+          ],
+          "ckks_hal": "FFT64Neon",
+          "samples_requested": 4
+        },
+        "runs": [
+          {
+            "backend": "ckks",
+            "profile": "deg15",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 1.927110667,
+            "client_key_bytes": 131196,
+            "server_key_bytes": 1869089408,
+            "input_ct_bytes": 4980843,
+            "output_ct_bytes": 4980843,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.006009583,
+                "eval_secs": 0.475169333,
+                "decrypt_secs": 0.000721333,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.4375e-05,
+                    "eval_secs": 0.360046625,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.00123125,
+                    "eval_secs": 0.1138465,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.004032,
+                "eval_secs": 0.350485459,
+                "decrypt_secs": 0.000638583,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.7125e-05,
+                    "eval_secs": 0.233834541,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001208041,
+                    "eval_secs": 0.115404084,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.00382775,
+                "eval_secs": 0.347637125,
+                "decrypt_secs": 0.000667958,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.1834e-05,
+                    "eval_secs": 0.23335775,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001192875,
+                    "eval_secs": 0.113053416,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.003927333,
+                "eval_secs": 0.348598666,
+                "decrypt_secs": 0.000643708,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.0959e-05,
+                    "eval_secs": 0.235270125,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001190125,
+                    "eval_secs": 0.1121055,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.113602375,
+              "Linear": 0.26562726025000005
+            },
+            "op_type_build_secs": {
+              "Argmax": 0.0012055727499999998,
+              "Linear": 2.357325e-05
+            },
+            "cost_proxy": {
+              "depth_levels": 5,
+              "poly_evals": 1,
+              "rescales": 5,
+              "rotations": 16
+            },
+            "measured_totals": {},
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 7.6e-05
+          },
+          {
+            "backend": "tfhe",
+            "profile": "classic",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 0.491898291,
+            "client_key_bytes": 23940,
+            "server_key_bytes": 120419227,
+            "input_ct_bytes": 6322708,
+            "output_ct_bytes": 98812,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.016452833,
+                "eval_secs": 0.475584875,
+                "decrypt_secs": 4.666e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 5.25e-06,
+                    "eval_secs": 0.459047292,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 1.042e-06,
+                    "eval_secs": 0.0165175,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.01921025,
+                "eval_secs": 0.470108208,
+                "decrypt_secs": 5e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.125e-06,
+                    "eval_secs": 0.454022792,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 7.91e-07,
+                    "eval_secs": 0.016071083,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.016260708,
+                "eval_secs": 0.447160375,
+                "decrypt_secs": 4.833e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.584e-06,
+                    "eval_secs": 0.43121125,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.41e-07,
+                    "eval_secs": 0.015935708,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.016466375,
+                "eval_secs": 0.466576292,
+                "decrypt_secs": 4.75e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.209e-06,
+                    "eval_secs": 0.450304417,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 4.58e-07,
+                    "eval_secs": 0.016259125,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.016195854000000003,
+              "Linear": 0.44864643775
+            },
+            "op_type_build_secs": {
+              "Argmax": 7.08e-07,
+              "Linear": 2.292e-06
+            },
+            "cost_proxy": {
+              "cmp_pbs_ops": 1,
+              "ct_add": 31,
+              "scalar_add": 1,
+              "scalar_mul": 1
+            },
+            "measured_totals": {
+              "pbs": 137
+            },
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 7.6e-05
+          }
+        ]
+      }
+    },
+    {
+      "order": "ckks,tfhe",
+      "process": 4,
+      "harness": "penumbra-bench-report --models phase2_logreg --backends ckks,tfhe --samples 4 --format json",
+      "report": {
+        "meta": {
+          "os": "macos",
+          "arch": "aarch64",
+          "release": true,
+          "backends_compiled": [
+            "tfhe",
+            "ckks"
+          ],
+          "ckks_hal": "FFT64Neon",
+          "samples_requested": 4
+        },
+        "runs": [
+          {
+            "backend": "ckks",
+            "profile": "deg15",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 1.894504334,
+            "client_key_bytes": 131196,
+            "server_key_bytes": 1869089408,
+            "input_ct_bytes": 4980843,
+            "output_ct_bytes": 4980843,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.009057208,
+                "eval_secs": 0.44668125,
+                "decrypt_secs": 0.000699667,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 3.3417e-05,
+                    "eval_secs": 0.3326575,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001209125,
+                    "eval_secs": 0.112759334,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.003821541,
+                "eval_secs": 0.351159375,
+                "decrypt_secs": 0.000640584,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.8208e-05,
+                    "eval_secs": 0.236215916,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001199917,
+                    "eval_secs": 0.113703542,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.003832958,
+                "eval_secs": 0.3459515,
+                "decrypt_secs": 0.000639916,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.1e-05,
+                    "eval_secs": 0.2341305,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.00119275,
+                    "eval_secs": 0.110596625,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.003821041,
+                "eval_secs": 0.344727459,
+                "decrypt_secs": 0.00065075,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.0917e-05,
+                    "eval_secs": 0.232522084,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001191458,
+                    "eval_secs": 0.110976583,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.11200902100000001,
+              "Linear": 0.2588815
+            },
+            "op_type_build_secs": {
+              "Argmax": 0.0011983125000000002,
+              "Linear": 2.58855e-05
+            },
+            "cost_proxy": {
+              "depth_levels": 5,
+              "poly_evals": 1,
+              "rescales": 5,
+              "rotations": 16
+            },
+            "measured_totals": {},
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 6.6708e-05
+          },
+          {
+            "backend": "tfhe",
+            "profile": "classic",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 0.493610417,
+            "client_key_bytes": 23940,
+            "server_key_bytes": 120419227,
+            "input_ct_bytes": 6322708,
+            "output_ct_bytes": 98812,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.016537875,
+                "eval_secs": 0.462916,
+                "decrypt_secs": 4.667e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 3.292e-06,
+                    "eval_secs": 0.44708,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 7.5e-07,
+                    "eval_secs": 0.015820959,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.015898792,
+                "eval_secs": 0.492512875,
+                "decrypt_secs": 4.875e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 9.58e-07,
+                    "eval_secs": 0.476599833,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5e-07,
+                    "eval_secs": 0.015900833,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.015911083,
+                "eval_secs": 0.466822084,
+                "decrypt_secs": 5e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 9.17e-07,
+                    "eval_secs": 0.4510645,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5e-07,
+                    "eval_secs": 0.015745334,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.016134917,
+                "eval_secs": 0.45502825,
+                "decrypt_secs": 4.875e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 9.58e-07,
+                    "eval_secs": 0.439035667,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5e-07,
+                    "eval_secs": 0.015979666,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.015861698,
+              "Linear": 0.453445
+            },
+            "op_type_build_secs": {
+              "Argmax": 5.624999999999999e-07,
+              "Linear": 1.53125e-06
+            },
+            "cost_proxy": {
+              "cmp_pbs_ops": 1,
+              "ct_add": 31,
+              "scalar_add": 1,
+              "scalar_mul": 1
+            },
+            "measured_totals": {
+              "pbs": 137
+            },
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 6.6708e-05
+          }
+        ]
+      }
+    },
+    {
+      "order": "ckks,tfhe",
+      "process": 5,
+      "harness": "penumbra-bench-report --models phase2_logreg --backends ckks,tfhe --samples 4 --format json",
+      "report": {
+        "meta": {
+          "os": "macos",
+          "arch": "aarch64",
+          "release": true,
+          "backends_compiled": [
+            "tfhe",
+            "ckks"
+          ],
+          "ckks_hal": "FFT64Neon",
+          "samples_requested": 4
+        },
+        "runs": [
+          {
+            "backend": "ckks",
+            "profile": "deg15",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 1.918752875,
+            "client_key_bytes": 131196,
+            "server_key_bytes": 1869089408,
+            "input_ct_bytes": 4980843,
+            "output_ct_bytes": 4980843,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.007746917,
+                "eval_secs": 0.502876208,
+                "decrypt_secs": 0.000736667,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.8791e-05,
+                    "eval_secs": 0.386216375,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001245083,
+                    "eval_secs": 0.115359458,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.004046791,
+                "eval_secs": 0.345150792,
+                "decrypt_secs": 0.000644333,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.5042e-05,
+                    "eval_secs": 0.233247625,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001206208,
+                    "eval_secs": 0.110661292,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.003825708,
+                "eval_secs": 0.348253083,
+                "decrypt_secs": 0.000695708,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.9625e-05,
+                    "eval_secs": 0.236865291,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001185083,
+                    "eval_secs": 0.110162834,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.003844583,
+                "eval_secs": 0.354933709,
+                "decrypt_secs": 0.000642167,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 2.3792e-05,
+                    "eval_secs": 0.241633958,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 1,
+                      "rescales": 1,
+                      "rotations": 16
+                    },
+                    "measured": {}
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 0.001278792,
+                    "eval_secs": 0.111983542,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "depth_levels": 4,
+                      "poly_evals": 1,
+                      "rescales": 4
+                    },
+                    "measured": {}
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.11204178149999999,
+              "Linear": 0.27449081225
+            },
+            "op_type_build_secs": {
+              "Argmax": 0.0012287915,
+              "Linear": 2.68125e-05
+            },
+            "cost_proxy": {
+              "depth_levels": 5,
+              "poly_evals": 1,
+              "rescales": 5,
+              "rotations": 16
+            },
+            "measured_totals": {},
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 7.4875e-05
+          },
+          {
+            "backend": "tfhe",
+            "profile": "classic",
+            "model": "phase2_logreg",
+            "fixture": "../../examples/mnist/phase2_fixture.json",
+            "num_blocks": 6,
+            "keygen_secs": 0.492406042,
+            "client_key_bytes": 23940,
+            "server_key_bytes": 120419227,
+            "input_ct_bytes": 6322708,
+            "output_ct_bytes": 98812,
+            "samples": [
+              {
+                "index": 0,
+                "encrypt_secs": 0.01615825,
+                "eval_secs": 0.450122458,
+                "decrypt_secs": 4.583e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 3.25e-06,
+                    "eval_secs": 0.434278333,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.42e-07,
+                    "eval_secs": 0.01582925,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 1,
+                "encrypt_secs": 0.016339542,
+                "eval_secs": 0.473629167,
+                "decrypt_secs": 4.875e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.208e-06,
+                    "eval_secs": 0.457464792,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 6.67e-07,
+                    "eval_secs": 0.016149292,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 2,
+                "encrypt_secs": 0.016530375,
+                "eval_secs": 0.479619083,
+                "decrypt_secs": 5.083e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.167e-06,
+                    "eval_secs": 0.463562834,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 6.66e-07,
+                    "eval_secs": 0.016043125,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  1
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              },
+              {
+                "index": 3,
+                "encrypt_secs": 0.016735125,
+                "eval_secs": 0.448878209,
+                "decrypt_secs": 4.667e-06,
+                "nodes": [
+                  {
+                    "name": "fc",
+                    "op_type": "Linear",
+                    "build_secs": 1.5e-06,
+                    "eval_secs": 0.4327065,
+                    "input_lens": [
+                      64
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "ct_add": 31,
+                      "scalar_add": 1,
+                      "scalar_mul": 1
+                    },
+                    "measured": {
+                      "pbs": 136
+                    }
+                  },
+                  {
+                    "name": "head",
+                    "op_type": "Argmax",
+                    "build_secs": 5.83e-07,
+                    "eval_secs": 0.016158209,
+                    "input_lens": [
+                      1
+                    ],
+                    "output_len": 1,
+                    "counters": {
+                      "cmp_pbs_ops": 1
+                    },
+                    "measured": {
+                      "pbs": 1
+                    }
+                  }
+                ],
+                "decrypted": [
+                  0
+                ],
+                "max_abs_err": null,
+                "mean_abs_err": null,
+                "label_matches": true
+              }
+            ],
+            "op_type_secs": {
+              "Argmax": 0.016044969,
+              "Linear": 0.44700311475
+            },
+            "op_type_build_secs": {
+              "Argmax": 6.145e-07,
+              "Linear": 1.7812499999999999e-06
+            },
+            "cost_proxy": {
+              "cmp_pbs_ops": 1,
+              "ct_add": 31,
+              "scalar_add": 1,
+              "scalar_mul": 1
+            },
+            "measured_totals": {
+              "pbs": 137
+            },
+            "accuracy": {
+              "float": 1.0,
+              "quantized": 1.0
+            },
+            "bit_plan": {
+              "act_bits": 2,
+              "input_bits": 2,
+              "max_mult_bits": 5,
+              "weight_bits": [
+                2
+              ]
+            },
+            "ir_bytes": 5077,
+            "ir_load_secs": 7.4875e-05
+          }
+        ]
+      }
+    }
+  ],
+  "criterion": {
+    "harness": "PENUMBRA_BENCH_MODELS=phase2_logreg cargo +nightly bench -p penumbra-bench --features ckks",
+    "tfhe": {
+      "benchmark": {
+        "group_id": "inference/phase2_logreg",
+        "function_id": "tfhe",
+        "value_str": "phase2_logreg",
+        "throughput": null,
+        "full_id": "inference/phase2_logreg/tfhe/phase2_logreg",
+        "directory_name": "inference_phase2_logreg/tfhe/phase2_logreg",
+        "title": "inference/phase2_logreg/tfhe/phase2_logreg"
+      },
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 465572123.6653571,
+            "upper_bound": 502714454.75714284
+          },
+          "point_estimate": 480778353.8714286,
+          "standard_error": 9851100.100765377
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 464743471.75,
+            "upper_bound": 482503078.89285713
+          },
+          "point_estimate": 474044133.8928572,
+          "standard_error": 4848564.092352627
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 3343007.086249722,
+            "upper_bound": 27911040.99307992
+          },
+          "point_estimate": 10899216.739950236,
+          "standard_error": 6415761.922842015
+        },
+        "slope": null,
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 6807269.499641838,
+            "upper_bound": 49152562.626162544
+          },
+          "point_estimate": 32722370.290290393,
+          "standard_error": 13425357.896639504
+        }
+      },
+      "sample": {
+        "sampling_mode": "Flat",
+        "iters": [
+          14.0,
+          14.0,
+          14.0,
+          14.0,
+          14.0,
+          14.0,
+          14.0,
+          14.0,
+          14.0,
+          14.0
+        ],
+        "times": [
+          6264584000.0,
+          6440302584.0,
+          6661526833.0,
+          6835242125.0,
+          6674844084.0,
+          6544666209.0,
+          6572514625.0,
+          7953074166.0,
+          6611708916.0,
+          6750506000.0
+        ]
+      }
+    },
+    "ckks": {
+      "benchmark": {
+        "group_id": "inference/phase2_logreg",
+        "function_id": "ckks",
+        "value_str": "phase2_logreg",
+        "throughput": null,
+        "full_id": "inference/phase2_logreg/ckks/phase2_logreg",
+        "directory_name": "inference_phase2_logreg/ckks/phase2_logreg",
+        "title": "inference/phase2_logreg/ckks/phase2_logreg"
+      },
+      "estimates": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 343036744.26875,
+            "upper_bound": 361070398.96124995
+          },
+          "point_estimate": 351641817.95625,
+          "standard_error": 4503240.339268231
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 341739725.21875,
+            "upper_bound": 365385190.0625
+          },
+          "point_estimate": 343308740.875,
+          "standard_error": 6311960.3652083315
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 60188.18450644612,
+            "upper_bound": 20178181.796271913
+          },
+          "point_estimate": 2402140.167928487,
+          "standard_error": 5992558.697578087
+        },
+        "slope": null,
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1457911.0636622142,
+            "upper_bound": 17945986.604061533
+          },
+          "point_estimate": 14985921.521623824,
+          "standard_error": 3352536.3029191266
+        }
+      },
+      "sample": {
+        "sampling_mode": "Flat",
+        "iters": [
+          16.0,
+          16.0,
+          16.0,
+          16.0,
+          16.0,
+          16.0,
+          16.0,
+          16.0,
+          16.0,
+          16.0
+        ],
+        "times": [
+          5846163041.0,
+          5984958792.0,
+          6062639208.0,
+          5510545875.0,
+          5460202083.0,
+          5474342834.0,
+          5474684291.0,
+          5460986916.0,
+          5512834000.0,
+          5475333833.0
+        ]
+      }
+    }
+  }
+}

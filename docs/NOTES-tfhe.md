@@ -22,6 +22,8 @@ holding security constant at $\ge 128$ bits ($p_{\text{fail}} \le 2^{-128}$) acr
 5. **`multibit4`:** `V1_8_PARAM_MULTI_BIT_GROUP_4_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128`. Multi-bit PBS,
    grouping factor 4. $p_{\text{fail}} = 2^{-134.345}$, algorithmic cost ~ 100, server key 302.07 MB.
 
+Server-key sizes: `phase10-param-sweep-<profile>.json` (committed in `9b38c1b`), binary MB.
+
 All multi-bit profiles enable `with_deterministic_execution()`: without deterministic execution,
 multi-bit blind rotation reduces across threads in non-deterministic order, causing ciphertext bytes
 to differ run-to-run. Decrypted values are exact either way, but reproducible bytes keep published
@@ -45,6 +47,8 @@ artifacts stable.
 
 ## Empirical cost (the bit-width budget lever)
 
+> **Historical, not citable.** Phase-1 golden-test timings; introduced in 459ff56 (2026-06-22); no committed results file.
+
 Measured on the Phase-2 golden test (`cargo test --release`, `num_blocks = 8` ⇒ 16-bit
 signed radix, 64-feature single-logit `Linear → Argmax`):
 
@@ -55,8 +59,7 @@ signed radix, 64-feature single-logit `Linear → Argmax`):
 | keygen + a single signed round-trip | < 1 s |
 
 The per-sample cost is dominated by radix MAC carry-propagation bootstraps in addition and
-multiplication. Phase 10 landed rayon parallelism across independent outputs (cutting `Linear`
-latency by 2.1x and `Conv2d` latency by 1.5x) and verified that the classic profile provides the
+multiplication. Phase 10 landed rayon parallelism across independent outputs (cutting `phase2_logreg` eval latency 2.13x, 4.238 s → 1.992 s, and `phase4_cnn` 1.45x, 38.912 s → 26.899 s; `phase10-tfhe-sweep.json @ 78f5db7` vs `phase10-parallel-tuned-sweep.json @ 9b38c1b`) and verified that the classic profile provides the
 lowest latency under parallel execution. An open lever is Phase 10 task 5: shrinking `num_blocks`
 per layer to the minimum the accumulator actually needs.
 
