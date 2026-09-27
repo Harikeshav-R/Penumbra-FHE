@@ -86,6 +86,16 @@ def test_tabular_mlp_replay_smoke():
     )
 
 
+def test_unified_runner_smoke():
+    """Smoke test for the unified runner (examples/run.py)."""
+    proc = _run_script("examples/run.py", "trees", "--samples", "1")
+    assert proc.returncode == 0, (
+        f"examples/run.py trees failed with code {proc.returncode}\n"
+        f"--- STDOUT ---\n{proc.stdout}\n"
+        f"--- STDERR ---\n{proc.stderr}\n"
+    )
+
+
 @pytest.mark.skipif("ckks" in available_backends(), reason="CKKS is compiled in")
 def test_ckks_unavailable_hint_smoke():
     """Runner prints actionable build hint when CKKS backend is requested without support."""
