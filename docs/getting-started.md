@@ -1,14 +1,27 @@
 # Getting Started
 
-This guide walks through prerequisites, building from source, and running your first encrypted inference with Penumbra-FHE.
+This guide walks through prerequisites, installation, and running your first encrypted inference with Penumbra-FHE.
 
 ## Prerequisites
 
-- **Rust:** stable ≥ 1.83 (install via [rustup](https://rustup.rs)).
-- **Python:** 3.10, 3.11, or 3.12.
-- **uv:** The project standard package and environment manager (install via [Astral](https://docs.astral.sh/uv/)).
+- **Python:** 3.10, 3.11, or 3.12 required.
+- **Rust:** stable ≥ 1.83 (install via [rustup](https://rustup.rs)) and **uv** (install via [Astral](https://docs.astral.sh/uv/)) are needed only for source builds.
 
-## Installation from Source
+## Installation
+
+```bash
+pip install penumbra-fhe
+```
+
+Or with uv:
+
+```bash
+uv add penumbra-fhe
+```
+
+Prebuilt abi3 wheels exist for Linux x86_64 (manylinux2014), macOS arm64, and Windows x86_64. Elsewhere pip builds the sdist, which needs Rust stable ≥ 1.83 and takes several minutes (it compiles tfhe-rs). Wheels include only the TFHE backend (see [Optional: CKKS Backend](#optional-ckks-backend)).
+
+### From source (contributors)
 
 Clone the repository and sync dependencies:
 
@@ -19,9 +32,6 @@ uv sync
 ```
 
 `uv sync` creates a virtual environment at `.venv/`, downloads all Python dependencies, and compiles the native Rust PyO3 extension (`penumbra._penumbra`). The first build compiles `tfhe-rs` and takes several minutes.
-
-!!! note "PyPI Wheels"
-    Pre-built wheels for Linux and macOS are in preparation for the upcoming Phase 11 release. Currently, installing from source is the supported path.
 
 ## First Encrypted Inference
 
@@ -71,7 +81,7 @@ label, logits = model.predict_encrypted(x, keys=keys, return_logits=True)
 
 ## Client / Server Demo
 
-To see a simulated untrusted server evaluating ciphertext without access to the secret key, run the client/server demo:
+To see a simulated untrusted server evaluating ciphertext without access to the secret key, run the client/server demo (requires a clone of the repository; see [From source](#from-source-contributors)):
 
 ```bash
 uv run python examples/client_server/demo.py
@@ -80,7 +90,7 @@ uv run python examples/client_server/demo.py
 
 Each example directory includes a self-contained runner that replays the committed test fixtures
 in-process under FHE (keygen → encrypt → evaluate → decrypt) and validates results against the
-quantized-cleartext oracle:
+quantized-cleartext oracle (running these scripts requires a clone of the repository; see [From source](#from-source-contributors)):
 
 ```bash
 # MNIST digit classification (CNN, logistic regression, MLP):

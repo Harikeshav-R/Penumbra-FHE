@@ -6,11 +6,23 @@ The workflow reproduces the committed Phase 6 ONNX digit CNN fixture (`examples/
 
 ## The End-to-End Pipeline
 
-Here is the complete script. Run it from the repository root:
+Install the required packages:
 
 ```bash
-uv run --with scikit-learn python - << 'EOF'
-import json
+pip install penumbra-fhe scikit-learn
+```
+
+Or with uv:
+
+```bash
+uv pip install penumbra-fhe scikit-learn
+```
+
+Save the script below as `mnist_tutorial.py` and run `python mnist_tutorial.py`. From a repository clone, set `model_path = Path("examples/mnist/digit_cnn.onnx")` to skip the download. Note that encrypted inference on this CNN takes minutes on TFHE (see [Latency](#latency-tfhe-vs-ckks) below).
+
+```python
+from pathlib import Path
+import urllib.request
 import numpy as np
 from sklearn.datasets import load_digits
 from sklearn.model_selection import train_test_split
@@ -24,8 +36,16 @@ x_tr, x_te, y_tr, y_te = train_test_split(
     x, digits.target, test_size=0.2, random_state=0, stratify=digits.target
 )
 
-# 2. Load the trained ONNX model
-model = fhe.load_onnx("examples/mnist/digit_cnn.onnx", input_bits=3)
+# 2. Download and load the trained ONNX model
+MODEL_URL = (
+    "https://raw.githubusercontent.com/Harikeshav-R/Penumbra-FHE/"
+    "v1.0.0/examples/mnist/digit_cnn.onnx"
+)
+model_path = Path("digit_cnn.onnx")
+if not model_path.exists():
+    urllib.request.urlretrieve(MODEL_URL, model_path)
+
+model = fhe.load_onnx(str(model_path), input_bits=3)
 
 # 3. Post-Training Quantization (PTQ) with MSE calibration
 graph = model.quantize(
@@ -53,14 +73,13 @@ oracle_logits = evaluate_graph_int(graph, {"x": q[0].tolist()})[graph.outputs[0]
 assert logits == oracle_logits, "Golden invariant violated!"
 print(f"Sample 0 prediction: class {label} (logits: {logits})")
 print("Encrypted output matches quantized-cleartext oracle bit-for-bit!")
-EOF
 ```
 
 ## Step-by-Step Walkthrough
 
 ### 1. ONNX Model Loading and Validation (`load_onnx`)
 
-Penumbra-FHE uses ONNX as its primary model interchange format. When you call `fhe.load_onnx("examples/mnist/digit_cnn.onnx", input_bits=3)`, the loader:
+Penumbra-FHE uses ONNX as its primary model interchange format. When you call `fhe.load_onnx(str(model_path), input_bits=3)`, the loader:
 - Traverses the ONNX computational graph;
 - Validates every operator against the supported op registry (`python/penumbra/op_registry.py`);
 - Fails loudly with an `UnsupportedModelError` listing all unsupported operators and nodes if any exist;
