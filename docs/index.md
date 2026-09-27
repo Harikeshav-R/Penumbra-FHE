@@ -19,11 +19,12 @@ Every backend is judged against the exact same quantized-cleartext integer forwa
 - **CKKS is approximate:** Evaluates real-valued polynomial approximations within calibrated, committed per-model error bounds. Exceeding a declared bound is treated as a bug (scale, level, or polynomial degree) rather than accepted noise.
 
 !!! warning "Status: Research / Prototype Grade"
-    Penumbra-FHE is a research library and prototype, not audited production cryptography software. In-process encrypted inference latency is seconds to minutes per sample; this is not real-time serving. See [SECURITY.md](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/SECURITY.md) and [PROJECT.md](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/PROJECT.md) for architecture, scope, and security considerations.
+    Penumbra-FHE is a research library and prototype, not audited production cryptography software. In-process encrypted inference latency is seconds to minutes per sample; this is not real-time serving. See [Scope & expectations](SCOPE.md) and [Security](security.md) for architecture, scope, and security considerations.
 
 ## Where to Go Next
 
 - **[Getting started](getting-started.md):** Prerequisites, source installation, and your first encrypted inference.
+- **[Scope & expectations](SCOPE.md):** What "any ONNX model" means, latency tables, and design boundaries.
 - **[Tutorial: MNIST end to end](tutorial-mnist.md):** Train a CNN, export to ONNX, quantize, and verify against cleartext and encrypted oracles.
 - **Guides:**
     - [Supported ops](SUPPORTED-OPS.md): Operator support matrix across ONNX, TFHE, and CKKS.
@@ -32,3 +33,4 @@ Every backend is judged against the exact same quantized-cleartext integer forwa
     - [Backends](BACKENDS.md): Backend boundaries, TFHE vs CKKS, and adding backends.
 - **[API reference](api.md):** Full Python API reference for models, layers, IR, and encrypted client execution.
 - **[Architecture](architecture.md):** The three layers, two narrow waists, and graph evaluation flow.
+- **[Security](security.md):** Threat model, per-backend parameter security levels, and IND-CPA^D considerations.

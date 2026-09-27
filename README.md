@@ -23,15 +23,14 @@ model.quantize(calibration_data, n_bits=6)   # float graph → int graph + looku
 pred = model.predict_encrypted(x)             # client encrypts → server evaluates → client decrypts
 ```
 
-The **ONNX front door, quantization service, and the encrypted round trip work today**
-(Phases 5–6, plus the first Phase-9 slice). `load_onnx` parses an ONNX model, **validates every
-op at load time** (failing loudly with all problems at once if a model uses an unsupported op —
-validation *is* the compile step), and lowers it to an `fhe.Model`. `predict_encrypted` then runs
-the real encrypted forward pass (keygen → encrypt → evaluate → decrypt) via the Rust runtime and
-returns the client-side prediction — it needs a Rust toolchain (`cargo`) and takes seconds-to-
-minutes per sample. The current bridge shells out to the runtime; in-process PyO3 bindings and
-wheels are the remaining Phase-9 work. You can also assemble a model by hand from the op
-vocabulary — the same `Model` `load_onnx` produces:
+The **ONNX front door, quantization service, and the encrypted round trip work end-to-end**.
+`load_onnx` parses an ONNX model, **validates every op at load time** (failing loudly with all
+problems at once if a model uses an unsupported op — validation *is* the compile step), and lowers
+it to an `fhe.Model`. `predict_encrypted` runs the real encrypted forward pass (keygen → encrypt →
+evaluate → decrypt) entirely in-process via PyO3 bindings to the Rust backend runtime and returns
+the client-side prediction. Installed from source via `uv sync`, inferences take seconds to minutes
+per sample depending on the model's bootstrap count. You can also assemble a model by hand from the
+op vocabulary — the same `Model` `load_onnx` produces:
 
 ```python
 import penumbra as fhe
@@ -49,8 +48,8 @@ It implements a small, fixed set of ML operations against FHE primitives — no 
 FHE compiler involved — over **pluggable backends**. The reference backend is
 [`tfhe-rs`](https://github.com/zama-ai/tfhe-rs) (the TFHE scheme: exact, lookup-table based);
 a second backend over [`poulpy-ckks`](https://github.com/phantomzone-org/poulpy) (the CKKS
-scheme: approximate, SIMD-batched) is in progress, so the two schemes can be compared on
-identical model-loading, inference, and measurement code.
+scheme: approximate, SIMD-batched) is implemented (nightly source build; compiled out of published
+wheels), so the two schemes can be compared on identical model-loading, inference, and measurement code.
 
 ## How it works
 
@@ -70,21 +69,31 @@ change as schemes multiply.
 > CKKS, within a declared per-model error bound, since CKKS is approximate by construction.
 > Same reference, one comparator per backend — see [`docs/BACKENDS.md`](docs/BACKENDS.md).
 
-## Project status
+## Examples
 
-**Pre-alpha — under active construction.** This is research/prototype-grade software, not
-audited production cryptography. It targets *small* models (image classifiers, tabular
-models, small CNNs, tree ensembles); inference takes seconds, not milliseconds. "Any ONNX
-model" means: composed of supported ops, quantizes acceptably, and small enough to be
-practical.
+Every example includes a self-contained runner replaying committed test fixtures in-process under FHE:
 
-Current focus is **Phase 12**: a second (CKKS) backend and a controlled comparison of the two
-schemes — latency, accuracy degradation, and overhead, under one shared harness. The TFHE
-backend is the reference implementation and its exactness gate is unchanged.
+| Example | One Command | What It Shows |
+|---|---|---|
+| [MNIST](examples/mnist/) | `uv run python examples/mnist/run.py` | CNNs, logistic regression, MLPs (10 model variants) |
+| [Faces](examples/faces/) | `uv run python examples/faces/run.py` | Olivetti face recognition CNN (proves narrow waist: new use case, zero crypto edits) |
+| [Tabular MLP](examples/tabular/) | `uv run python examples/tabular/run.py` | Neural network classification on Wisconsin Breast Cancer |
+| [Tree Ensembles](examples/trees/) | `uv run python examples/trees/run.py` | Random Forests & XGBoost lowered via sum-of-comparisons |
+| [Client/Server](examples/client_server/) | `uv run python examples/client_server/demo.py` | Process boundary: untrusted server evaluates ciphertext with public key only |
 
+## Scope & status
+
+**Research / prototype-grade software.** Penumbra-FHE is an active research project, not audited production cryptography.
+- **Bounded "any ONNX model":** Targets models composed of supported operators that quantize acceptably and are small enough to be practical ([`docs/SCOPE.md`](docs/SCOPE.md)).
+- **Latency expectations:** Encrypted inference takes seconds to minutes per sample (~0.5 s for logistic regression to ~6 min for CNNs on TFHE `classic`).
+- **Two backends:** TFHE (`tfhe-rs`, exact integer arithmetic) and CKKS (`poulpy-ckks`, approximate real arithmetic).
+- **CKKS build requirement:** The CKKS backend requires a nightly Rust toolchain (`--features ckks`) and is omitted from published wheels.
+- **Security:** Classical 128-bit security target for default profiles; see [`SECURITY.md`](SECURITY.md) for full threat model and IND-CPA^D considerations.
 ## Documentation
 
 - **Documentation site:** <https://harikeshav-r.github.io/Penumbra-FHE/> (built from `docs/` with MkDocs).
+- [`docs/SCOPE.md`](docs/SCOPE.md) — scope boundaries, what "any ONNX model" means, and latency tables.
+- [`SECURITY.md`](SECURITY.md) — threat model, parameter security levels, and reporting vulnerabilities.
 - [`PROJECT.md`](PROJECT.md) — architecture, rationale, and the full design.
 - [`ROADMAP.md`](ROADMAP.md) — the task-level build plan (phases P0–P12).
 - [`docs/BACKENDS.md`](docs/BACKENDS.md) — the backend boundary: the `Backend` contract,
@@ -111,10 +120,11 @@ cargo test --workspace --release
 # Python front end (managed with uv)
 uv sync --all-extras && uv run pytest
 
-The CKKS backend is not wired up yet; when it lands it gains its own test target and may
-require a separate toolchain — see [`docs/NOTES-ckks.md`](docs/NOTES-ckks.md).
+# Optional CKKS backend tests (requires nightly toolchain; see docs/DEVELOPMENT.md)
+cargo +nightly test -p penumbra-ckks --features ckks --release
+```
 
-See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for full setup.
+See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for full setup instructions and architecture-specific flags.
 
 ## License
 
