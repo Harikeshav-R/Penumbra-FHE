@@ -15,8 +15,8 @@ In [`PROJECT.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/PROJECT
 To run on Penumbra-FHE, a model must satisfy the following enforced conditions:
 
 1. **Supported operators:** Every node in the graph must map directly to an entry in the [Supported operators table](SUPPORTED-OPS.md). Unrecognized operators are rejected immediately at load time.
-2. **DAG topology:** The graph must form a strict Directed Acyclic Graph with exactly one input tensor and one output tensor ([Notes on ONNX models](SUPPORTED-OPS.md#notes--phase-6)). This single-input/single-output constraint is enforced at model load and by the runtime session bridge (`crates/penumbra-py/src/session.rs`).
-3. **ONNX opset range:** The model must be exported with an `ai.onnx` opset version between 11 and 22 (`python/penumbra/op_registry.py`). Custom operator domains outside `ai.onnx` are rejected ([Domain limits](SUPPORTED-OPS.md#notes--phase-6)).
+2. **DAG topology:** The graph must form a strict Directed Acyclic Graph with exactly one input tensor and one output tensor ([Notes on ONNX models](SUPPORTED-OPS.md#notes-phase-6)). This single-input/single-output constraint is enforced at model load and by the runtime session bridge (`crates/penumbra-py/src/session.rs`).
+3. **ONNX opset range:** The model must be exported with an `ai.onnx` opset version between 11 and 22 (`python/penumbra/op_registry.py`). Custom operator domains outside `ai.onnx` are rejected ([Domain limits](SUPPORTED-OPS.md#notes-phase-6)).
 4. **Acceptable quantization:** Post-`Requant` activations are capped at $2$ bits (`MESSAGE_BITS = 2`, the radix capacity limit under TFHE). The model must maintain acceptable utility under Post-Training Quantization (PTQ) or Quantization-Aware Training (QAT) ([Quantization](QUANTIZATION.md)).
 5. **Backend resource budgets:**
    - **TFHE:** The graph's maximum bit-width must fit within the radix capacity ($num\_blocks \times 2$ bits) ([The bit-width budget](QUANTIZATION.md#the-bit-width-budget-why-requantization-exists)).

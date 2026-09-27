@@ -7,7 +7,7 @@ cryptography. Do not use it to protect real secrets without an independent secur
 
 The privacy promise (`PROJECT.md` §11):
 
-- The **client** holds the secret key and performs encryption/decryption.
+- The **client** holds the secret key and performs encryption and decryption.
 - The **server** holds only the public evaluation/server key and the plaintext model
   weights. It runs the entire forward pass on ciphertext and **never sees the plaintext
   input or output.**
@@ -17,46 +17,80 @@ What differs is the cryptographic assumption underneath it.
 
 What this means in practice:
 
-- **Confidentiality of the input/output** rests on the security of the underlying FHE scheme
-  as implemented by the selected backend's library, and on the chosen parameter profile.
-  Penumbra-FHE ships a secure default profile per backend and does not let users hand-roll
-  insecure parameters.
-- **The model weights are not secret** from the server — they are plaintext. Penumbra-FHE
-  protects the *data*, not the *model*.
-- This project does not (yet) defend against side channels, malicious-server result
-  tampering, or traffic analysis. Integrity/verifiability is out of scope for now.
+- **Confidentiality of input/output:** Rests on the mathematical security of the underlying
+  FHE scheme as implemented by the selected backend's library, and on the chosen parameter
+  profile. Penumbra-FHE ships a secure default profile per backend and does not let users
+  hand-roll insecure parameters.
+- **Model weights and graph structure are public to the server:** The server learns the model
+  graph topology, node operator types, plaintext weights and biases, and input/output tensor
+  shapes, but learns nothing about the ciphertext values themselves. Penumbra-FHE protects the
+  *data*, not the *model*.
+- **Key protection:** Key files are written unencrypted to disk by `KeySet.generate`
+  (`python/penumbra/client.py`). The secret key (`client.key`) must be protected with appropriate
+  filesystem permissions and must never be transmitted or exposed to the evaluation server.
+- **Out-of-scope threats:** This project does not defend against side channels, malicious-server
+  result tampering, or traffic analysis. Integrity and verifiable computation are out of scope.
 
 ## Parameter security level
 
-| Backend | Library | Default profile | Notes |
-|---|---|---|---|
-| `tfhe` | [`tfhe-rs`](https://github.com/zama-ai/tfhe-rs) | the library's vetted parameter sets | the reference backend |
-| `ckks` | [`poulpy-ckks`](https://github.com/phantomzone-org/poulpy) | the crate's `presets` | see the caveats below |
+All supported backend parameter profiles target $\ge 128$-bit classical security under standard
+lattice-based assumptions:
 
-Parameter tuning (Phase 10) optimizes speed **within a fixed security level** — security is
-never traded for performance silently. The backends' security levels are kept **matched**,
-both so neither is weakened and so the scheme comparison (`docs/COMPARISON.md`) is fair.
+### TFHE (`tfhe-rs` 1.8.1)
+
+TFHE operates over discrete torus integers. All five supported profiles use vetted `tfhe-rs`
+parameter sets at `message_bits = 2, carry_bits = 2`, providing $\ge 128$-bit classical security
+as claimed by `tfhe-rs`:
+
+| Profile | `tfhe-rs` Constant | Probability of Decryption Failure ($p_{\text{fail}}$) | Notes |
+|---|---|---|---|
+| `classic` (default) | `PARAM_MESSAGE_2_CARRY_2_KS_PBS` | $2^{-129.581}$ | Lowest serial latency; recommended default (`crates/penumbra-tfhe/src/keys.rs`) |
+| `gaussian` | `PARAM_MESSAGE_2_CARRY_2_KS_PBS_GAUSSIAN_2M128` | $\le 2^{-128}$ | Discrete Gaussian noise distribution |
+| `multibit2` | `PARAM_MESSAGE_2_CARRY_2_GROUP_2_KS_PBS` | $2^{-140.341}$ | 2-bit PBS grouping; larger evaluation key |
+| `multibit3` | `PARAM_MESSAGE_2_CARRY_2_GROUP_3_KS_PBS` | $2^{-128.235}$ | 3-bit PBS grouping |
+| `multibit4` | `PARAM_MESSAGE_2_CARRY_2_GROUP_4_KS_PBS` | $2^{-134.345}$ | 4-bit PBS grouping |
+
+### CKKS (`poulpy-ckks` 0.8.3)
+
+Because `poulpy-ckks` does not ship general parameter presets, Penumbra-FHE defines its own
+calibrated parameter profile (`crates/penumbra-ckks/src/params.rs`):
+
+- **Ring dimension:** $N = 16384$
+- **Total modulus:** $k = \log_2(q) = 360$ bits
+- **Scaling factor:** $\log_2(\Delta) = 30$ bits (multiplicative depth budget: 330 bits)
+- **Secret key distribution:** Uniform ternary secret ($\{-1, 0, 1\}$)
+
+This profile achieves $\ge 128$-bit classical security by standard table lookup against the
+[HomomorphicEncryption.org standard security tables](https://homomorphicencryption.org/standard/)
+($\log_2(q) \le 438$ at $N = 16384$ for ternary secrets). The only exposed tuning knob,
+`max_poly_degree`, adjusts polynomial approximation degrees for non-linear activations and does not
+alter these ring parameters or compromise security.
+
+Parameter tuning optimizes execution speed **within a fixed security level** — security is never
+traded for performance. The backends' security levels are kept matched so neither is weakened and
+the scheme comparison (`docs/COMPARISON.md`) remains fair.
 
 ## CKKS-specific caveats
 
 Two things are worth stating plainly, because they are easy to overlook when a second scheme
-is added for benchmarking purposes.
+is added for benchmarking purposes:
 
 **CKKS is not IND-CPA^D secure.** Because CKKS is *approximate*, a decrypted result carries
 residual noise that depends on the secret key. An adversary who can submit chosen ciphertexts
-and observe the corresponding decryptions can recover the key (Li–Micciancio, 2021). The
-standard mitigations are to add noise-flooding before releasing a decryption, or to never
-release decryptions of adversarially-chosen ciphertexts at all. In Penumbra's deployment
-model the client both encrypts and decrypts, and decrypted results are not published, so the
-attack is out of the model as written — but it becomes live the moment a decryption is shared
-with the party that supplied the ciphertext. This has **no TFHE analogue**: TFHE is exact, so
-its decryptions carry no such residue.
+and observe the corresponding decryptions can recover the secret key (Li–Micciancio, 2021).
+Penumbra-FHE applies **no noise flooding**; the Python runtime bridge rounds decrypted floating-point
+values to integers (`crates/penumbra-ckks/src/encrypt.rs`), which is an engineering conversion rather
+than a formal IND-CPA^D countermeasure. In Penumbra's client/server deployment model, the client both
+encrypts inputs and decrypts outputs, and decrypted values are not returned to untrusted third parties,
+so the attack is out of the model as written. However, **never return a CKKS decryption to a party
+that could have chosen or influenced the ciphertext.** This has no TFHE analogue: TFHE is exact,
+so its decryptions carry no key-dependent residual noise.
 
-**`poulpy` is young and unaudited.** The CKKS backend depends on a 0.8.x crate whose own
-documentation describes its public API as subject to change. It is actively maintained and
+**`poulpy` is young and unaudited.** The CKKS backend depends on `poulpy-ckks` (0.8.x), whose own
+documentation notes that its public API is subject to change. It is actively maintained and
 authored by an established cryptographic engineer, but it carries less deployment history
-than `tfhe-rs`. Treat the CKKS backend as the more experimental of the two, and do not read
-"the TFHE backend is research-grade" as implying they are at the same level of maturity.
+than `tfhe-rs`. Treat the CKKS backend as experimental, and do not read "the TFHE backend is
+research-grade" as implying both backends share the same level of maturity.
 
 ## Reporting a vulnerability
 

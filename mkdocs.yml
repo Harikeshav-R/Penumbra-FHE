@@ -20,6 +20,9 @@ markdown_extensions:
         - name: mermaid
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
 plugins:
   - search
   - mkdocstrings:
@@ -49,6 +52,7 @@ nav:
       - Backends: BACKENDS.md
   - API reference: api.md
   - Architecture: architecture.md
+  - Security: security.md
   - Reference:
       - IR specification: IR-SPEC.md
       - Model zoo: MODEL-ZOO.md
