@@ -58,6 +58,7 @@ ALL_FIXTURES: list[Path] = [
     REPO_ROOT / "examples/tabular/phase8_xgb_fixture.json",
 ]
 
+
 def _committed_graph_dict() -> dict:
     fx = json.loads(FIXTURE.read_text())
     assert "graph" in fx, "fixture must embed the IR under a 'graph' key (Phase 3)"
@@ -115,12 +116,13 @@ def test_every_committed_fixture_graph_is_in_emitted_form(fixture_path: Path):
     fx = json.loads(fixture_path.read_text())
     assert "graph" in fx, f"fixture {fixture_path.name} missing 'graph' key"
     g = fx["graph"]
-    assert g["schema_version"] == SCHEMA_VERSION, (
-        f"{fixture_path.name} schema_version {g.get('schema_version')} != current {SCHEMA_VERSION}"
-    )
-    assert Graph.from_dict(g).to_dict() == g, (
-        f"{fixture_path.name} is not in canonical emitted form"
-    )
+    assert (
+        g["schema_version"] == SCHEMA_VERSION
+    ), f"{fixture_path.name} schema_version {g.get('schema_version')} != current {SCHEMA_VERSION}"
+    assert (
+        Graph.from_dict(g).to_dict() == g
+    ), f"{fixture_path.name} is not in canonical emitted form"
+
 
 def test_committed_graph_is_linear_argmax():
     """The Phase-2 model is exactly Linear → Argmax with the expected wiring."""
