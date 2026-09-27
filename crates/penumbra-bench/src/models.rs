@@ -87,6 +87,12 @@ pub const MODELS: &[ModelFixture] = &[
         label: "Phase-8 padded-pool + GAP CNN",
         default_bench: false,
     },
+    ModelFixture {
+        key: "phase11_tabular_mlp",
+        path: "../../examples/tabular/phase11_tabular_mlp_fixture.json",
+        label: "Phase-11 tabular MLP",
+        default_bench: false,
+    },
 ];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

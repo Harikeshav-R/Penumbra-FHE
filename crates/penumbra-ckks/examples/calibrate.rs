@@ -139,6 +139,12 @@ fn main() {
             "logits",
             bounds::PHASE8_GAP_CNN,
         ),
+        (
+            "Phase 11 tabular mlp",
+            "examples/tabular/phase11_tabular_mlp_fixture.json",
+            "logits",
+            bounds::PHASE11_TABULAR_MLP,
+        ),
     ];
 
     println!("\nEvaluating committed fixtures against declared bounds...");

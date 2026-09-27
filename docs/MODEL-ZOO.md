@@ -19,6 +19,7 @@ Every row is a committed fixture whose FHE output is gated against `evaluate_gra
 | `examples/mnist/phase8_tanh_fixture.json` | `examples/mnist/tanh_mlp_export.py` | PyTorch Tanh MLP | sklearn load_digits (8x8 digits) | `Linear → Requant → Activation → Linear` | 0.961 | 0.692 | `runtime/tests/golden_tanh_mlp.rs` | `crates/penumbra-ckks/tests/ckks_golden_tanh_mlp.rs` (`PHASE8_TANH`) | — |
 | `examples/trees/phase8_trees_fixture.json` | `examples/trees/tree_export.py` | scikit-learn RandomForestClassifier lowered to Compare and Linear | Wisconsin Breast Cancer (30 features, 2 classes) | `Compare → Linear → Compare → Linear` | 0.956 | 0.956 | `runtime/tests/golden_trees.rs` | rejected at load (depth budget 360 > 330 bits): `crates/penumbra-ckks/tests/ckks_unsupported_ops.rs` | `phase8_trees` |
 | `examples/trees/phase8_xgb_fixture.json` | `examples/trees/xgb_export.py` | XGBoost XGBClassifier lowered to Compare and Linear | Wisconsin Breast Cancer (30 features, 2 classes) | `Compare → Linear → Compare → Linear` | 0.965 | 0.965 | `runtime/tests/golden_trees.rs` | rejected at load (same Compare→Linear→Compare→Linear shape as phase8_trees, 360 > 330 bits) | — |
+| `examples/tabular/phase11_tabular_mlp_fixture.json` | `examples/tabular/mlp_export.py` | PyTorch MLP (Gemm → ReLU → Gemm) exported to ONNX | Wisconsin Breast Cancer (30 features, 2 classes) | `Linear → Requant → Linear` | 0.965 | 0.956 | `runtime/tests/golden_tabular_mlp.rs` | `crates/penumbra-ckks/tests/ckks_golden_tabular_mlp.rs` (`PHASE11_TABULAR_MLP`) | `phase11_tabular_mlp` |
 
 ## Regenerating
 
@@ -38,6 +39,7 @@ uv run --extra ml --system-certs python examples/mnist/gap_cnn_export.py
 uv run --extra ml --system-certs python examples/mnist/tanh_mlp_export.py
 uv run --extra ml --system-certs python examples/trees/tree_export.py
 uv run --extra ml --system-certs python examples/trees/xgb_export.py
+uv run --extra ml --system-certs python examples/tabular/mlp_export.py
 ```
 
 Note that TFHE goldens for the digits, faces, and Phase-8 models are marked `#[ignore]` by default due to runtime duration. Run them with:

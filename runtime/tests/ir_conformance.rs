@@ -99,6 +99,7 @@ fn every_committed_fixture_graph_reserializes_identically() {
         "examples/faces/phase7_faces_fixture.json",
         "examples/trees/phase8_trees_fixture.json",
         "examples/trees/phase8_xgb_fixture.json",
+        "examples/tabular/phase11_tabular_mlp_fixture.json",
     ];
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");

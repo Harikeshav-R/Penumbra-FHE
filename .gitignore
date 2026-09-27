@@ -36,7 +36,8 @@ venv/
 *.onnx
 # exported model artifacts (examples regenerate these) — EXCEPT the small committed ONNX
 # fixtures the loader's framework-proof and regression tests reload in CI (tests/test_onnx_fixture.py,
-# tests/test_sklearn_fixture.py, tests/test_bn_cnn_fixture.py, tests/test_branch_fixture.py).
+# tests/test_sklearn_fixture.py, tests/test_bn_cnn_fixture.py, tests/test_branch_fixture.py,
+# tests/test_tabular_mlp_fixture.py).
 !examples/mnist/digit_cnn.onnx
 !examples/mnist/digit_linear_sklearn.onnx
 !examples/mnist/digit_tanh_mlp.onnx
@@ -44,6 +45,7 @@ venv/
 !examples/mnist/digit_branch_mlp.onnx
 !examples/mnist/digit_gap_cnn.onnx
 !examples/faces/face_cnn.onnx
+!examples/tabular/breast_cancer_mlp.onnx
 *.key
 # crypto key material — never commit
 *.ckpt

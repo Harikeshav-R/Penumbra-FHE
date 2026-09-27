@@ -30,6 +30,7 @@ jobs:
           - golden_qat
           - golden_requant_signed
           - golden_sklearn
+          - golden_tabular_mlp
           - golden_tanh_mlp
           - golden_trees
 
