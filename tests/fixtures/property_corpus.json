@@ -1,0 +1,4112 @@
+{
+  "schema": "penumbra-property-corpus/1",
+  "base_seed": 20260926,
+  "models": [
+    {
+      "name": "prop_mlp_20260926",
+      "family": "mlp",
+      "seed": 20260926,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 5,
+        "input_bits": 2,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "logits"
+        ],
+        "nodes": [
+          {
+            "name": "fc1",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "h1"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  1,
+                  -2
+                ],
+                [
+                  3,
+                  1
+                ]
+              ],
+              "bias": [
+                -3,
+                -7
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "rq1",
+            "inputs": [
+              "h1"
+            ],
+            "outputs": [
+              "h1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 3,
+              "mult": 2,
+              "round_bias": 0,
+              "out_bits": 1,
+              "clamp_lut": [
+                0,
+                1,
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "name": "act1",
+            "inputs": [
+              "h1q"
+            ],
+            "outputs": [
+              "h1a"
+            ],
+            "op": {
+              "op_type": "Activation",
+              "lut": [
+                3,
+                0,
+                2,
+                1
+              ],
+              "output_bits": 2
+            }
+          },
+          {
+            "name": "fc2",
+            "inputs": [
+              "h1a"
+            ],
+            "outputs": [
+              "logits"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  1,
+                  3
+                ],
+                [
+                  0,
+                  2
+                ],
+                [
+                  -2,
+                  -2
+                ]
+              ],
+              "bias": [
+                -5,
+                8,
+                2
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          2,
+          2
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "expected_outputs": [
+        [
+          7,
+          14,
+          -10
+        ],
+        [
+          7,
+          14,
+          -10
+        ]
+      ]
+    },
+    {
+      "name": "prop_mlp_20260927",
+      "family": "mlp",
+      "seed": 20260927,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 5,
+        "input_bits": 3,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "logits"
+        ],
+        "nodes": [
+          {
+            "name": "fc1",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "h1"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -3,
+                  -3,
+                  -3
+                ],
+                [
+                  0,
+                  0,
+                  -1
+                ],
+                [
+                  2,
+                  -3,
+                  -1
+                ]
+              ],
+              "bias": [
+                -6,
+                -3,
+                6
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "rq1",
+            "inputs": [
+              "h1"
+            ],
+            "outputs": [
+              "h1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 3,
+              "mult": 1,
+              "round_bias": 0,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          {
+            "name": "fc2",
+            "inputs": [
+              "h1q"
+            ],
+            "outputs": [
+              "logits"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  1,
+                  -2,
+                  2
+                ],
+                [
+                  -3,
+                  1,
+                  -2
+                ],
+                [
+                  1,
+                  -3,
+                  -1
+                ]
+              ],
+              "bias": [
+                -2,
+                5,
+                -5
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          6,
+          1,
+          0
+        ],
+        [
+          0,
+          6,
+          0
+        ]
+      ],
+      "expected_outputs": [
+        [
+          0,
+          3,
+          -6
+        ],
+        [
+          -2,
+          5,
+          -5
+        ]
+      ]
+    },
+    {
+      "name": "prop_mlp_20260928",
+      "family": "mlp",
+      "seed": 20260928,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 6,
+        "input_bits": 3,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "logits"
+        ],
+        "nodes": [
+          {
+            "name": "fc1",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "h1"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  3,
+                  3,
+                  3,
+                  -3,
+                  -2,
+                  -3
+                ],
+                [
+                  3,
+                  0,
+                  -1,
+                  1,
+                  -2,
+                  2
+                ],
+                [
+                  -1,
+                  1,
+                  3,
+                  -3,
+                  0,
+                  -3
+                ],
+                [
+                  -1,
+                  2,
+                  2,
+                  0,
+                  2,
+                  1
+                ]
+              ],
+              "bias": [
+                8,
+                -5,
+                -7,
+                -2
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "rq1",
+            "inputs": [
+              "h1"
+            ],
+            "outputs": [
+              "h1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 5,
+              "mult": 1,
+              "round_bias": 0,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          {
+            "name": "fc2",
+            "inputs": [
+              "h1q"
+            ],
+            "outputs": [
+              "logits"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -1,
+                  -2,
+                  1,
+                  -2
+                ],
+                [
+                  3,
+                  -2,
+                  -2,
+                  3
+                ]
+              ],
+              "bias": [
+                -5,
+                -1
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          2,
+          5,
+          4,
+          6,
+          0,
+          0
+        ],
+        [
+          5,
+          0,
+          3,
+          3,
+          0,
+          7
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -5,
+          -1
+        ],
+        [
+          -5,
+          -1
+        ]
+      ]
+    },
+    {
+      "name": "prop_mlp_20260929",
+      "family": "mlp",
+      "seed": 20260929,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 7,
+        "input_bits": 4,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "logits"
+        ],
+        "nodes": [
+          {
+            "name": "fc1",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "h1"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -1,
+                  2,
+                  0,
+                  -2,
+                  0
+                ],
+                [
+                  -2,
+                  1,
+                  -1,
+                  0,
+                  3
+                ],
+                [
+                  -3,
+                  1,
+                  -3,
+                  -1,
+                  1
+                ],
+                [
+                  1,
+                  1,
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "bias": [
+                8,
+                6,
+                -4,
+                -7
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "rq1",
+            "inputs": [
+              "h1"
+            ],
+            "outputs": [
+              "h1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 4,
+              "mult": 2,
+              "round_bias": 0,
+              "clamp_lo": -3,
+              "zero_point": 1,
+              "out_bits": 1,
+              "clamp_lut": [
+                0,
+                1,
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "name": "act1",
+            "inputs": [
+              "h1q"
+            ],
+            "outputs": [
+              "h1a"
+            ],
+            "op": {
+              "op_type": "Activation",
+              "lut": [
+                1,
+                0,
+                1,
+                3
+              ],
+              "output_bits": 2
+            }
+          },
+          {
+            "name": "fc2",
+            "inputs": [
+              "h1a"
+            ],
+            "outputs": [
+              "logits"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  2,
+                  2,
+                  2,
+                  -1
+                ],
+                [
+                  2,
+                  -1,
+                  -2,
+                  0
+                ]
+              ],
+              "bias": [
+                6,
+                -2
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          1,
+          11,
+          0,
+          13,
+          8
+        ],
+        [
+          7,
+          10,
+          13,
+          15,
+          15
+        ]
+      ],
+      "expected_outputs": [
+        [
+          8,
+          -4
+        ],
+        [
+          10,
+          -2
+        ]
+      ]
+    },
+    {
+      "name": "prop_mlp_20260930",
+      "family": "mlp",
+      "seed": 20260930,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 7,
+        "input_bits": 3,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "logits"
+        ],
+        "nodes": [
+          {
+            "name": "fc1",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "h1"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  2,
+                  -2,
+                  2,
+                  -1,
+                  2
+                ],
+                [
+                  1,
+                  2,
+                  2,
+                  2,
+                  0
+                ],
+                [
+                  3,
+                  -3,
+                  -3,
+                  1,
+                  2
+                ],
+                [
+                  3,
+                  -1,
+                  0,
+                  3,
+                  3
+                ]
+              ],
+              "bias": [
+                5,
+                -8,
+                -7,
+                7
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "rq1",
+            "inputs": [
+              "h1"
+            ],
+            "outputs": [
+              "h1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 2,
+              "mult": 3,
+              "round_bias": 2,
+              "clamp_lo": -2,
+              "zero_point": 1,
+              "out_bits": 1,
+              "clamp_lut": [
+                0,
+                1,
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "name": "fc2",
+            "inputs": [
+              "h1q"
+            ],
+            "outputs": [
+              "logits"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  3,
+                  0,
+                  -3,
+                  -2
+                ]
+              ],
+              "bias": [
+                -8
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          7,
+          1,
+          3,
+          2,
+          4
+        ],
+        [
+          5,
+          6,
+          4,
+          2,
+          2
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -10
+        ],
+        [
+          -7
+        ]
+      ]
+    },
+    {
+      "name": "prop_mlp_20260931",
+      "family": "mlp",
+      "seed": 20260931,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 5,
+        "input_bits": 2,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "logits"
+        ],
+        "nodes": [
+          {
+            "name": "fc1",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "h1"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -3,
+                  -3,
+                  2
+                ],
+                [
+                  -2,
+                  0,
+                  2
+                ],
+                [
+                  0,
+                  -3,
+                  1
+                ]
+              ],
+              "bias": [
+                -1,
+                7,
+                3
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "rq1",
+            "inputs": [
+              "h1"
+            ],
+            "outputs": [
+              "h1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 5,
+              "mult": 2,
+              "round_bias": 0,
+              "clamp_lo": -6,
+              "zero_point": 1,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          {
+            "name": "fc2",
+            "inputs": [
+              "h1q"
+            ],
+            "outputs": [
+              "logits"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  1,
+                  -1,
+                  3
+                ],
+                [
+                  2,
+                  -2,
+                  0
+                ],
+                [
+                  -1,
+                  1,
+                  -1
+                ]
+              ],
+              "bias": [
+                -4,
+                -5,
+                8
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          3,
+          2,
+          1
+        ],
+        [
+          3,
+          1,
+          1
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -5,
+          -7,
+          9
+        ],
+        [
+          -2,
+          -7,
+          8
+        ]
+      ]
+    },
+    {
+      "name": "prop_cnn_20261926",
+      "family": "cnn",
+      "seed": 20261926,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 6,
+        "input_bits": 2,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "conv",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "c1"
+            ],
+            "op": {
+              "op_type": "Conv2d",
+              "weights": [
+                [
+                  0,
+                  0,
+                  -2,
+                  0,
+                  -1,
+                  2,
+                  -2,
+                  1
+                ]
+              ],
+              "bias": [
+                0
+              ],
+              "weight_bits": 3,
+              "in_h": 4,
+              "in_w": 4,
+              "in_channels": 2,
+              "kernel_h": 2,
+              "kernel_w": 2,
+              "stride": 2,
+              "padding": 1
+            }
+          },
+          {
+            "name": "rq",
+            "inputs": [
+              "c1"
+            ],
+            "outputs": [
+              "c1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 0,
+              "mult": 1,
+              "round_bias": 0,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ],
+              "mults": [
+                1
+              ],
+              "shifts": [
+                2
+              ],
+              "round_biases": [
+                2
+              ],
+              "channel_size": 9
+            }
+          },
+          {
+            "name": "fc",
+            "inputs": [
+              "c1q"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -1,
+                  -1,
+                  1,
+                  -1,
+                  -2,
+                  1,
+                  2,
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2,
+                  -1,
+                  2,
+                  1,
+                  1,
+                  2,
+                  1,
+                  2
+                ]
+              ],
+              "bias": [
+                2,
+                -1
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          1,
+          1,
+          0,
+          0,
+          2,
+          2,
+          0,
+          1,
+          0,
+          2,
+          1,
+          2,
+          2,
+          3,
+          3,
+          1,
+          3,
+          2,
+          3,
+          2,
+          2,
+          0,
+          1,
+          2,
+          2,
+          1,
+          1,
+          0,
+          0,
+          1,
+          2,
+          0
+        ],
+        [
+          3,
+          0,
+          3,
+          0,
+          2,
+          0,
+          2,
+          3,
+          0,
+          1,
+          0,
+          0,
+          1,
+          2,
+          1,
+          2,
+          2,
+          1,
+          0,
+          2,
+          2,
+          0,
+          2,
+          0,
+          2,
+          1,
+          2,
+          1,
+          3,
+          3,
+          1,
+          1
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -1,
+          5
+        ],
+        [
+          1,
+          9
+        ]
+      ]
+    },
+    {
+      "name": "prop_cnn_20261927",
+      "family": "cnn",
+      "seed": 20261927,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 6,
+        "input_bits": 3,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "conv",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "c1"
+            ],
+            "op": {
+              "op_type": "Conv2d",
+              "weights": [
+                [
+                  2,
+                  0,
+                  0,
+                  2
+                ]
+              ],
+              "bias": [
+                2
+              ],
+              "weight_bits": 3,
+              "in_h": 4,
+              "in_w": 4,
+              "in_channels": 1,
+              "kernel_h": 2,
+              "kernel_w": 2,
+              "stride": 1,
+              "padding": 0
+            }
+          },
+          {
+            "name": "rq",
+            "inputs": [
+              "c1"
+            ],
+            "outputs": [
+              "c1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 5,
+              "mult": 2,
+              "round_bias": 0,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          {
+            "name": "pool",
+            "inputs": [
+              "c1q"
+            ],
+            "outputs": [
+              "pool"
+            ],
+            "op": {
+              "op_type": "Pool",
+              "mode": "max",
+              "in_h": 3,
+              "in_w": 3,
+              "channels": 1,
+              "pool_h": 2,
+              "pool_w": 2,
+              "stride": 1
+            }
+          },
+          {
+            "name": "fc",
+            "inputs": [
+              "pool"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  0,
+                  0,
+                  2,
+                  0
+                ],
+                [
+                  -1,
+                  0,
+                  -1,
+                  1
+                ]
+              ],
+              "bias": [
+                1,
+                0
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          5,
+          1,
+          0,
+          6,
+          7,
+          1,
+          1,
+          2,
+          2,
+          2,
+          3,
+          6,
+          3,
+          3,
+          4,
+          5
+        ],
+        [
+          1,
+          7,
+          3,
+          4,
+          3,
+          3,
+          4,
+          1,
+          1,
+          0,
+          4,
+          0,
+          4,
+          1,
+          6,
+          4
+        ]
+      ],
+      "expected_outputs": [
+        [
+          3,
+          -1
+        ],
+        [
+          3,
+          -1
+        ]
+      ]
+    },
+    {
+      "name": "prop_cnn_20261928",
+      "family": "cnn",
+      "seed": 20261928,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 6,
+        "input_bits": 3,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "conv",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "c1"
+            ],
+            "op": {
+              "op_type": "Conv2d",
+              "weights": [
+                [
+                  1,
+                  -1,
+                  2,
+                  1,
+                  1,
+                  2,
+                  -1,
+                  -1
+                ]
+              ],
+              "bias": [
+                -4
+              ],
+              "weight_bits": 3,
+              "in_h": 4,
+              "in_w": 4,
+              "in_channels": 2,
+              "kernel_h": 2,
+              "kernel_w": 2,
+              "stride": 2,
+              "padding": 1
+            }
+          },
+          {
+            "name": "rq",
+            "inputs": [
+              "c1"
+            ],
+            "outputs": [
+              "c1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 0,
+              "mult": 1,
+              "round_bias": 0,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ],
+              "mults": [
+                1
+              ],
+              "shifts": [
+                1
+              ],
+              "round_biases": [
+                1
+              ],
+              "channel_size": 9
+            }
+          },
+          {
+            "name": "pool",
+            "inputs": [
+              "c1q"
+            ],
+            "outputs": [
+              "pool"
+            ],
+            "op": {
+              "op_type": "Pool",
+              "mode": "max",
+              "in_h": 3,
+              "in_w": 3,
+              "channels": 1,
+              "pool_h": 2,
+              "pool_w": 2,
+              "stride": 1,
+              "padding": 1
+            }
+          },
+          {
+            "name": "fc",
+            "inputs": [
+              "pool"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  2,
+                  -1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  -2,
+                  2,
+                  1,
+                  -2,
+                  -1,
+                  -2,
+                  0,
+                  0,
+                  1,
+                  -2
+                ],
+                [
+                  2,
+                  2,
+                  2,
+                  -2,
+                  0,
+                  -1,
+                  -1,
+                  -1,
+                  2,
+                  2,
+                  -2,
+                  -2,
+                  -2,
+                  0,
+                  2,
+                  -1
+                ]
+              ],
+              "bias": [
+                2,
+                0
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          3,
+          5,
+          1,
+          5,
+          1,
+          0,
+          4,
+          6,
+          1,
+          3,
+          4,
+          0,
+          6,
+          6,
+          2,
+          6,
+          7,
+          7,
+          1,
+          0,
+          2,
+          4,
+          1,
+          7,
+          0,
+          0,
+          3,
+          0,
+          0,
+          6,
+          3,
+          1
+        ],
+        [
+          5,
+          4,
+          7,
+          3,
+          4,
+          5,
+          2,
+          7,
+          5,
+          4,
+          7,
+          7,
+          3,
+          0,
+          7,
+          0,
+          3,
+          5,
+          7,
+          4,
+          5,
+          1,
+          1,
+          7,
+          1,
+          4,
+          3,
+          7,
+          3,
+          1,
+          0,
+          3
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -11,
+          -11
+        ],
+        [
+          -7,
+          -9
+        ]
+      ]
+    },
+    {
+      "name": "prop_cnn_20261929",
+      "family": "cnn",
+      "seed": 20261929,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 6,
+        "input_bits": 2,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "conv",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "c1"
+            ],
+            "op": {
+              "op_type": "Conv2d",
+              "weights": [
+                [
+                  -2,
+                  -1,
+                  1,
+                  -1,
+                  2,
+                  -2,
+                  2,
+                  -2
+                ],
+                [
+                  0,
+                  1,
+                  0,
+                  0,
+                  2,
+                  1,
+                  0,
+                  0
+                ]
+              ],
+              "bias": [
+                1,
+                -3
+              ],
+              "weight_bits": 3,
+              "in_h": 3,
+              "in_w": 3,
+              "in_channels": 2,
+              "kernel_h": 2,
+              "kernel_w": 2,
+              "stride": 1,
+              "padding": 1
+            }
+          },
+          {
+            "name": "rq",
+            "inputs": [
+              "c1"
+            ],
+            "outputs": [
+              "c1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 0,
+              "mult": 1,
+              "round_bias": 0,
+              "out_bits": 1,
+              "clamp_lut": [
+                0,
+                1,
+                1,
+                1
+              ],
+              "mults": [
+                3,
+                2
+              ],
+              "shifts": [
+                4,
+                3
+              ],
+              "round_biases": [
+                8,
+                0
+              ],
+              "channel_size": 16
+            }
+          },
+          {
+            "name": "pool",
+            "inputs": [
+              "c1q"
+            ],
+            "outputs": [
+              "pool"
+            ],
+            "op": {
+              "op_type": "Pool",
+              "mode": "max",
+              "in_h": 4,
+              "in_w": 4,
+              "channels": 2,
+              "pool_h": 2,
+              "pool_w": 2,
+              "stride": 1
+            }
+          },
+          {
+            "name": "fc",
+            "inputs": [
+              "pool"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  1,
+                  -1,
+                  2,
+                  -2,
+                  0,
+                  -2,
+                  -1,
+                  0,
+                  1,
+                  0,
+                  -2,
+                  -1,
+                  0,
+                  1,
+                  1,
+                  1,
+                  0,
+                  1
+                ],
+                [
+                  -1,
+                  2,
+                  0,
+                  1,
+                  -1,
+                  2,
+                  -1,
+                  0,
+                  0,
+                  1,
+                  1,
+                  2,
+                  -2,
+                  0,
+                  1,
+                  1,
+                  1,
+                  -1
+                ],
+                [
+                  -2,
+                  -1,
+                  0,
+                  1,
+                  0,
+                  -2,
+                  2,
+                  1,
+                  -2,
+                  2,
+                  0,
+                  0,
+                  -2,
+                  0,
+                  0,
+                  -1,
+                  1,
+                  -1
+                ]
+              ],
+              "bias": [
+                -1,
+                1,
+                -2
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          3,
+          1,
+          1,
+          1,
+          0,
+          3,
+          2,
+          2,
+          3,
+          2,
+          0,
+          3,
+          3,
+          2,
+          3,
+          1,
+          3,
+          2
+        ],
+        [
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          3,
+          3,
+          1,
+          0,
+          0,
+          1,
+          1,
+          2,
+          0,
+          0,
+          3,
+          3
+        ]
+      ],
+      "expected_outputs": [
+        [
+          4,
+          4,
+          -12
+        ],
+        [
+          1,
+          2,
+          -5
+        ]
+      ]
+    },
+    {
+      "name": "prop_cnn_20261930",
+      "family": "cnn",
+      "seed": 20261930,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 6,
+        "input_bits": 2,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "conv",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "c1"
+            ],
+            "op": {
+              "op_type": "Conv2d",
+              "weights": [
+                [
+                  -1,
+                  -1,
+                  -2,
+                  -1,
+                  2,
+                  1,
+                  0,
+                  -1
+                ],
+                [
+                  -2,
+                  0,
+                  1,
+                  -1,
+                  2,
+                  0,
+                  1,
+                  -2
+                ]
+              ],
+              "bias": [
+                3,
+                2
+              ],
+              "weight_bits": 3,
+              "in_h": 3,
+              "in_w": 3,
+              "in_channels": 2,
+              "kernel_h": 2,
+              "kernel_w": 2,
+              "stride": 1,
+              "padding": 0
+            }
+          },
+          {
+            "name": "rq",
+            "inputs": [
+              "c1"
+            ],
+            "outputs": [
+              "c1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 1,
+              "mult": 2,
+              "round_bias": 1,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          {
+            "name": "fc",
+            "inputs": [
+              "c1q"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  0,
+                  -1,
+                  -1,
+                  -2,
+                  0,
+                  2,
+                  1,
+                  1
+                ],
+                [
+                  -1,
+                  1,
+                  1,
+                  -2,
+                  2,
+                  -1,
+                  1,
+                  1
+                ]
+              ],
+              "bias": [
+                -4,
+                -4
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          2,
+          3,
+          0,
+          2,
+          2,
+          0,
+          2,
+          0,
+          2,
+          3,
+          1,
+          1,
+          1,
+          2,
+          3,
+          0,
+          1,
+          3
+        ],
+        [
+          1,
+          2,
+          2,
+          3,
+          2,
+          2,
+          3,
+          0,
+          3,
+          2,
+          0,
+          1,
+          1,
+          1,
+          1,
+          0,
+          2,
+          0
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -10,
+          -8
+        ],
+        [
+          -4,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "prop_cnn_20261931",
+      "family": "cnn",
+      "seed": 20261931,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 6,
+        "input_bits": 2,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "conv",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "c1"
+            ],
+            "op": {
+              "op_type": "Conv2d",
+              "weights": [
+                [
+                  -1,
+                  2,
+                  0,
+                  -1
+                ],
+                [
+                  -2,
+                  1,
+                  -1,
+                  1
+                ]
+              ],
+              "bias": [
+                2,
+                4
+              ],
+              "weight_bits": 3,
+              "in_h": 4,
+              "in_w": 4,
+              "in_channels": 1,
+              "kernel_h": 2,
+              "kernel_w": 2,
+              "stride": 1,
+              "padding": 1
+            }
+          },
+          {
+            "name": "rq",
+            "inputs": [
+              "c1"
+            ],
+            "outputs": [
+              "c1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 5,
+              "mult": 3,
+              "round_bias": 0,
+              "out_bits": 1,
+              "clamp_lut": [
+                0,
+                1,
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "name": "fc",
+            "inputs": [
+              "c1q"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  0,
+                  2,
+                  -2,
+                  -1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  2,
+                  1,
+                  2,
+                  2,
+                  0,
+                  -2,
+                  0,
+                  0,
+                  2,
+                  -1,
+                  -1,
+                  -2,
+                  1,
+                  2,
+                  -2,
+                  1,
+                  -2,
+                  2,
+                  1,
+                  -2,
+                  2,
+                  -2,
+                  2,
+                  0,
+                  -2,
+                  2,
+                  2,
+                  -1,
+                  0,
+                  -2,
+                  2,
+                  -1,
+                  0,
+                  2,
+                  1,
+                  2,
+                  2,
+                  -1,
+                  -2,
+                  -2,
+                  -1,
+                  -2
+                ],
+                [
+                  -2,
+                  1,
+                  1,
+                  -2,
+                  2,
+                  1,
+                  1,
+                  1,
+                  -2,
+                  2,
+                  1,
+                  -1,
+                  2,
+                  1,
+                  0,
+                  2,
+                  1,
+                  0,
+                  0,
+                  2,
+                  1,
+                  -2,
+                  2,
+                  1,
+                  1,
+                  -1,
+                  -1,
+                  0,
+                  2,
+                  -1,
+                  2,
+                  -2,
+                  0,
+                  0,
+                  -2,
+                  1,
+                  -2,
+                  1,
+                  -1,
+                  0,
+                  0,
+                  1,
+                  -2,
+                  0,
+                  1,
+                  -1,
+                  1,
+                  0,
+                  -1,
+                  2
+                ]
+              ],
+              "bias": [
+                1,
+                -3
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          3,
+          0,
+          2,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          1,
+          3,
+          3,
+          1,
+          3,
+          1
+        ],
+        [
+          3,
+          2,
+          2,
+          2,
+          1,
+          3,
+          1,
+          1,
+          0,
+          2,
+          0,
+          0,
+          3,
+          3,
+          3,
+          1
+        ]
+      ],
+      "expected_outputs": [
+        [
+          1,
+          -3
+        ],
+        [
+          1,
+          -3
+        ]
+      ]
+    },
+    {
+      "name": "prop_branch_20262926",
+      "family": "branch",
+      "seed": 20262926,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 8,
+        "input_bits": 3,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "fc1",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "h1"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -1,
+                  1,
+                  -1,
+                  1
+                ],
+                [
+                  -1,
+                  -2,
+                  1,
+                  -1
+                ],
+                [
+                  2,
+                  -1,
+                  1,
+                  -1
+                ],
+                [
+                  -1,
+                  -1,
+                  2,
+                  0
+                ]
+              ],
+              "bias": [
+                -2,
+                1,
+                -1,
+                -3
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "rq1",
+            "inputs": [
+              "h1"
+            ],
+            "outputs": [
+              "h1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 3,
+              "mult": 1,
+              "round_bias": 0,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          {
+            "name": "split",
+            "inputs": [
+              "h1q"
+            ],
+            "outputs": [
+              "a",
+              "b"
+            ],
+            "op": {
+              "op_type": "Split",
+              "sizes": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "name": "fc_a",
+            "inputs": [
+              "a"
+            ],
+            "outputs": [
+              "a2"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  2,
+                  -1
+                ],
+                [
+                  -1,
+                  -2
+                ]
+              ],
+              "bias": [
+                -2,
+                0
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "add",
+            "inputs": [
+              "a2",
+              "b"
+            ],
+            "outputs": [
+              "s"
+            ],
+            "op": {
+              "op_type": "Add"
+            }
+          },
+          {
+            "name": "concat",
+            "inputs": [
+              "s",
+              "b"
+            ],
+            "outputs": [
+              "sb"
+            ],
+            "op": {
+              "op_type": "Concat",
+              "sizes": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "inputs": [
+              "sb"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  2,
+                  -1,
+                  2,
+                  2
+                ],
+                [
+                  -2,
+                  -1,
+                  2,
+                  -2
+                ]
+              ],
+              "bias": [
+                2,
+                0
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          2,
+          4,
+          5,
+          7
+        ],
+        [
+          6,
+          7,
+          3,
+          7
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -2,
+          4
+        ],
+        [
+          -2,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "prop_branch_20262927",
+      "family": "branch",
+      "seed": 20262927,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 8,
+        "input_bits": 4,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "fc1",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "h1"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  1,
+                  2,
+                  2,
+                  -1,
+                  2,
+                  2
+                ],
+                [
+                  1,
+                  -2,
+                  0,
+                  -2,
+                  2,
+                  -2
+                ],
+                [
+                  2,
+                  -1,
+                  0,
+                  -2,
+                  2,
+                  0
+                ],
+                [
+                  -1,
+                  0,
+                  0,
+                  -1,
+                  -2,
+                  -2
+                ]
+              ],
+              "bias": [
+                -3,
+                3,
+                2,
+                -3
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "rq1",
+            "inputs": [
+              "h1"
+            ],
+            "outputs": [
+              "h1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 3,
+              "mult": 1,
+              "round_bias": 0,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          {
+            "name": "split",
+            "inputs": [
+              "h1q"
+            ],
+            "outputs": [
+              "a",
+              "b"
+            ],
+            "op": {
+              "op_type": "Split",
+              "sizes": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "name": "fc_a",
+            "inputs": [
+              "a"
+            ],
+            "outputs": [
+              "a2"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -1,
+                  -2
+                ],
+                [
+                  1,
+                  -1
+                ]
+              ],
+              "bias": [
+                -3,
+                0
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "add",
+            "inputs": [
+              "a2",
+              "b"
+            ],
+            "outputs": [
+              "s"
+            ],
+            "op": {
+              "op_type": "Add"
+            }
+          },
+          {
+            "name": "concat",
+            "inputs": [
+              "s",
+              "b"
+            ],
+            "outputs": [
+              "sb"
+            ],
+            "op": {
+              "op_type": "Concat",
+              "sizes": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "inputs": [
+              "sb"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  1,
+                  0,
+                  2,
+                  0
+                ],
+                [
+                  0,
+                  -2,
+                  1,
+                  0
+                ],
+                [
+                  -2,
+                  -2,
+                  -1,
+                  -2
+                ]
+              ],
+              "bias": [
+                -3,
+                -2,
+                3
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          3,
+          0,
+          4,
+          6,
+          10,
+          3
+        ],
+        [
+          4,
+          4,
+          2,
+          9,
+          11,
+          15
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -5,
+          -4,
+          9
+        ],
+        [
+          -6,
+          -7,
+          6
+        ]
+      ]
+    },
+    {
+      "name": "prop_branch_20262928",
+      "family": "branch",
+      "seed": 20262928,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 8,
+        "input_bits": 2,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "fc1",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "h1"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  2,
+                  1,
+                  -1,
+                  -2,
+                  0,
+                  2
+                ],
+                [
+                  0,
+                  2,
+                  1,
+                  -2,
+                  -2,
+                  -1
+                ],
+                [
+                  1,
+                  2,
+                  0,
+                  -1,
+                  1,
+                  2
+                ],
+                [
+                  -2,
+                  -2,
+                  2,
+                  -1,
+                  0,
+                  1
+                ]
+              ],
+              "bias": [
+                -2,
+                1,
+                -4,
+                1
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "rq1",
+            "inputs": [
+              "h1"
+            ],
+            "outputs": [
+              "h1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 2,
+              "mult": 1,
+              "round_bias": 0,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          {
+            "name": "split",
+            "inputs": [
+              "h1q"
+            ],
+            "outputs": [
+              "a",
+              "b"
+            ],
+            "op": {
+              "op_type": "Split",
+              "sizes": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "name": "fc_a",
+            "inputs": [
+              "a"
+            ],
+            "outputs": [
+              "a2"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  -2
+                ]
+              ],
+              "bias": [
+                1,
+                2
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "add",
+            "inputs": [
+              "a2",
+              "b"
+            ],
+            "outputs": [
+              "s"
+            ],
+            "op": {
+              "op_type": "Add"
+            }
+          },
+          {
+            "name": "concat",
+            "inputs": [
+              "s",
+              "b"
+            ],
+            "outputs": [
+              "sb"
+            ],
+            "op": {
+              "op_type": "Concat",
+              "sizes": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "inputs": [
+              "sb"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -1,
+                  1,
+                  -2,
+                  1
+                ],
+                [
+                  0,
+                  0,
+                  2,
+                  0
+                ]
+              ],
+              "bias": [
+                -4,
+                4
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          2,
+          0,
+          1,
+          2,
+          2,
+          0
+        ],
+        [
+          3,
+          0,
+          2,
+          3,
+          1,
+          1
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -3,
+          4
+        ],
+        [
+          -3,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "prop_branch_20262929",
+      "family": "branch",
+      "seed": 20262929,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 8,
+        "input_bits": 4,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "fc1",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "h1"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -1,
+                  -2,
+                  -1,
+                  0,
+                  -1,
+                  2
+                ],
+                [
+                  1,
+                  1,
+                  2,
+                  2,
+                  1,
+                  -1
+                ],
+                [
+                  1,
+                  2,
+                  1,
+                  -2,
+                  2,
+                  0
+                ],
+                [
+                  1,
+                  1,
+                  -1,
+                  -2,
+                  -2,
+                  -2
+                ]
+              ],
+              "bias": [
+                -1,
+                3,
+                0,
+                4
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "rq1",
+            "inputs": [
+              "h1"
+            ],
+            "outputs": [
+              "h1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 3,
+              "mult": 3,
+              "round_bias": 0,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          {
+            "name": "split",
+            "inputs": [
+              "h1q"
+            ],
+            "outputs": [
+              "a",
+              "b"
+            ],
+            "op": {
+              "op_type": "Split",
+              "sizes": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "name": "fc_a",
+            "inputs": [
+              "a"
+            ],
+            "outputs": [
+              "a2"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  2,
+                  2
+                ],
+                [
+                  1,
+                  2
+                ]
+              ],
+              "bias": [
+                4,
+                0
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "add",
+            "inputs": [
+              "a2",
+              "b"
+            ],
+            "outputs": [
+              "s"
+            ],
+            "op": {
+              "op_type": "Add"
+            }
+          },
+          {
+            "name": "concat",
+            "inputs": [
+              "s",
+              "b"
+            ],
+            "outputs": [
+              "sb"
+            ],
+            "op": {
+              "op_type": "Concat",
+              "sizes": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "inputs": [
+              "sb"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  2,
+                  2,
+                  1,
+                  2
+                ],
+                [
+                  2,
+                  -1,
+                  1,
+                  0
+                ]
+              ],
+              "bias": [
+                3,
+                2
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          15,
+          11,
+          12,
+          11,
+          4,
+          15
+        ],
+        [
+          0,
+          13,
+          9,
+          0,
+          10,
+          14
+        ]
+      ],
+      "expected_outputs": [
+        [
+          44,
+          25
+        ],
+        [
+          44,
+          25
+        ]
+      ]
+    },
+    {
+      "name": "prop_branch_20262930",
+      "family": "branch",
+      "seed": 20262930,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 8,
+        "input_bits": 2,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "fc1",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "h1"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -1,
+                  -2,
+                  0,
+                  0,
+                  -1,
+                  0
+                ],
+                [
+                  -1,
+                  2,
+                  -2,
+                  2,
+                  2,
+                  -1
+                ],
+                [
+                  -2,
+                  2,
+                  0,
+                  -1,
+                  1,
+                  1
+                ],
+                [
+                  2,
+                  0,
+                  1,
+                  2,
+                  1,
+                  -2
+                ]
+              ],
+              "bias": [
+                -2,
+                -3,
+                -2,
+                -4
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "rq1",
+            "inputs": [
+              "h1"
+            ],
+            "outputs": [
+              "h1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 4,
+              "mult": 2,
+              "round_bias": 0,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          {
+            "name": "split",
+            "inputs": [
+              "h1q"
+            ],
+            "outputs": [
+              "a",
+              "b"
+            ],
+            "op": {
+              "op_type": "Split",
+              "sizes": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "name": "fc_a",
+            "inputs": [
+              "a"
+            ],
+            "outputs": [
+              "a2"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  1,
+                  -1
+                ],
+                [
+                  0,
+                  1
+                ]
+              ],
+              "bias": [
+                -2,
+                -3
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "add",
+            "inputs": [
+              "a2",
+              "b"
+            ],
+            "outputs": [
+              "s"
+            ],
+            "op": {
+              "op_type": "Add"
+            }
+          },
+          {
+            "name": "concat",
+            "inputs": [
+              "s",
+              "b"
+            ],
+            "outputs": [
+              "sb"
+            ],
+            "op": {
+              "op_type": "Concat",
+              "sizes": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "inputs": [
+              "sb"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  0,
+                  0,
+                  -1,
+                  2
+                ],
+                [
+                  2,
+                  0,
+                  -1,
+                  0
+                ]
+              ],
+              "bias": [
+                -2,
+                -3
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          0,
+          0,
+          0,
+          1,
+          1,
+          2
+        ],
+        [
+          1,
+          0,
+          1,
+          2,
+          1,
+          3
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -2,
+          -7
+        ],
+        [
+          -2,
+          -7
+        ]
+      ]
+    },
+    {
+      "name": "prop_branch_20262931",
+      "family": "branch",
+      "seed": 20262931,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 8,
+        "input_bits": 2,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "fc1",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "h1"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  1,
+                  -1,
+                  1,
+                  -2,
+                  1,
+                  0
+                ],
+                [
+                  -1,
+                  -1,
+                  0,
+                  -1,
+                  -1,
+                  2
+                ],
+                [
+                  1,
+                  0,
+                  -2,
+                  -1,
+                  1,
+                  -2
+                ],
+                [
+                  0,
+                  0,
+                  0,
+                  1,
+                  -2,
+                  -2
+                ]
+              ],
+              "bias": [
+                4,
+                3,
+                4,
+                -3
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "rq1",
+            "inputs": [
+              "h1"
+            ],
+            "outputs": [
+              "h1q"
+            ],
+            "op": {
+              "op_type": "Requant",
+              "shift": 1,
+              "mult": 3,
+              "round_bias": 1,
+              "out_bits": 2,
+              "clamp_lut": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          {
+            "name": "split",
+            "inputs": [
+              "h1q"
+            ],
+            "outputs": [
+              "a",
+              "b"
+            ],
+            "op": {
+              "op_type": "Split",
+              "sizes": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "name": "fc_a",
+            "inputs": [
+              "a"
+            ],
+            "outputs": [
+              "a2"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -1,
+                  -1
+                ],
+                [
+                  2,
+                  2
+                ]
+              ],
+              "bias": [
+                4,
+                0
+              ],
+              "weight_bits": 3
+            }
+          },
+          {
+            "name": "add",
+            "inputs": [
+              "a2",
+              "b"
+            ],
+            "outputs": [
+              "s"
+            ],
+            "op": {
+              "op_type": "Add"
+            }
+          },
+          {
+            "name": "concat",
+            "inputs": [
+              "s",
+              "b"
+            ],
+            "outputs": [
+              "sb"
+            ],
+            "op": {
+              "op_type": "Concat",
+              "sizes": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "inputs": [
+              "sb"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  2,
+                  -2,
+                  0,
+                  -2
+                ],
+                [
+                  -1,
+                  2,
+                  0,
+                  -1
+                ],
+                [
+                  -2,
+                  1,
+                  2,
+                  1
+                ]
+              ],
+              "bias": [
+                -4,
+                0,
+                -3
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          3,
+          3,
+          3,
+          3,
+          0,
+          3
+        ],
+        [
+          2,
+          1,
+          2,
+          0,
+          2,
+          2
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -8,
+          6,
+          -3
+        ],
+        [
+          -32,
+          26,
+          13
+        ]
+      ]
+    },
+    {
+      "name": "prop_tree_20263926",
+      "family": "tree",
+      "seed": 20263926,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 4,
+        "input_bits": 4,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "cmp",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "bits"
+            ],
+            "op": {
+              "op_type": "Compare",
+              "indices": [
+                0,
+                2
+              ],
+              "thresholds": [
+                3,
+                10
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "inputs": [
+              "bits"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  1
+                ],
+                [
+                  2,
+                  -1
+                ]
+              ],
+              "bias": [
+                2,
+                -1,
+                -2
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          14,
+          4,
+          5
+        ],
+        [
+          6,
+          14,
+          5
+        ]
+      ],
+      "expected_outputs": [
+        [
+          2,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "name": "prop_tree_20263927",
+      "family": "tree",
+      "seed": 20263927,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 4,
+        "input_bits": 4,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "cmp",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "bits"
+            ],
+            "op": {
+              "op_type": "Compare",
+              "indices": [
+                3,
+                3,
+                4,
+                2
+              ],
+              "thresholds": [
+                10,
+                2,
+                12,
+                0
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "inputs": [
+              "bits"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  0,
+                  2,
+                  2,
+                  -2
+                ],
+                [
+                  0,
+                  -1,
+                  -1,
+                  -2
+                ],
+                [
+                  -2,
+                  1,
+                  2,
+                  -2
+                ]
+              ],
+              "bias": [
+                0,
+                -1,
+                0
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          8,
+          11,
+          12,
+          12,
+          7
+        ],
+        [
+          13,
+          8,
+          1,
+          13,
+          0
+        ]
+      ],
+      "expected_outputs": [
+        [
+          0,
+          -4,
+          -3
+        ],
+        [
+          0,
+          -4,
+          -3
+        ]
+      ]
+    },
+    {
+      "name": "prop_tree_20263928",
+      "family": "tree",
+      "seed": 20263928,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 4,
+        "input_bits": 4,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "cmp",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "bits"
+            ],
+            "op": {
+              "op_type": "Compare",
+              "indices": [
+                0,
+                2
+              ],
+              "thresholds": [
+                10,
+                9
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "inputs": [
+              "bits"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -2,
+                  2
+                ],
+                [
+                  1,
+                  -2
+                ]
+              ],
+              "bias": [
+                -2,
+                0
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          14,
+          11,
+          5
+        ],
+        [
+          15,
+          11,
+          10
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -4,
+          1
+        ],
+        [
+          -2,
+          -1
+        ]
+      ]
+    },
+    {
+      "name": "prop_tree_20263929",
+      "family": "tree",
+      "seed": 20263929,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 4,
+        "input_bits": 4,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "cmp",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "bits"
+            ],
+            "op": {
+              "op_type": "Compare",
+              "indices": [
+                2,
+                0,
+                0
+              ],
+              "thresholds": [
+                6,
+                6,
+                11
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "inputs": [
+              "bits"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -2,
+                  2,
+                  2
+                ],
+                [
+                  -1,
+                  -2,
+                  0
+                ]
+              ],
+              "bias": [
+                1,
+                0
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          2,
+          6,
+          12
+        ],
+        [
+          9,
+          7,
+          15
+        ]
+      ],
+      "expected_outputs": [
+        [
+          -1,
+          -1
+        ],
+        [
+          1,
+          -3
+        ]
+      ]
+    },
+    {
+      "name": "prop_tree_20263930",
+      "family": "tree",
+      "seed": 20263930,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 4,
+        "input_bits": 4,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "cmp",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "bits"
+            ],
+            "op": {
+              "op_type": "Compare",
+              "indices": [
+                0,
+                3
+              ],
+              "thresholds": [
+                4,
+                0
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "inputs": [
+              "bits"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  -1,
+                  0
+                ],
+                [
+                  1,
+                  -2
+                ]
+              ],
+              "bias": [
+                2,
+                -1
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          4,
+          15,
+          1,
+          8,
+          5,
+          7
+        ],
+        [
+          9,
+          15,
+          6,
+          8,
+          9,
+          8
+        ]
+      ],
+      "expected_outputs": [
+        [
+          1,
+          -2
+        ],
+        [
+          1,
+          -2
+        ]
+      ]
+    },
+    {
+      "name": "prop_tree_20263931",
+      "family": "tree",
+      "seed": 20263931,
+      "graph": {
+        "schema_version": "0.10.0",
+        "num_blocks": 4,
+        "input_bits": 4,
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ],
+        "nodes": [
+          {
+            "name": "cmp",
+            "inputs": [
+              "x"
+            ],
+            "outputs": [
+              "bits"
+            ],
+            "op": {
+              "op_type": "Compare",
+              "indices": [
+                5,
+                5,
+                1,
+                2
+              ],
+              "thresholds": [
+                14,
+                12,
+                6,
+                9
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "inputs": [
+              "bits"
+            ],
+            "outputs": [
+              "y"
+            ],
+            "op": {
+              "op_type": "Linear",
+              "weights": [
+                [
+                  0,
+                  -2,
+                  0,
+                  2
+                ],
+                [
+                  1,
+                  -2,
+                  1,
+                  2
+                ],
+                [
+                  2,
+                  1,
+                  -2,
+                  2
+                ]
+              ],
+              "bias": [
+                0,
+                1,
+                -2
+              ],
+              "weight_bits": 3
+            }
+          }
+        ]
+      },
+      "test_inputs": [
+        [
+          12,
+          2,
+          0,
+          15,
+          9,
+          6
+        ],
+        [
+          13,
+          1,
+          12,
+          7,
+          9,
+          5
+        ]
+      ],
+      "expected_outputs": [
+        [
+          0,
+          1,
+          -2
+        ],
+        [
+          2,
+          3,
+          0
+        ]
+      ]
+    }
+  ]
+}
