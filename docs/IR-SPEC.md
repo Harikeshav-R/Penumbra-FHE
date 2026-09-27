@@ -6,8 +6,8 @@ runtime consumes. A new use case is a new IR graph — never a backend edit (`AG
 A new *backend* is a new crate — never an IR edit (see [Backend neutrality](#backend-neutrality)).
 
 This document is the authoritative schema. It is defined **in lockstep** on both sides:
-[`python/penumbra/ir.py`](../python/penumbra/ir.py) ↔
-[`runtime/src/ir.rs`](../runtime/src/ir.rs). Any change to the format updates *both* sides,
+[`python/penumbra/ir.py`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/python/penumbra/ir.py) ↔
+[`crates/penumbra-core/src/ir.rs`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/crates/penumbra-core/src/ir.rs). Any change to the format updates *both* sides,
 bumps [`SCHEMA_VERSION`](#versioning), updates the [conformance test](#conformance), and
 updates this file — all in the **same change** (`AGENTS.md` §5). A schema-version bump is a
 breaking change (`AGENTS.md` §8).
@@ -189,7 +189,7 @@ layer produces `logit`, the threshold produces the output `label`:
 }
 ```
 
-The committed [`examples/mnist/phase2_fixture.json`](../examples/mnist/phase2_fixture.json)
+The committed [`examples/mnist/phase2_fixture.json`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/examples/mnist/phase2_fixture.json)
 embeds this graph under a top-level `"graph"` key, alongside sibling **test metadata**
 (`test_inputs`, `expected_labels`, `scales`, `accuracy`, and a standalone `activation` LUT).
 Test vectors and quantization provenance are *not* part of the portable IR — they belong to
@@ -209,10 +209,10 @@ The cross-language conformance test keeps the two definitions honest (`AGENTS.md
 two CI jobs run in parallel and never invoke each other, so the **committed IR file is the
 meeting point**: Python emits → committed fixture → Rust consumes.
 
-- **Python** ([`tests/test_ir_conformance.py`](../tests/test_ir_conformance.py)) asserts the
+- **Python** ([`tests/test_ir_conformance.py`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/tests/test_ir_conformance.py)) asserts the
   IR round-trips (`from_json(to_json(g)) == g`) and that the committed `graph` is exactly
   what `ir.py` emits today (the drift guard).
-- **Rust** ([`runtime/tests/ir_conformance.rs`](../runtime/tests/ir_conformance.rs))
+- **Rust** ([`runtime/tests/ir_conformance.rs`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/runtime/tests/ir_conformance.rs))
   deserializes the committed `graph` into the typed `Graph`, asserting the schema version
   and the expected `Linear → Argmax` structure.
 

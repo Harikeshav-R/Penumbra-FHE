@@ -1,38 +1,59 @@
-# Tabular Tree Ensembles — Decision Trees, Random Forests & XGBoost
+# Tabular MLP — Wisconsin Breast Cancer
 
-Tabular inference via tree ensembles lowered to standard Penumbra IR ops: **train → quantize → export IR → encrypted inference**.
+Tabular classification on the Wisconsin Breast Cancer dataset using a PyTorch neural network: **train → quantize → export IR → encrypted inference**.
 
-- **Random Forest (scikit-learn):** `RandomForestClassifier` (5 trees, max depth 3) trained on Wisconsin Breast Cancer.
-- **Gradient Boosted Trees (XGBoost):** `XGBClassifier` (5 trees, max depth 3) trained on Wisconsin Breast Cancer.
+- **Architecture:** `Linear(30 → 8) → ReLU → Linear(8 → 2)`
+- **IR Graph:** `Linear → Requant(clamp_lo=0, fused ReLU) → Linear`
+- **Dataset:** Wisconsin Breast Cancer (`sklearn.datasets.load_breast_cancer`, 30 features, 2 classes)
+- **Radix:** 10 blocks (20-bit signed capacity)
+- **Float Accuracy:** 0.965
+- **Quantized Accuracy:** 0.956 (gap +0.009)
 
-This example contains **no cryptography** (`PROJECT.md` §4). The crypto lives entirely in the backend crates, and these fixtures are backend-agnostic: the same committed IR graph is what *every* backend evaluates (`docs/BACKENDS.md`).
+For tree-ensemble models on the exact same dataset and test split, see [`examples/trees/`](../trees/).
 
----
+## Preprocessing note
 
-## The 4-Stage Lowering (Sum of Comparisons)
+Raw Breast Cancer features vary by orders of magnitude (~0.05 to ~2500 across 30 dimensions).
+Min-max feature scaling to `[0.0, 1.0]` using training set statistics is performed client-side
+in NumPy before integer quantization, not as an in-graph FHE operation, because the input scale
+is per-tensor unsigned. The train/test split (`test_size=0.2, random_state=42`) is identical to
+the split in `examples/trees/`, allowing direct comparison between tree ensembles and neural networks.
 
-`crates/penumbra-core/src/backend.rs` exposes no ciphertext × ciphertext multiply, so tree paths cannot be computed via indicator products (muxes). Instead, trees are lowered using the sum-of-comparisons formulation:
-
-| Stage | Node | Op | Semantics |
-|---|---|---|---|
-| 1 | `split_cmp` | `Compare` | $b_g = [x[\text{feature}_g] \ge T_g]$ — one comparison PBS per internal split across all trees |
-| 2 | `leaf_score` | `Linear` | $\text{score}_l = \sum_{g \in \text{path}(l)} (\pm 1) \cdot b_g + |\text{left}(l)|$ — attains max $\text{depth}_l$ iff every condition on path holds |
-| 3 | `leaf_sel` | `Compare` | $[\text{score}_l \ge \text{depth}_l]$ — one-hot active leaf indicator ($score_l \ge depth_l \iff score_l = depth_l$) |
-| 4 | `logits` | `Linear` | $\sum_l V[c][l] \cdot \text{leaf\_sel}[l] + \text{bias}_c$ — class logits, summed across trees |
-
-The client argmaxes the decrypted logits, matching the standard multi-class convention (`PROJECT.md` §11).
-
----
-
-## Reproducing
+## Run it (one command)
 
 ```bash
-# Generate scikit-learn Random Forest fixture (examples/tabular/phase8_trees_fixture.json):
-uv run --extra ml python examples/tabular/tree_export.py
+uv run python examples/tabular/run.py          # [--model KEY] [--samples N] [--backend tfhe|ckks]
+```
 
-# Generate XGBoost fixture (examples/tabular/phase8_xgb_fixture.json):
-uv run --extra ml python examples/tabular/xgb_export.py
+Prerequisite is `uv sync` only: it builds the PyO3 extension from source and requires no network
+access and no `ml` extra. The command replays the committed fixture's pre-quantized `test_inputs`
+in-process through keygen → encrypt → evaluate → decrypt via `penumbra.client.run_encrypted`.
+Under TFHE (default), the decrypted outputs are checked bit-for-bit against the quantized-cleartext
+reference `evaluate_graph_int`, exiting with code 1 on any mismatch (`AGENTS.md` §1.1). Under CKKS,
+evaluation is report-only (max |err| and label agreement) and requires a nightly source build
+(`RUSTUP_TOOLCHAIN=nightly uv run --with "maturin>=1.9,<2.0" maturin develop --release --features ckks`)
+executed with `uv run --no-sync python ...`; the formal CKKS gate is the Rust golden against
+declared bound `PHASE11_TABULAR_MLP = 29.0` in `crates/penumbra-ckks/src/bounds.rs`.
 
-# Run golden test (exact bit-for-bit check under TFHE):
-cargo test --release --test golden_trees -- --nocapture
+**Latency:** ~30.8 s/sample (measured by `run.py`, TFHE `classic` profile, Apple M3 Pro).
+*(There is no CKKS latency reported here; comparative cross-backend performance benchmarks come
+exclusively from `penumbra-bench` — see `docs/BENCHMARKS.md`.)*
+
+## Regenerating
+
+```bash
+uv run --extra ml --system-certs python examples/tabular/mlp_export.py
+```
+
+## Tests
+
+```bash
+# Fast Python fixture drift guard:
+uv run pytest tests/test_tabular_mlp_fixture.py
+
+# TFHE golden exactness gate (asserts bit-for-bit exactness against integer reference):
+cargo test -p penumbra-fhe-runtime --release --test golden_tabular_mlp -- --ignored --nocapture
+
+# CKKS golden error-bound gate (asserts error <= PHASE11_TABULAR_MLP):
+cargo +nightly test -p penumbra-ckks --features ckks --release --test ckks_golden_tabular_mlp -- --nocapture
 ```

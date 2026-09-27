@@ -39,7 +39,25 @@ from penumbra.ir import (
     SplitSpec,
 )
 
-FIXTURE = Path(__file__).resolve().parent.parent / "examples" / "mnist" / "phase2_fixture.json"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+FIXTURE = REPO_ROOT / "examples" / "mnist" / "phase2_fixture.json"
+
+ALL_FIXTURES: list[Path] = [
+    REPO_ROOT / "examples/mnist/phase2_fixture.json",
+    REPO_ROOT / "examples/mnist/phase4_cnn_fixture.json",
+    REPO_ROOT / "examples/mnist/phase5_digits_fixture.json",
+    REPO_ROOT / "examples/mnist/phase5_qat_fixture.json",
+    REPO_ROOT / "examples/mnist/phase6_onnx_fixture.json",
+    REPO_ROOT / "examples/mnist/phase6_sklearn_fixture.json",
+    REPO_ROOT / "examples/mnist/phase8_bn_cnn_fixture.json",
+    REPO_ROOT / "examples/mnist/phase8_branch_fixture.json",
+    REPO_ROOT / "examples/mnist/phase8_gap_cnn_fixture.json",
+    REPO_ROOT / "examples/mnist/phase8_tanh_fixture.json",
+    REPO_ROOT / "examples/faces/phase7_faces_fixture.json",
+    REPO_ROOT / "examples/trees/phase8_trees_fixture.json",
+    REPO_ROOT / "examples/trees/phase8_xgb_fixture.json",
+    REPO_ROOT / "examples/tabular/phase11_tabular_mlp_fixture.json",
+]
 
 
 def _committed_graph_dict() -> dict:
@@ -92,6 +110,19 @@ def test_committed_graph_matches_front_end_output():
     assert (
         rebuilt.to_dict() == committed
     ), "committed graph is not the front end's canonical output — regenerate the fixture"
+
+
+@pytest.mark.parametrize("fixture_path", ALL_FIXTURES, ids=[p.stem for p in ALL_FIXTURES])
+def test_every_committed_fixture_graph_is_in_emitted_form(fixture_path: Path):
+    fx = json.loads(fixture_path.read_text())
+    assert "graph" in fx, f"fixture {fixture_path.name} missing 'graph' key"
+    g = fx["graph"]
+    assert (
+        g["schema_version"] == SCHEMA_VERSION
+    ), f"{fixture_path.name} schema_version {g.get('schema_version')} != current {SCHEMA_VERSION}"
+    assert (
+        Graph.from_dict(g).to_dict() == g
+    ), f"{fixture_path.name} is not in canonical emitted form"
 
 
 def test_committed_graph_is_linear_argmax():

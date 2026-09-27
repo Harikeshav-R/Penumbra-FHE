@@ -14,20 +14,15 @@ use penumbra_core::backend::EvalCtx;
 use penumbra_core::ir::Graph;
 use serde_json::Value;
 
+mod common;
+use common::as_i64_vec;
+
 fn load_fixture() -> Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../examples/mnist/phase5_digits_fixture.json");
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read fixture at {}: {e}", path.display()));
     serde_json::from_str(&text).expect("valid JSON")
-}
-
-fn as_i64_vec(v: &Value) -> Vec<i64> {
-    v.as_array()
-        .expect("array")
-        .iter()
-        .map(|x| x.as_i64().expect("int"))
-        .collect()
 }
 
 #[test]

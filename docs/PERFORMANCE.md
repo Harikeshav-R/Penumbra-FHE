@@ -16,7 +16,7 @@ mechanisms:
 ### TFHE Backend (`penumbra-tfhe`)
 
 - **Primary cost:** Programmable Bootstrapping (PBS). In shortint radix arithmetic,
-  `runtime ≈ number of bootstraps` ([`PROJECT.md`](../PROJECT.md) §5).
+  `runtime ≈ number of bootstraps` ([`PROJECT.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/PROJECT.md) §5).
 - **Radix carry propagation:** Each integer tensor element is decomposed across `num_blocks` radix
   blocks (`MESSAGE_BITS = 2` bits per block). While scalar additions and plaintext-weight scalar
   multiplications are homomorphic linear combinations, accumulating multi-block integers requires
@@ -265,7 +265,7 @@ Because trees evaluate as threshold comparisons (`Compare`) and sparse indicator
 > **Never trade away security for speed.** Security level is a non-negotiable hard gate.
 
 - All supported TFHE profiles guarantee $\ge 128$-bit classical security ($p_{\text{fail}} \le 2^{-128}$).
-- CKKS parameters ($N = 16384, k = 360$) provide $\ge 128$-bit classical security under the
-  LWE/RLWE estimator.
+- CKKS parameters ($N = 16384, k = 360$) provide $\ge 128$-bit classical security per the
+  HomomorphicEncryption.org standard table ($\log q \le 438$ at $N = 16384$).
 - Comparing backends at mismatched security levels is invalid (`docs/COMPARISON.md`). Optimizations
   must operate strictly within the committed 128-bit security envelope.

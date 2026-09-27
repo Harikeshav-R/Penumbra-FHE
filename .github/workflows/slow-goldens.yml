@@ -1,0 +1,47 @@
+name: Slow TFHE goldens
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  golden:
+    name: "Golden: ${{ matrix.test }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - golden_bn_cnn
+          - golden_branch_mlp
+          - golden_digits
+          - golden_faces
+          - golden_gap_cnn
+          - golden_onnx
+          - golden_qat
+          - golden_requant_signed
+          - golden_sklearn
+          - golden_tabular_mlp
+          - golden_tanh_mlp
+          - golden_trees
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: "Run TFHE golden: ${{ matrix.test }}"
+        run: cargo test -p penumbra-fhe-runtime --release --test ${{ matrix.test }} -- --ignored --nocapture

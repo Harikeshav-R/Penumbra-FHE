@@ -27,6 +27,8 @@ The ONNX front door (``fhe.load_onnx("model.onnx")``) and the one-call
 build on the same ``Model`` / IR objects.
 """
 
+from importlib.metadata import version as _distribution_version
+
 # Float layer builders (Layer 3). Imported here so the public API reads `fhe.Conv2d(...)`,
 # matching the PROJECT.md §7 sketch. Named distinctly from the int `*Spec` IR payloads.
 from penumbra import layers
@@ -73,7 +75,9 @@ from penumbra.model import Model
 from penumbra.onnx_loader import UnsupportedModelError, load_onnx
 from penumbra.reference import evaluate_graph_int
 
-__version__ = "0.0.0"
+# Stamped into the installed distribution's metadata by maturin from Cargo.toml's
+# [workspace.package].version — the single version source (CONTRIBUTING.md, "Releasing").
+__version__ = _distribution_version("penumbra-fhe")
 
 __all__ = [
     "__version__",

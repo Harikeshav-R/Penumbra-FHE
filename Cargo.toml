@@ -12,5 +12,20 @@ exclude = [
     "crates/spike-ckks",
 ]
 
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.83"
+license = "Apache-2.0"
+repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
+homepage = "https://harikeshav-r.github.io/Penumbra-FHE/"
+readme = "README.md"
+
+[workspace.dependencies]
+# Internal crates. crates.io requires `version` on path dependencies; it must equal
+# [workspace.package].version above — bump all four together (CONTRIBUTING.md, "Releasing").
+penumbra-core = { path = "crates/penumbra-core", version = "1.0.0" }
+penumbra-tfhe = { path = "crates/penumbra-tfhe", version = "1.0.0" }
+penumbra-ckks = { path = "crates/penumbra-ckks", version = "1.0.0" }
 [profile.release]
 opt-level = 3

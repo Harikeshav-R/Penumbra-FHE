@@ -1,0 +1,41 @@
+# Reusable wheel + sdist build: CI calls it as a build gate; Release calls it to produce the exact artifacts it publishes.
+name: Build wheels
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: Build wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64
+            manylinux: "2014"
+          - os: macos-14
+            target: aarch64
+            manylinux: auto
+          - os: windows-latest
+            target: x86_64
+            manylinux: auto
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          manylinux: ${{ matrix.manylinux }}
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-${{ matrix.os }}
+          path: dist

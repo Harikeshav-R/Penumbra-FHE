@@ -1,8 +1,8 @@
 """Phase-8 tree ensemble fixture guards (AGENTS.md §1.1, §5).
 
 Hermetic, always-on drift guard for both committed tree fixtures:
-    - examples/tabular/phase8_trees_fixture.json (scikit-learn RandomForestClassifier)
-    - examples/tabular/phase8_xgb_fixture.json (XGBoost XGBClassifier)
+    - examples/trees/phase8_trees_fixture.json (scikit-learn RandomForestClassifier)
+    - examples/trees/phase8_xgb_fixture.json (XGBoost XGBClassifier)
 
 No sklearn or xgboost imports required — verifies the committed fixtures against
 penumbra-core IR and the Python reference oracle.
@@ -20,9 +20,9 @@ from penumbra.bitwidth import check_bit_width_budget
 from penumbra.ir import Graph
 from penumbra.reference import evaluate_graph_int
 
-TABULAR_DIR = Path(__file__).resolve().parent.parent / "examples" / "tabular"
-TREES_FIXTURE = TABULAR_DIR / "phase8_trees_fixture.json"
-XGB_FIXTURE = TABULAR_DIR / "phase8_xgb_fixture.json"
+TREES_DIR = Path(__file__).resolve().parent.parent / "examples" / "trees"
+TREES_FIXTURE = TREES_DIR / "phase8_trees_fixture.json"
+XGB_FIXTURE = TREES_DIR / "phase8_xgb_fixture.json"
 
 
 @pytest.mark.parametrize("path", [TREES_FIXTURE, XGB_FIXTURE], ids=["sklearn", "xgboost"])

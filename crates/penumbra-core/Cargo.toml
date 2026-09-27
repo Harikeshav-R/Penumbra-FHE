@@ -1,12 +1,15 @@
 [package]
 name = "penumbra-core"
-version = "0.0.0"
-edition = "2021"
-rust-version = "1.83"
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 description = "Penumbra-FHE Layer 2: backend-neutral IR, graph evaluation loop, bit-width budget propagation, and Backend trait."
-repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
-publish = false
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords = ["fhe", "homomorphic", "encryption", "onnx", "inference"]
+categories = ["cryptography"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

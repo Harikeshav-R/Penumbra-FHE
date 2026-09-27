@@ -1,0 +1,65 @@
+site_name: Penumbra-FHE
+site_description: Encrypted ML inference on ONNX models over pluggable FHE backends.
+site_url: https://harikeshav-r.github.io/Penumbra-FHE/
+repo_url: https://github.com/Harikeshav-R/Penumbra-FHE
+repo_name: Harikeshav-R/Penumbra-FHE
+edit_uri: edit/main/docs/
+docs_dir: docs
+exclude_docs: |
+  agents/
+theme:
+  name: material
+  features: [navigation.sections, navigation.top, navigation.footer, content.code.copy, search.highlight]
+markdown_extensions:
+  - admonition
+  - tables
+  - toc: {permalink: true}
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [python]
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            filters: ["!^_"]
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Scope & expectations: SCOPE.md
+  - "Tutorial: MNIST end to end": tutorial-mnist.md
+  - Guides:
+      - Supported ops: SUPPORTED-OPS.md
+      - Quantization: QUANTIZATION.md
+      - Performance: PERFORMANCE.md
+      - Backends: BACKENDS.md
+  - API reference: api.md
+  - Architecture: architecture.md
+  - Security: security.md
+  - Reference:
+      - IR specification: IR-SPEC.md
+      - Model zoo: MODEL-ZOO.md
+      - Benchmarks: BENCHMARKS.md
+      - "TFHE vs CKKS comparison": COMPARISON.md
+      - TFHE notes: NOTES-tfhe.md
+      - CKKS notes: NOTES-ckks.md
+      - Development: DEVELOPMENT.md
+      - "Investigation: Phase 7 CKKS error": INVESTIGATION-phase7-ckks-error.md
+      - Changelog: changelog.md

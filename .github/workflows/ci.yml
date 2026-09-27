@@ -29,10 +29,13 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -41,8 +44,14 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       # FHE is dramatically faster in release; debug test runs are impractically slow.
-      - name: Test (release)
-        run: cargo test --workspace --release
+      - name: Test with coverage (release)
+        run: |
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --workspace --release --no-report
+      - name: "Coverage gate: penumbra-core >= 90% lines"
+        run: cargo llvm-cov report --release --fail-under-lines 90 --ignore-filename-regex '(crates/penumbra-(tfhe|ckks|bench|py)|runtime)/'
+      - name: "Coverage gate: penumbra-tfhe >= 80% lines"
+        run: cargo llvm-cov report --release --fail-under-lines 80 --ignore-filename-regex '(crates/penumbra-(core|ckks|bench|py)|runtime)/'
 
   ckks-spike:
     name: CKKS spike (fmt, clippy, test - nightly)
@@ -84,16 +93,20 @@ jobs:
       - name: Install Nightly Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
       - name: Clippy (warnings as errors)
         run: |
           cargo clippy -p penumbra-ckks --features ckks --all-targets -- -D warnings
           cargo clippy -p penumbra-bench --features ckks --all-targets -- -D warnings
-      - name: Test (release)
+      - name: Test with coverage (release)
         run: |
-          cargo test -p penumbra-ckks --features ckks --release
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov -p penumbra-ckks --features ckks --release --no-report
+          cargo llvm-cov report --release --fail-under-lines 80 --ignore-filename-regex '(crates/penumbra-(core|tfhe|bench|py)|runtime)/'
           cargo test -p penumbra-bench --features ckks --release
       - name: Benchmark regression gate (CKKS)
         run: |
@@ -133,7 +146,7 @@ jobs:
         run: uv run black --check python tests examples
 
       - name: Pytest
-        run: uv run pytest
+        run: uv run pytest --cov --cov-report=term-missing
 
       # Packaging gate. `uv sync` only builds the wheel, so a package that is unbuildable as a
       # source distribution stays invisible until publish time (ROADMAP Phase 11). Building the
@@ -150,44 +163,8 @@ jobs:
           "${RUNNER_TEMP}/sdist-check/bin/python" -c "import penumbra; print(penumbra.__version__)"
 
   wheels:
-    name: Build wheels (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64
-            manylinux: "2014"
-            sdist: true
-          - os: macos-14
-            target: aarch64
-            manylinux: auto
-            sdist: false
-          - os: windows-latest
-            target: x86_64
-            manylinux: auto
-            sdist: false
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target }}
-          args: --release --out dist
-          manylinux: ${{ matrix.manylinux }}
-          sdist: ${{ matrix.sdist }}
-
-      - name: Upload wheels
-        uses: actions/upload-artifact@v7
-        with:
-          name: wheels-${{ matrix.os }}
-          path: dist
-
+    name: Build wheels
+    uses: ./.github/workflows/wheels.yml
   bench-regression:
     name: Benchmark regression gate
     runs-on: ubuntu-latest

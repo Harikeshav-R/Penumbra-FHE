@@ -1,15 +1,17 @@
 [project]
 name = "penumbra-fhe"
-version = "0.0.0"
+# Single-sourced from Cargo.toml [workspace.package].version (maturin reads it via
+# crates/penumbra-py), so the wheel, sdist, and crates can never disagree.
+dynamic = ["version"]
 description = "Encrypted ML inference on ONNX models over pluggable FHE backends — load a model, run it under FHE, never write crypto code."
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "Harikeshav Rameshkumar" }]
 requires-python = ">=3.10,<3.13"
 keywords = ["fhe", "tfhe", "ckks", "homomorphic", "encryption", "onnx", "inference", "quantization"]
 classifiers = [
-    "Development Status :: 1 - Planning",
-    "License :: OSI Approved :: Apache Software License",
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -45,7 +47,7 @@ ml = [
     # frameworks) by exporting a real sklearn model to ONNX and loading it through the same front
     # door as the torch CNN. Only the example generator needs it; CI reads the committed fixture.
     "skl2onnx>=1.16",
-    # XGBoost -> IR adapter example generator (examples/tabular/xgb_export.py) and
+    # XGBoost -> IR adapter example generator (examples/trees/xgb_export.py) and
     # `from_xgboost` adapter (python/penumbra/adapters/trees.py). Second-framework proof for tree
     # ensembles (ROADMAP Phase 8). Only the example generator and tests need it; CI reads the
     # committed fixture.
@@ -55,6 +57,9 @@ ml = [
 [project.urls]
 Homepage = "https://github.com/Harikeshav-R/Penumbra-FHE"
 Repository = "https://github.com/Harikeshav-R/Penumbra-FHE"
+Documentation = "https://harikeshav-r.github.io/Penumbra-FHE/"
+Changelog = "https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Harikeshav-R/Penumbra-FHE/issues"
 
 # ---------------------------------------------------------------------------
 # Pin the `ml` extra's torch to the CPU build. The example generators only need a CPU
@@ -87,6 +92,13 @@ dev = [
     "pytest>=8",
     "ruff>=0.6",
     "black>=24.8",
+    "hypothesis>=6.100",
+    "pytest-cov>=5",
+]
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.6,<10",
+    "mkdocstrings[python]>=0.29,<1",
 ]
 
 [tool.ruff]
@@ -104,3 +116,11 @@ target-version = ["py310"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["penumbra"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true

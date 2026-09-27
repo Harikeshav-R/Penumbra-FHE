@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
-  <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-orange.svg">
+  <a href="https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+  <img alt="Status: beta" src="https://img.shields.io/badge/status-beta-yellow.svg">
 </p>
 
 ---
@@ -23,15 +23,14 @@ model.quantize(calibration_data, n_bits=6)   # float graph → int graph + looku
 pred = model.predict_encrypted(x)             # client encrypts → server evaluates → client decrypts
 ```
 
-The **ONNX front door, quantization service, and the encrypted round trip work today**
-(Phases 5–6, plus the first Phase-9 slice). `load_onnx` parses an ONNX model, **validates every
-op at load time** (failing loudly with all problems at once if a model uses an unsupported op —
-validation *is* the compile step), and lowers it to an `fhe.Model`. `predict_encrypted` then runs
-the real encrypted forward pass (keygen → encrypt → evaluate → decrypt) via the Rust runtime and
-returns the client-side prediction — it needs a Rust toolchain (`cargo`) and takes seconds-to-
-minutes per sample. The current bridge shells out to the runtime; in-process PyO3 bindings and
-wheels are the remaining Phase-9 work. You can also assemble a model by hand from the op
-vocabulary — the same `Model` `load_onnx` produces:
+The **ONNX front door, quantization service, and the encrypted round trip work end-to-end**.
+`load_onnx` parses an ONNX model, **validates every op at load time** (failing loudly with all
+problems at once if a model uses an unsupported op — validation *is* the compile step), and lowers
+it to an `fhe.Model`. `predict_encrypted` runs the real encrypted forward pass (keygen → encrypt →
+evaluate → decrypt) entirely in-process via PyO3 bindings to the Rust backend runtime and returns
+the client-side prediction. Installed with `pip install penumbra-fhe`, inferences take seconds to minutes
+per sample depending on the model's bootstrap count. You can also assemble a model by hand from the
+op vocabulary — the same `Model` `load_onnx` produces:
 
 ```python
 import penumbra as fhe
@@ -49,8 +48,16 @@ It implements a small, fixed set of ML operations against FHE primitives — no 
 FHE compiler involved — over **pluggable backends**. The reference backend is
 [`tfhe-rs`](https://github.com/zama-ai/tfhe-rs) (the TFHE scheme: exact, lookup-table based);
 a second backend over [`poulpy-ckks`](https://github.com/phantomzone-org/poulpy) (the CKKS
-scheme: approximate, SIMD-batched) is in progress, so the two schemes can be compared on
-identical model-loading, inference, and measurement code.
+scheme: approximate, SIMD-batched) is implemented (nightly source build; compiled out of published
+wheels), so the two schemes can be compared on identical model-loading, inference, and measurement code.
+
+## Install
+
+```bash
+pip install penumbra-fhe
+```
+
+Python 3.10–3.12; prebuilt wheels for Linux x86_64, macOS arm64, and Windows x86_64 (TFHE backend); see the Getting Started page <https://harikeshav-r.github.io/Penumbra-FHE/getting-started/>.
 
 ## How it works
 
@@ -68,38 +75,49 @@ change as schemes multiply.
 > **The golden invariant:** encrypted output matches the quantized-cleartext output — for
 > TFHE **bit-for-bit** (TFHE is exact, so any discrepancy is a bug, never crypto noise); for
 > CKKS, within a declared per-model error bound, since CKKS is approximate by construction.
-> Same reference, one comparator per backend — see [`docs/BACKENDS.md`](docs/BACKENDS.md).
+> Same reference, one comparator per backend — see [`docs/BACKENDS.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/BACKENDS.md).
 
-## Project status
+## Examples
 
-**Pre-alpha — under active construction.** This is research/prototype-grade software, not
-audited production cryptography. It targets *small* models (image classifiers, tabular
-models, small CNNs, tree ensembles); inference takes seconds, not milliseconds. "Any ONNX
-model" means: composed of supported ops, quantizes acceptably, and small enough to be
-practical.
+Every example includes a self-contained runner replaying committed test fixtures in-process under FHE:
 
-Current focus is **Phase 12**: a second (CKKS) backend and a controlled comparison of the two
-schemes — latency, accuracy degradation, and overhead, under one shared harness. The TFHE
-backend is the reference implementation and its exactness gate is unchanged.
+| Example | One Command | What It Shows |
+|---|---|---|
+| [MNIST](https://github.com/Harikeshav-R/Penumbra-FHE/tree/main/examples/mnist) | `uv run python examples/mnist/run.py` | CNNs, logistic regression, MLPs (10 model variants) |
+| [Faces](https://github.com/Harikeshav-R/Penumbra-FHE/tree/main/examples/faces) | `uv run python examples/faces/run.py` | Olivetti face recognition CNN (proves narrow waist: new use case, zero crypto edits) |
+| [Tabular MLP](https://github.com/Harikeshav-R/Penumbra-FHE/tree/main/examples/tabular) | `uv run python examples/tabular/run.py` | Neural network classification on Wisconsin Breast Cancer |
+| [Tree Ensembles](https://github.com/Harikeshav-R/Penumbra-FHE/tree/main/examples/trees) | `uv run python examples/trees/run.py` | Random Forests & XGBoost lowered via sum-of-comparisons |
+| [Client/Server](https://github.com/Harikeshav-R/Penumbra-FHE/tree/main/examples/client_server) | `uv run python examples/client_server/demo.py` | Process boundary: untrusted server evaluates ciphertext with public key only |
 
+## Scope & status
+
+**Research / prototype-grade software.** Penumbra-FHE is an active research project, not audited production cryptography.
+- **Bounded "any ONNX model":** Targets models composed of supported operators that quantize acceptably and are small enough to be practical ([`docs/SCOPE.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/SCOPE.md)).
+- **Latency expectations:** Encrypted inference takes seconds to minutes per sample (~0.5 s for logistic regression to ~6 min for CNNs on TFHE `classic`).
+- **Two backends:** TFHE (`tfhe-rs`, exact integer arithmetic) and CKKS (`poulpy-ckks`, approximate real arithmetic).
+- **CKKS build requirement:** The CKKS backend requires a nightly Rust toolchain (`--features ckks`) and is omitted from published wheels.
+- **Security:** Classical 128-bit security target for default profiles; see [`SECURITY.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/SECURITY.md) for full threat model and IND-CPA^D considerations.
 ## Documentation
 
-- [`PROJECT.md`](PROJECT.md) — architecture, rationale, and the full design.
-- [`ROADMAP.md`](ROADMAP.md) — the task-level build plan (phases P0–P12).
-- [`docs/BACKENDS.md`](docs/BACKENDS.md) — the backend boundary: the `Backend` contract,
+- **Documentation site:** <https://harikeshav-r.github.io/Penumbra-FHE/> (built from `docs/` with MkDocs).
+- [`docs/SCOPE.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/SCOPE.md) — scope boundaries, what "any ONNX model" means, and latency tables.
+- [`SECURITY.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/SECURITY.md) — threat model, parameter security levels, and reporting vulnerabilities.
+- [`PROJECT.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/PROJECT.md) — architecture, rationale, and the full design.
+- [`ROADMAP.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/ROADMAP.md) — the task-level build plan (phases P0–P12).
+- [`docs/BACKENDS.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/BACKENDS.md) — the backend boundary: the `Backend` contract,
   per-scheme cost and budget models, and how to add a backend.
-- [`docs/COMPARISON.md`](docs/COMPARISON.md) — the TFHE vs CKKS study: hypothesis, method,
+- [`docs/COMPARISON.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/COMPARISON.md) — the TFHE vs CKKS study: hypothesis, method,
   threats to validity, and the measured results.
-- [`docs/QUANTIZATION.md`](docs/QUANTIZATION.md) — the quantization service: PTQ/QAT, `n_bits`,
+- [`docs/QUANTIZATION.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/QUANTIZATION.md) — the quantization service: PTQ/QAT, `n_bits`,
   per-channel scales, the bit-width budget, and the accuracy/speed tradeoff.
-- [`docs/SUPPORTED-OPS.md`](docs/SUPPORTED-OPS.md) — the operators the runtime implements.
-- [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) — accuracy and latency for the example models.
-- [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) — per-backend tuning guide, knobs, and regression gate.
-- [`docs/NOTES-tfhe.md`](docs/NOTES-tfhe.md) · [`docs/NOTES-ckks.md`](docs/NOTES-ckks.md) —
+- [`docs/SUPPORTED-OPS.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/SUPPORTED-OPS.md) — the operators the runtime implements.
+- [`docs/BENCHMARKS.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/BENCHMARKS.md) — accuracy and latency for the example models.
+- [`docs/PERFORMANCE.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/PERFORMANCE.md) — per-backend tuning guide, knobs, and regression gate.
+- [`docs/NOTES-tfhe.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/NOTES-tfhe.md) · [`docs/NOTES-ckks.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/NOTES-ckks.md) —
   per-scheme parameter profiles, primitives, and measured costs.
-- [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — toolchain, build, and test instructions.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute (and the canonical "add an op" path).
-- [`AGENTS.md`](AGENTS.md) — guidelines for AI agents working in this repo.
+- [`docs/DEVELOPMENT.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/DEVELOPMENT.md) — toolchain, build, and test instructions.
+- [`CONTRIBUTING.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/CONTRIBUTING.md) — how to contribute (and the canonical "add an op" path).
+- [`AGENTS.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/AGENTS.md) — guidelines for AI agents working in this repo.
 
 ## Quick start (development)
 
@@ -110,11 +128,12 @@ cargo test --workspace --release
 # Python front end (managed with uv)
 uv sync --all-extras && uv run pytest
 
-The CKKS backend is not wired up yet; when it lands it gains its own test target and may
-require a separate toolchain — see [`docs/NOTES-ckks.md`](docs/NOTES-ckks.md).
+# Optional CKKS backend tests (requires nightly toolchain; see docs/DEVELOPMENT.md)
+cargo +nightly test -p penumbra-ckks --features ckks --release
+```
 
-See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for full setup.
+See [`docs/DEVELOPMENT.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/docs/DEVELOPMENT.md) for full setup instructions and architecture-specific flags.
 
 ## License
 
-[Apache 2.0](LICENSE).
+[Apache 2.0](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/LICENSE).

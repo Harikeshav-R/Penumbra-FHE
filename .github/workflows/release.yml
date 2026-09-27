@@ -1,0 +1,70 @@
+name: Release
+
+# Push an annotated `vX.Y.Z` tag on main to publish (CONTRIBUTING.md, "Releasing").
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify tag, version, and changelog agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Tag matches [workspace.package].version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "penumbra-core") | .version')"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match Cargo.toml [workspace.package].version ${version}"
+            exit 1
+          fi
+      - name: CHANGELOG.md has a section for this version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          if ! grep -q "^## \[${tag}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [${tag}]' section"
+            exit 1
+          fi
+
+  wheels:
+    needs: verify
+    uses: ./.github/workflows/wheels.yml
+
+  pypi:
+    name: Publish to PyPI
+    needs: wheels
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/penumbra-fhe
+    permissions:
+      id-token: write   # PyPI trusted publishing (OIDC); no API token stored
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  crates:
+    name: Publish to crates.io
+    needs: wheels
+    runs-on: ubuntu-latest
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/penumbra-core
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      # Publishes every publishable member in dependency order (core → ckks/tfhe → runtime);
+      # publish = false members (penumbra-bench, penumbra-py) are skipped. Needs cargo >= 1.90.
+      - name: cargo publish --workspace
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --workspace --locked

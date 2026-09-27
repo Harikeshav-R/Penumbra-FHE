@@ -65,7 +65,7 @@ pub const MODELS: &[ModelFixture] = &[
     },
     ModelFixture {
         key: "phase8_trees",
-        path: "../../examples/tabular/phase8_trees_fixture.json",
+        path: "../../examples/trees/phase8_trees_fixture.json",
         label: "Phase-8 tree ensemble",
         default_bench: false,
     },
@@ -85,6 +85,12 @@ pub const MODELS: &[ModelFixture] = &[
         key: "phase8_gap_cnn",
         path: "../../examples/mnist/phase8_gap_cnn_fixture.json",
         label: "Phase-8 padded-pool + GAP CNN",
+        default_bench: false,
+    },
+    ModelFixture {
+        key: "phase11_tabular_mlp",
+        path: "../../examples/tabular/phase11_tabular_mlp_fixture.json",
+        label: "Phase-11 tabular MLP",
         default_bench: false,
     },
 ];

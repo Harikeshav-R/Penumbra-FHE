@@ -492,25 +492,31 @@ and a clear statement of scope.
 
 ### Tasks
 
-- [ ] **Test coverage:** unit tests per op, integration tests per example, the golden test
+- [x] **Test coverage:** unit tests per op, integration tests per example, the golden test
       across all models **at each backend's comparator**, the unsupported-op failure test,
       cross-language IR conformance. Target high coverage on Layers 1–2.
-- [ ] **Property/fuzz tests:** random small models → assert the golden invariant per backend.
-- [ ] **Documentation site:** getting-started, tutorial (MNIST end to end), supported ops,
+- [x] **Property/fuzz tests:** random small models → assert the golden invariant per backend.
+- [x] **Documentation site:** getting-started, tutorial (MNIST end to end), supported ops,
       quantization guide, performance guide, backend guide (link `docs/BACKENDS.md`), API
       reference, architecture (link `PROJECT.md`).
-- [ ] **Examples polished:** `examples/mnist/`, `examples/faces/`, a tabular example, a tree
+- [x] **Examples polished:** `examples/mnist/`, `examples/faces/`, a tabular example, a tree
       example — each with a README and one-command run.
-- [ ] **Scope statement:** prominently document the bounded meaning of "any ONNX model"
+      *Note:* delivered in `examples/mnist/`, `examples/faces/`, `examples/tabular/`, and `examples/trees/`: each contains a comprehensive README and a one-command in-process FHE replay runner (`run.py` via `examples/_replay.py`) with `--model`, `--samples`, and `--backend` options; guarded by `tests/test_examples_smoke.py`.
+- [x] **Scope statement:** prominently document the bounded meaning of "any ONNX model"
       (`PROJECT.md` §10, §16) and latency expectations, so users aren't surprised.
-- [ ] **Security note:** state the threat model (server sees only ciphertext), the parameter
+      *Note:* documented in `docs/SCOPE.md` and `README.md`: defines the bounded meaning of "any ONNX model", enforced DAG topology, opset bounds, resource limits, latency expectations from benchmark sweeps, accuracy tradeoffs, and prototype status.
+- [x] **Security note:** state the threat model (server sees only ciphertext), the parameter
       security level **per backend**, CKKS's IND-CPA^D caveat, and that this is
       research/prototype-grade, not audited production crypto.
-- [ ] **Packaging:** publish wheels (PyPI) and the Rust crates (crates.io if desired);
+      *Note:* documented in `SECURITY.md` and embedded into the documentation site at `docs/security.md`: defines client/server threat model, per-backend parameter security profiles (128-bit classical), CKKS IND-CPA^D vulnerability details and mitigations, and prototype-grade disclaimer.
+- [x] **Packaging:** publish wheels (PyPI) and the Rust crates (crates.io if desired);
       versioning + changelog.
-- [ ] **CONTRIBUTING.md:** how to add an op (the canonical extension path: registry entry +
+      *Note:* the version is single-sourced at 1.0.0; the sdist LICENSE is fixed; `release.yml` publishes to PyPI (trusted publishing) and crates.io (4 crates) on a `v*` tag; see `CHANGELOG.md`.
+- [x] **CONTRIBUTING.md:** how to add an op (the canonical extension path: registry entry +
       impl per backend + bit-width rule + golden test) and how to add a backend.
+      *Note:* file-level add-op and add-backend paths plus the release process.
 - [ ] Tag **v1.0**.
+      *Note:* pending: run CONTRIBUTING.md → Versioning & releases after merge to main.
 
 ### Exit Criteria
 
