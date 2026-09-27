@@ -9,7 +9,7 @@ for the working rules (they apply to humans too).
 | Tool | Version | Notes |
 |---|---|---|
 | Rust | stable ≥ 1.83 | `tfhe-rs` needs a recent stable. Install via [rustup](https://rustup.rs). |
-| Python | 3.10–3.12 | Pinned in `python/pyproject.toml` (`>=3.10,<3.13`). 3.13+ not yet supported by the ML stack. |
+| Python | 3.10–3.12 | Pinned in `pyproject.toml` (`>=3.10,<3.13`). 3.13+ not yet supported by the ML stack. |
 | [uv](https://docs.astral.sh/uv/) | latest | **The project standard** for Python env/deps — not poetry/pip/conda. |
 
 > ⚠️ The CKKS backend requires a **nightly toolchain**: `poulpy-hal` uses `associated_type_defaults`
@@ -23,21 +23,16 @@ for the working rules (they apply to humans too).
 ## Layout
 
 ```
-python/      # Python front end: ONNX loader, quantization, IR emitter (Layer 3)
-runtime/     # Rust runtime: ops, IR deserialization, eval loop (Layers 1–2)
-examples/    # use cases (mnist, faces) — graphs only, NO crypto
-tests/       # cross-cutting + golden exactness tests
-docs/        # this guide and the spec docs
-```
-
-After the Phase-12.1 workspace refactor, `runtime/` becomes a Cargo workspace under `crates/`
-(`PROJECT.md` §13):
-
-```
-crates/penumbra-core/    # Layer 2: IR, eval loop, bit-width, the `Backend` trait — NO crypto
-crates/penumbra-tfhe/    # Layer 1: the tfhe-rs backend (the reference)
-crates/penumbra-ckks/    # Layer 1: the poulpy-ckks backend
-crates/penumbra-bench/   # the shared comparison harness
+python/penumbra/         # Layer 3: ONNX loader, registry, quantization, IR emitter, reference oracle
+crates/penumbra-core/    # Layer 2: IR, eval loop, bit-width, Backend/Op traits — NO crypto
+crates/penumbra-tfhe/    # Layer 1: tfhe-rs backend
+crates/penumbra-ckks/    # Layer 1: poulpy-ckks backend
+crates/penumbra-bench/   # shared comparison harness
+crates/penumbra-py/      # PyO3 bindings
+runtime/                 # penumbra-fhe-runtime: facade re-exports, CLIs, TFHE goldens
+tests/                   # Python tests + shared fixtures
+examples/                # use cases (mnist, faces, tabular, trees, client_server)
+docs/                    # documentation site sources
 ```
 
 ## Building & testing
@@ -45,10 +40,8 @@ crates/penumbra-bench/   # the shared comparison harness
 ### Rust runtime
 
 ```bash
-cd runtime
-cargo build                # debug build (fine for correctness)
-cargo test --release       # run tests — ALWAYS use --release for FHE
-```
+cargo build --workspace          # debug build (fine for correctness)
+cargo test --workspace --release # run tests — ALWAYS use --release for FHE
 
 Each backend can be built, tested, and benchmarked:
 
@@ -199,10 +192,9 @@ treated as errors** (`AGENTS.md` §6).
 
 ```bash
 # Rust
-cd runtime
 cargo fmt --all                       # format
 cargo fmt --all -- --check            # check only (what CI runs)
-cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 
 # Python
 uv run ruff check python tests examples

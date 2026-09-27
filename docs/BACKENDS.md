@@ -196,7 +196,7 @@ layer named (`AGENTS.md` §1.3). They are not the same budget.
 | Enforced by | `Backend::check_graph_budget` (radix check) | `Backend::check_graph_budget` (depth/scale check) |
 | Overflow symptom | silently wrong ciphertext | precision collapse, then noise |
 
-The bit-width tracker in Layer 2 (`propagate_bit_widths`, `eval.rs:182`) is scheme-neutral
+The bit-width tracker in Layer 2 (`propagate_bit_widths` in `crates/penumbra-core/src/bitwidth.rs`) is scheme-neutral
 integer arithmetic and is reused by both — it describes the *quantized graph*, not TFHE. What
 differs is the capacity it is checked against.
 
