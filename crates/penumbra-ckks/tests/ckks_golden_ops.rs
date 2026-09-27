@@ -434,12 +434,7 @@ fn ckks_fhe_argmax_matches_cleartext() {
     // prepare_argmax ramps within tau = 1638 of threshold 0.
     // Inputs sit well outside the ramp:
     // -20000 -> 0, -5000 -> 0, 5000 -> 1, 20000 -> 1.
-    let test_cases = vec![
-        (-20000i64, 0i64),
-        (-5000, 0),
-        (5000, 1),
-        (20000, 1),
-    ];
+    let test_cases = vec![(-20000i64, 0i64), (-5000, 0), (5000, 1), (20000, 1)];
 
     for (val, expected) in test_cases {
         let mut env = HashMap::new();
@@ -500,7 +495,10 @@ fn ckks_fhe_concat_split_matches_cleartext() {
 
     for (i, (&g, &w)) in raw.iter().zip(&expected).enumerate() {
         let err = (g - w as f64).abs();
-        assert!(err < 0.1, "slot {i}: err {err} >= 0.1 tolerance for Concat/Split");
+        assert!(
+            err < 0.1,
+            "slot {i}: err {err} >= 0.1 tolerance for Concat/Split"
+        );
     }
     assert_eq!(got, expected, "CKKS Concat/Split must match cleartext");
 }

@@ -112,3 +112,7 @@ required-features = ["ckks"]
 [[test]]
 name = "ckks_property_corpus"
 required-features = ["ckks"]
+
+[[test]]
+name = "ckks_primitives"
+required-features = ["ckks"]
