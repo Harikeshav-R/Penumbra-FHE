@@ -4,7 +4,7 @@ Penumbra runs the **same** IR graph on more than one FHE scheme. This document d
 backend boundary: what a backend must provide, what it may never touch, how correctness is
 judged per scheme, and how to add one.
 
-Read [`PROJECT.md`](../PROJECT.md) §4–§6 first for the narrow-waist architecture this extends.
+Read [`PROJECT.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/PROJECT.md) §4–§6 first for the narrow-waist architecture this extends.
 
 | Backend | Crate | Scheme | Library | Arithmetic | Status |
 |---|---|---|---|---|---|

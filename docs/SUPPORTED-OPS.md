@@ -103,7 +103,7 @@ Tree ensembles lower through `penumbra.adapters.from_sklearn` and `from_xgboost`
 | 1 | `split_cmp` | `Compare` | $b_g = [x[\text{feature}_g] \ge T_g]$ — split evaluations across all trees |
 | 2 | `leaf_score` | `Linear` | $\text{score}_l = \sum_{g \in \text{path}(l)} (\pm 1) \cdot b_g + \|\text{left}(l)\|$ — attains max $\text{depth}_l$ iff every condition on path holds |
 | 3 | `leaf_sel` | `Compare` | $[\text{score}_l \ge \text{depth}_l]$ — one-hot leaf indicator |
-| 4 | `logits` | `Linear` | $\sum_l V[c][l] \cdot \text{leaf\_sel}[l] + \text{bias}_c$ — class logits |
+| 4 | `logits` | `Linear` | $\sum_l V_{c,l} \cdot \text{leaf\_sel}_l + \text{bias}_c$ — class logits |
 
 ### Integer threshold formulas
 

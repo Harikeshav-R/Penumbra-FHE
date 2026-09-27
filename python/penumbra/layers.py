@@ -220,7 +220,7 @@ class Conv2d(Layer):
 
 @dataclass
 class Pool(Layer):
-    """Average/max pool over a [channels][in_h][in_w] feature map (float avg = true mean;
+    """Average/max pool over a ``[channels][in_h][in_w]`` feature map (float avg = true mean;
     IR avg = window sum at scale in_scale/k).
     """
 

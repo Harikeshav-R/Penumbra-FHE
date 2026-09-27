@@ -1,7 +1,7 @@
 # Development Guide
 
-How to build, test, and work on Penumbra-FHE. Read [`PROJECT.md`](../PROJECT.md) and
-[`ROADMAP.md`](../ROADMAP.md) for the architecture and plan, and [`AGENTS.md`](../AGENTS.md)
+How to build, test, and work on Penumbra-FHE. Read [`PROJECT.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/PROJECT.md) and
+[`ROADMAP.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/ROADMAP.md) for the architecture and plan, and [`AGENTS.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/AGENTS.md)
 for the working rules (they apply to humans too).
 
 ## Toolchain
@@ -161,7 +161,7 @@ graph (it cannot decrypt), and the client `decrypt`s — the faithful privacy bo
 (`PROJECT.md` §11). A key pair is tied to a model's radix width (`num_blocks`); using it with a
 differently-sized model fails loudly. `*.key` files are git-ignored — never commit key material.
 
-The runnable, self-contained demo is [`examples/client_server/`](../examples/client_server/):
+The runnable, self-contained demo is [`examples/client_server/`](https://github.com/Harikeshav-R/Penumbra-FHE/tree/main/examples/client_server/):
 
 ```bash
 uv run python examples/client_server/demo.py    # tiny model, ~seconds
@@ -221,7 +221,7 @@ TFHE is exact, so if FHE ≠ cleartext it is a quantization or implementation bu
 crypto noise** — debug the cleartext quantized path first. CKKS is approximate, so its gate is
 a committed per-model bound with the measured error always reported; exceeding it is still a
 bug first (scale, level, or polynomial degree). This test is wired into CI from Phase 2 onward
-and must never regress. See [`AGENTS.md`](../AGENTS.md) §1 and
+and must never regress. See [`AGENTS.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/AGENTS.md) §1 and
 [`docs/BACKENDS.md`](./BACKENDS.md).
 
 ## Adding an op (the canonical path)
@@ -237,4 +237,4 @@ and must never regress. See [`AGENTS.md`](../AGENTS.md) §1 and
 Adding a whole **backend** is a different path — see
 [`docs/BACKENDS.md`](./BACKENDS.md#adding-a-backend-the-canonical-path).
 
-See [`CONTRIBUTING.md`](../CONTRIBUTING.md) for the full workflow.
+See [`CONTRIBUTING.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/CONTRIBUTING.md) for the full workflow.

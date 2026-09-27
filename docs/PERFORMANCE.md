@@ -16,7 +16,7 @@ mechanisms:
 ### TFHE Backend (`penumbra-tfhe`)
 
 - **Primary cost:** Programmable Bootstrapping (PBS). In shortint radix arithmetic,
-  `runtime ≈ number of bootstraps` ([`PROJECT.md`](../PROJECT.md) §5).
+  `runtime ≈ number of bootstraps` ([`PROJECT.md`](https://github.com/Harikeshav-R/Penumbra-FHE/blob/main/PROJECT.md) §5).
 - **Radix carry propagation:** Each integer tensor element is decomposed across `num_blocks` radix
   blocks (`MESSAGE_BITS = 2` bits per block). While scalar additions and plaintext-weight scalar
   multiplications are homomorphic linear combinations, accumulating multi-block integers requires

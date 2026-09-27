@@ -84,6 +84,7 @@ backend is the reference implementation and its exactness gate is unchanged.
 
 ## Documentation
 
+- **Documentation site:** <https://harikeshav-r.github.io/Penumbra-FHE/> (built from `docs/` with MkDocs).
 - [`PROJECT.md`](PROJECT.md) — architecture, rationale, and the full design.
 - [`ROADMAP.md`](ROADMAP.md) — the task-level build plan (phases P0–P12).
 - [`docs/BACKENDS.md`](docs/BACKENDS.md) — the backend boundary: the `Backend` contract,
