@@ -22,17 +22,13 @@ fn concat_split_graph(num_blocks: usize, input_bits: usize) -> Graph {
                 name: "split".to_string(),
                 inputs: vec!["x".to_string()],
                 outputs: vec!["a".to_string(), "b".to_string()],
-                op: OpSpec::Split {
-                    sizes: vec![2, 4],
-                },
+                op: OpSpec::Split { sizes: vec![2, 4] },
             },
             Node {
                 name: "concat".to_string(),
                 inputs: vec!["b".to_string(), "a".to_string()],
                 outputs: vec!["y".to_string()],
-                op: OpSpec::Concat {
-                    sizes: vec![4, 2],
-                },
+                op: OpSpec::Concat { sizes: vec![4, 2] },
             },
         ],
     }
