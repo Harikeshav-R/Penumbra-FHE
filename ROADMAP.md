@@ -688,23 +688,23 @@ measurements yet; this phase repairs the evidence base inherited from Phase 12.
 
 ### Tasks
 
-- [ ] **Stale CKKS errors.** Replace the pre-fix CKKS error table in `docs/NOTES-ckks.md`
-      (digits 188, faces 105, cnn 15.3) with the post-fix values from
-      `docs/results/phase12-4-comparison.json` (cnn 4.0, QAT 10, digits/ONNX 38, faces 74).
-      Alternatively keep the old table, explicitly labelled as pre-fix history, with the fix
-      commit (`3f6bd689`, floor-midpoint correction in
+- [x] **Stale CKKS errors.** Replace the pre-fix CKKS error table in `docs/NOTES-ckks.md`
+      (digits 188, faces 105, cnn 15.3) with the post-fix values (`docs/results/phase10-final-sweep.json`:
+      cnn 4.0, QAT 10, digits/ONNX 38, faces 74; older fixtures in `docs/results/phase12-4-comparison.json`:
+      cnn 3, QAT 28, digits/ONNX 35, faces 74). Alternatively keep the old table, explicitly labelled
+      as pre-fix history, with the fix commit (`7d04993`, floor-midpoint correction in
       `crates/penumbra-ckks/src/ops/polymap.rs`) named.
-- [ ] **Wrong "0 bootstraps" prose.** Correct `docs/COMPARISON.md` Discussion §2 (line ~180 at
+- [x] **Wrong "0 bootstraps" prose.** Correct `docs/COMPARISON.md` Discussion §2 (line ~180 at
       `ec06e73`). TFHE linear layers are not PBS-free: the measured counters show 48,888 PBS
       for digits `Conv2d` and 19,137 for `Linear` (`docs/BENCHMARKS.md` Table B;
       `crates/penumbra-tfhe/tests/measured_pbs.rs`). Attribute them to radix carry
       propagation.
-- [ ] **Mismatched runs.** The same prose quotes 338 s / 287 s for digits `Conv2d`/`Linear`,
+- [x] **Mismatched runs.** The same prose quotes 338 s / 287 s for digits `Conv2d`/`Linear`,
       but Table B shows 149.2 s / 51.5 s, and Table A's total is 222.3 s. Identify which run
       and results JSON each figure came from. Make every figure in `docs/COMPARISON.md`,
       `docs/BENCHMARKS.md`, and `docs/NOTES-*.md` cite one named JSON file in `docs/results/`
       plus its commit. Remove or relabel any figure that can't be traced.
-- [ ] **Explain the logreg timing contradiction.** Table A (per-sample report, N = 2) gives
+- [x] **Explain the logreg timing contradiction.** Table A (per-sample report, N = 2) gives
       TFHE 0.521 s < CKKS 0.647 s. The Criterion check (`docs/BENCHMARKS.md`, "Variance check")
       gives TFHE 488.8 ms [470, 510] > CKKS 350.4 ms [347, 354], with non-overlapping CIs.
       Determine exactly what each path times:
@@ -715,12 +715,12 @@ measurements yet; this phase repairs the evidence base inherited from Phase 12.
       - whether the report's N = 2 includes a cold first sample.
       Reproduce both on the pinned M3 Pro in `--release`, and write the explanation into
       `docs/BENCHMARKS.md`.
-- [ ] **Mark the logreg verdict provisional.** Until Phase 16 produces Criterion-canonical
+- [x] **Mark the logreg verdict provisional.** Until Phase 16 produces Criterion-canonical
       numbers, the claim "TFHE wins on shallow models" in `docs/COMPARISON.md` Verdict (line
       ~204 at `ec06e73`) is unproven. Mark it provisional with a pointer to this phase.
-- [ ] **State the sample size.** Note in `docs/COMPARISON.md` that current accuracy figures use
+- [x] **State the sample size.** Note in `docs/COMPARISON.md` that current accuracy figures use
       N = 2 samples and are superseded by the Phase 15–16 protocol.
-- [ ] **Broken table anchors.** `mkdocs build` reports that four links from
+- [x] **Broken table anchors.** `mkdocs build` reports that four links from
       `docs/COMPARISON.md` to `docs/BENCHMARKS.md` Tables A–D point to anchors that don't
       exist. Fix the anchors so readers land on the cited table.
 
