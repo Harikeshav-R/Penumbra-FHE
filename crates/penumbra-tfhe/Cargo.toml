@@ -6,7 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "Layer 1 of Penumbra-FHE: reference TFHE/CGGI backend implemented over tfhe-rs."
 repository.workspace = true
-publish = false
+homepage.workspace = true
+readme.workspace = true
+keywords = ["fhe", "tfhe", "homomorphic", "encryption", "inference"]
+categories = ["cryptography"]
 
 [dependencies]
 penumbra-core = { workspace = true }

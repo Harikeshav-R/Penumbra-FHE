@@ -4,9 +4,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Layer 1 of Penumbra-FHE: CKKS backend implemented over poulpy-ckks."
+description = "Layer 1 of Penumbra-FHE: CKKS backend implemented over poulpy-ckks. The backend is behind the `ckks` feature, which needs nightly Rust (plus `-C target-feature=+avx2,+fma` on x86-64); without it the crate is empty."
 repository.workspace = true
-publish = false
+homepage.workspace = true
+readme.workspace = true
+keywords = ["fhe", "ckks", "homomorphic", "encryption", "inference"]
+categories = ["cryptography"]
 
 [features]
 # OFF by default: poulpy 0.8.3 needs nightly (`#![feature(f128)]` in poulpy-ckks,

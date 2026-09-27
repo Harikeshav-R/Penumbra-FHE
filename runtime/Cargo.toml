@@ -6,10 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 description = "Penumbra-FHE runtime: the backend-neutral eval core (Layer 2) and the tfhe-rs backend (Layer 1) for encrypted ML inference."
 repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
 # crates.io allows at most 5 keywords.
 keywords = ["fhe", "tfhe", "ckks", "homomorphic", "encryption"]
 categories = ["cryptography"]
-publish = false
 
 [lib]
 name = "penumbra_fhe_runtime"

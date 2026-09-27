@@ -6,7 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "Penumbra-FHE Layer 2: backend-neutral IR, graph evaluation loop, bit-width budget propagation, and Backend trait."
 repository.workspace = true
-publish = false
+homepage.workspace = true
+readme.workspace = true
+keywords = ["fhe", "homomorphic", "encryption", "onnx", "inference"]
+categories = ["cryptography"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
