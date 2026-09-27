@@ -265,7 +265,7 @@ Three things must be stated wherever a cross-backend number appears:
 | phase7_faces | tfhe | classic | 0.520 | 0.126 | 370.552 | 0.000 | 0.000 | 161.1x |
 | phase7_faces | ckks | - | 2.458 | 0.007 | 2.300 | 0.008 | 0.000 | — |
 
-*Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`.*
+*Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`. Ratios are calculated from unrounded mean evaluation times in the source JSON (e.g. 27.1493 s / 0.6595 s = 41.2x; 178.9332 s / 1.1697 s = 153.0x); dividing the 3-decimal rounded table values yields 41.1x and 152.9x due to intermediate rounding.*
 
 ### Logreg timing reconciliation
 
