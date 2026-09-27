@@ -61,6 +61,7 @@ from penumbra.ir import (
     Graph,
     Node,
     SplitSpec,
+    topological_order,
 )
 from penumbra.layers import (
     Activation,
@@ -73,7 +74,6 @@ from penumbra.layers import (
     Linear,
     QuantConfig,
     Split,
-    topological_layer_order,
 )
 from penumbra.quantization.calibration import (
     MinMaxObserver,
@@ -154,7 +154,7 @@ class Model:
 
         if isinstance(layers[0], LayerNode):
             node_list: list[LayerNode] = list(layers)  # type: ignore[arg-type]
-            order = topological_layer_order(node_list, input_name)
+            order = topological_order(node_list, [input_name])
             self.nodes: list[LayerNode] = [node_list[i] for i in order]
             self.layers: list[Layer] = [n.layer for n in self.nodes]
             self.output_name = output_name if output_name is not None else self.nodes[-1].outputs[0]

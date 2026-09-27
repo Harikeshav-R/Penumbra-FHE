@@ -68,7 +68,6 @@ from penumbra.layers import (
     Pool,
     QuantConfig,
     Split,
-    topological_layer_order,
 )
 from penumbra.model import Model
 from penumbra.onnx_loader import UnsupportedModelError, load_onnx
@@ -115,7 +114,6 @@ __all__ = [
     "Concat",
     "Split",
     "LayerNode",
-    "topological_layer_order",
     "evaluate_graph_int",
     # ONNX front door: parse + validate + lower a .onnx to a Model (Phase 6, PROJECT.md §10)
     "load_onnx",

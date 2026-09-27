@@ -33,13 +33,12 @@ run in reasonable time (``PROJECT.md`` §10, §16). Anything else fails loudly h
 
 from __future__ import annotations
 
-import heapq
-
 import numpy as np
 import onnx
 from onnx import numpy_helper
 
 from penumbra import op_registry
+from penumbra.ir import stable_kahn_order
 from penumbra.layers import (
     Activation,
     Add,
@@ -314,29 +313,7 @@ def _topological_nodes(
         )
 
     num_nodes = len(producers)
-    in_deps: list[set[int]] = [set() for _ in range(num_nodes)]
-    dependents: list[list[int]] = [[] for _ in range(num_nodes)]
-
-    for c_idx, ins in enumerate(node_act_inputs):
-        for inp in ins:
-            if inp in producer_map:
-                p_idx = producer_map[inp]
-                if p_idx not in in_deps[c_idx]:
-                    in_deps[c_idx].add(p_idx)
-                    dependents[p_idx].append(c_idx)
-
-    ready = [idx for idx, deps in enumerate(in_deps) if not deps]
-    heapq.heapify(ready)
-
-    order: list[int] = []
-    while ready:
-        idx = heapq.heappop(ready)
-        order.append(idx)
-        for dep in dependents[idx]:
-            in_deps[dep].remove(idx)
-            if not in_deps[dep]:
-                heapq.heappush(ready, dep)
-
+    order = stable_kahn_order(node_act_inputs, [list(n.output) for n in producers])
     if len(order) < num_nodes:
         visited = set(order)
         cycle_names = [

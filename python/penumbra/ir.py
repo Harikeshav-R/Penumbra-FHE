@@ -30,8 +30,9 @@ from __future__ import annotations
 
 import heapq
 import json
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 # IR wire-format version. Hardcoded identically in ``runtime/src/ir.rs``; a mismatch is a
 # breaking change caught loudly at load time (``AGENTS.md`` §5, §8).
@@ -705,46 +706,43 @@ def build_linear_argmax_graph(
     )
 
 
-def topological_nodes(graph: Graph) -> list[Node]:
-    """Every node of ``graph`` in a valid evaluation order (stable Kahn).
-
-    Among ready nodes, the lowest original index wins, so a graph already emitted in
-    topological order is unchanged. Fails loudly on an undefined input, duplicate output,
-    or cycle (AGENTS.md §1.4).
+class TensorNode(Protocol):
+    """Anything with a name and the tensor names it reads/writes
+    (``Node``, ``layers.LayerNode``).
     """
-    graph_inputs = set(graph.inputs)
-    all_produced = {out for node in graph.nodes for out in node.outputs}
 
-    for node in graph.nodes:
-        for inp in node.inputs:
-            if inp not in graph_inputs and inp not in all_produced:
-                raise ValueError(
-                    f"node {node.name!r} reads tensor {inp!r}, which no node produces and is "
-                    "not a graph input"
-                )
+    @property
+    def name(self) -> str: ...
 
-    existing: set[str] = set(graph.inputs)
-    for node in graph.nodes:
-        for out in node.outputs:
-            if out in existing:
-                raise ValueError(
-                    f"node {node.name!r} writes tensor {out!r}, which already exists — "
-                    "tensor names must be unique (no silent overwrite)"
-                )
-            existing.add(out)
+    @property
+    def inputs(self) -> list[str]: ...
 
-    num_nodes = len(graph.nodes)
+    @property
+    def outputs(self) -> list[str]: ...
+
+
+def stable_kahn_order(
+    node_inputs: Sequence[Sequence[str]], node_outputs: Sequence[Sequence[str]]
+) -> list[int]:
+    """Node indices in a stable Kahn order: among ready nodes the lowest original index wins,
+    so an already-topological list is returned unchanged.
+
+    A tensor no node produces (a graph input, a constant) imposes no dependency. On a cycle the
+    returned order is *shorter* than the node count; the caller names the stuck nodes in its own
+    error type (``ValueError`` here, ``UnsupportedModelError`` in the ONNX loader).
+    """
+    num_nodes = len(node_inputs)
     if num_nodes == 0:
         return []
 
     producer_map: dict[str, int] = {
-        out: idx for idx, node in enumerate(graph.nodes) for out in node.outputs
+        out: idx for idx, outs in enumerate(node_outputs) for out in outs
     }
     in_deps: list[set[int]] = [set() for _ in range(num_nodes)]
     dependents: list[list[int]] = [[] for _ in range(num_nodes)]
 
-    for c_idx, node in enumerate(graph.nodes):
-        for inp in node.inputs:
+    for c_idx, inps in enumerate(node_inputs):
+        for inp in inps:
             if inp in producer_map:
                 p_idx = producer_map[inp]
                 if p_idx not in in_deps[c_idx]:
@@ -763,12 +761,54 @@ def topological_nodes(graph: Graph) -> list[Node]:
             if not in_deps[dep]:
                 heapq.heappush(ready, dep)
 
-    if len(order) < num_nodes:
+    return order
+
+
+def topological_order(nodes: Sequence[TensorNode], graph_inputs: Iterable[str]) -> list[int]:
+    """Indices of ``nodes`` in a valid evaluation order (stable Kahn, see
+    :func:`stable_kahn_order`).
+
+    Fails loudly (AGENTS.md §1.4) on an undefined input, a duplicate output, or a cycle.
+    """
+    graph_inputs = set(graph_inputs)
+    all_produced = {out for node in nodes for out in node.outputs}
+
+    for node in nodes:
+        for inp in node.inputs:
+            if inp not in graph_inputs and inp not in all_produced:
+                raise ValueError(
+                    f"node {node.name!r} reads tensor {inp!r}, which no node produces and is "
+                    "not a graph input"
+                )
+
+    existing: set[str] = set(graph_inputs)
+    for node in nodes:
+        for out in node.outputs:
+            if out in existing:
+                raise ValueError(
+                    f"node {node.name!r} writes tensor {out!r}, which already exists — "
+                    "tensor names must be unique (no silent overwrite)"
+                )
+            existing.add(out)
+
+    order = stable_kahn_order([n.inputs for n in nodes], [n.outputs for n in nodes])
+
+    if len(order) < len(nodes):
         visited = set(order)
-        names = [node.name for idx, node in enumerate(graph.nodes) if idx not in visited]
+        names = [node.name for idx, node in enumerate(nodes) if idx not in visited]
         raise ValueError(
             f"graph has a cycle: node(s) {names!r} are never ready — their inputs depend on "
             "their own outputs"
         )
 
-    return [graph.nodes[i] for i in order]
+    return order
+
+
+def topological_nodes(graph: Graph) -> list[Node]:
+    """Every node of ``graph`` in a valid evaluation order (stable Kahn).
+
+    Among ready nodes, the lowest original index wins, so a graph already emitted in
+    topological order is unchanged. Fails loudly on an undefined input, duplicate output,
+    or cycle (AGENTS.md §1.4).
+    """
+    return [graph.nodes[i] for i in topological_order(graph.nodes, graph.inputs)]

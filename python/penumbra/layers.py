@@ -26,8 +26,7 @@ Quantization conventions (mirrors :mod:`penumbra.quantization.ptq`):
 
 from __future__ import annotations
 
-import heapq
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -378,75 +377,6 @@ class Split(Layer):
 
     def quantize(self, ctx: LayerContext):
         raise NotImplementedError("Split is materialized by Model.quantize directly")
-
-
-def topological_layer_order(nodes: Sequence[LayerNode], graph_input: str) -> list[int]:
-    """Indices of ``nodes`` in a valid topological order (stable Kahn).
-
-    Among ready nodes, the lowest original index wins, so a graph already emitted in
-    topological order is unchanged. Fails loudly on an undefined input, duplicate output,
-    or cycle.
-    """
-    graph_inputs = {graph_input}
-    all_produced = {out for node in nodes for out in node.outputs}
-
-    for node in nodes:
-        for inp in node.inputs:
-            if inp not in graph_inputs and inp not in all_produced:
-                raise ValueError(
-                    f"node {node.name!r} reads tensor {inp!r}, which no node produces and is "
-                    "not a graph input"
-                )
-
-    existing: set[str] = set(graph_inputs)
-    for node in nodes:
-        for out in node.outputs:
-            if out in existing:
-                raise ValueError(
-                    f"node {node.name!r} writes tensor {out!r}, which already exists — "
-                    "tensor names must be unique (no silent overwrite)"
-                )
-            existing.add(out)
-
-    num_nodes = len(nodes)
-    if num_nodes == 0:
-        return []
-
-    producer_map: dict[str, int] = {
-        out: idx for idx, node in enumerate(nodes) for out in node.outputs
-    }
-    in_deps: list[set[int]] = [set() for _ in range(num_nodes)]
-    dependents: list[list[int]] = [[] for _ in range(num_nodes)]
-
-    for c_idx, node in enumerate(nodes):
-        for inp in node.inputs:
-            if inp in producer_map:
-                p_idx = producer_map[inp]
-                if p_idx not in in_deps[c_idx]:
-                    in_deps[c_idx].add(p_idx)
-                    dependents[p_idx].append(c_idx)
-
-    ready = [idx for idx, deps in enumerate(in_deps) if not deps]
-    heapq.heapify(ready)
-
-    order: list[int] = []
-    while ready:
-        idx = heapq.heappop(ready)
-        order.append(idx)
-        for dep in dependents[idx]:
-            in_deps[dep].remove(idx)
-            if not in_deps[dep]:
-                heapq.heappush(ready, dep)
-
-    if len(order) < num_nodes:
-        visited = set(order)
-        names = [node.name for idx, node in enumerate(nodes) if idx not in visited]
-        raise ValueError(
-            f"graph has a cycle: node(s) {names!r} are never ready — their inputs depend on "
-            "their own outputs"
-        )
-
-    return order
 
 
 def _representative_scale(specs: list) -> float:
