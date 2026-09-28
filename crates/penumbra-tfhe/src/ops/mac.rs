@@ -79,7 +79,8 @@ pub(crate) fn evaluate_weighted_mac(
         let mut pre: Vec<SignedRadixCiphertext> = Vec::with_capacity(MESSAGE_BITS);
         pre.push(group_sum_acc);
         for j in 1..MESSAGE_BITS {
-            let needed = (0..64).any(|bit| ((weight_mag >> bit) & 1) != 0 && (bit % MESSAGE_BITS == j));
+            let needed =
+                (0..64).any(|bit| ((weight_mag >> bit) & 1) != 0 && (bit % MESSAGE_BITS == j));
             if needed {
                 let shifted = sk.unchecked_scalar_left_shift_parallelized(&pre[0], j as u64);
                 pre.push(shifted);
