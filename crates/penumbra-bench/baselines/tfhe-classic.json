@@ -64,6 +64,27 @@
       },
       "labels_matched": 1,
       "labels_checked": 1
+    },
+    {
+      "model": "phase8_trees",
+      "backend": "tfhe",
+      "profile": "classic",
+      "num_blocks": 7,
+      "client_key_bytes": 23940,
+      "server_key_bytes": 120419227,
+      "input_ct_bytes": 3457700,
+      "output_ct_bytes": 230532,
+      "cost_proxy": {
+        "cmp_pbs_ops": 67,
+        "ct_add": 114,
+        "scalar_add": 38,
+        "scalar_mul": 76
+      },
+      "measured_totals": {
+        "pbs": 1699
+      },
+      "labels_matched": 1,
+      "labels_checked": 1
     }
   ]
 }
