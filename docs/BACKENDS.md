@@ -201,6 +201,8 @@ The bit-width tracker in Layer 2 (`propagate_bit_widths` in `crates/penumbra-cor
 integer arithmetic and is reused by both — it describes the *quantized graph*, not TFHE. What
 differs is the capacity it is checked against.
 
+- **Input Trimming on Arrival:** TFHE clients encrypt inputs using `num_blocks` (the model-level ceiling). Sizing to the input tensor's derived bit width occurs at the server operator boundary via block trimming (`sk.cast_to_signed`). Dropping higher blocks costs $0$ PBS and requires no client-side multi-width coordination.
+
 ## Adding a backend (the canonical path)
 
 The counterpart to the "add an op" path (`CONTRIBUTING.md`, `AGENTS.md` §4). Every step ships

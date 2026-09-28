@@ -108,6 +108,10 @@ Layer-2 bit-width analysis bounds each tensor value's magnitude: $|v| < 2^{\text
 - **Resizing:** `resize(sk, ct, blocks)` returns `Cow::Borrowed` when widths match; trimming costs $0$ PBS, while sign-extension costs $1$ PBS (`cast_to_signed`).
 - **Ceiling:** every width is bounded above by `num_blocks`. When clamping bites, behaviour is identical to the global-radix baseline.
 
+
+### Server-side input trimming
+
+Under the D14 Amendment, client-side encryption remains uniform: clients encrypt input tensors at the model-level radix ceiling `num_blocks` without needing graph-wide per-tensor width knowledge. On the server side, input ciphertexts are trimmed to each consuming operation's required width (e.g. `WidthCache::build` in `Linear`/`Conv2d` or `resize_tensor` in `Requant`/`Add`) via `sk.cast_to_signed(ct, target_blocks)`. Because dropping higher radix blocks costs 0 PBS and allocates no crypto noise, trimming is computationally free. Performing trimming lazily at the operator boundary preserves the backend-neutral Layer-2 eval loop contract (`penumbra-core`) with zero scheme-specific entrypoint branching.
 ### Core seam (`Backend::build_op_with_bits`)
 
 To inform Layer-1 op construction of Layer-2 derived bit widths without breaking backend neutrality or leaking crypto into Layer 2, `penumbra-core` added a default-implemented method:
