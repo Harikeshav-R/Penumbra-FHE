@@ -60,26 +60,26 @@ pub(crate) fn evaluate_weighted_mac(
     in_bits: usize,
     acc_blocks: usize,
 ) -> SignedRadixCiphertext {
-    let mut pos: Vec<SignedRadixCiphertext> = Vec::new();
-    let mut neg: Vec<SignedRadixCiphertext> = Vec::new();
+    let mut pos_terms: Vec<SignedRadixCiphertext> = Vec::new();
+    let mut neg_terms: Vec<SignedRadixCiphertext> = Vec::new();
 
-    for (&w, idxs) in groups {
+    for (&weight, idxs) in groups {
         let k = idxs.len();
         let sum_bits = in_bits + penumbra_core::bitwidth::ceil_log2(k);
-        let g = value_blocks(sum_bits, acc_blocks);
-        let s_g = if idxs.len() == 1 {
-            cache.get(g, idxs[0]).clone()
+        let group_blocks = value_blocks(sum_bits, acc_blocks);
+        let group_sum_narrow = if idxs.len() == 1 {
+            cache.get(group_blocks, idxs[0]).clone()
         } else {
-            sk.sum_ciphertexts_parallelized(idxs.iter().map(|&i| cache.get(g, i)))
+            sk.sum_ciphertexts_parallelized(idxs.iter().map(|&i| cache.get(group_blocks, i)))
                 .expect("non-empty cts group")
         };
-        let s = resize(sk, &s_g, acc_blocks).into_owned();
+        let group_sum_acc = resize(sk, &group_sum_narrow, acc_blocks).into_owned();
 
-        let u = w.unsigned_abs();
+        let weight_mag = weight.unsigned_abs();
         let mut pre: Vec<SignedRadixCiphertext> = Vec::with_capacity(MESSAGE_BITS);
-        pre.push(s);
+        pre.push(group_sum_acc);
         for j in 1..MESSAGE_BITS {
-            let needed = (0..64).any(|bit| ((u >> bit) & 1) != 0 && (bit % MESSAGE_BITS == j));
+            let needed = (0..64).any(|bit| ((weight_mag >> bit) & 1) != 0 && (bit % MESSAGE_BITS == j));
             if needed {
                 let shifted = sk.unchecked_scalar_left_shift_parallelized(&pre[0], j as u64);
                 pre.push(shifted);
@@ -89,14 +89,14 @@ pub(crate) fn evaluate_weighted_mac(
         }
 
         for bit in 0..64 {
-            if ((u >> bit) & 1) != 0 {
+            if ((weight_mag >> bit) & 1) != 0 {
                 let block_idx = bit / MESSAGE_BITS;
                 if block_idx < acc_blocks {
                     let shifted = sk.blockshift(&pre[bit % MESSAGE_BITS], block_idx);
-                    if w > 0 {
-                        pos.push(shifted);
+                    if weight > 0 {
+                        pos_terms.push(shifted);
                     } else {
-                        neg.push(shifted);
+                        neg_terms.push(shifted);
                     }
                 }
             }
@@ -104,29 +104,29 @@ pub(crate) fn evaluate_weighted_mac(
     }
 
     if bias > 0 {
-        pos.push(
+        pos_terms.push(
             sk.create_trivial_radix::<u64, SignedRadixCiphertext>(bias.unsigned_abs(), acc_blocks),
         );
     } else if bias < 0 {
-        neg.push(
+        neg_terms.push(
             sk.create_trivial_radix::<u64, SignedRadixCiphertext>(bias.unsigned_abs(), acc_blocks),
         );
     }
 
-    let p = if pos.is_empty() {
+    let pos_sum = if pos_terms.is_empty() {
         sk.create_trivial_zero_radix(acc_blocks)
     } else {
-        sk.unchecked_sum_ciphertexts_vec_parallelized(pos)
+        sk.unchecked_sum_ciphertexts_vec_parallelized(pos_terms)
             .unwrap_or_else(|| sk.create_trivial_zero_radix(acc_blocks))
     };
 
-    if neg.is_empty() {
-        p
+    if neg_terms.is_empty() {
+        pos_sum
     } else {
-        let n = sk
-            .unchecked_sum_ciphertexts_vec_parallelized(neg)
+        let neg_sum = sk
+            .unchecked_sum_ciphertexts_vec_parallelized(neg_terms)
             .unwrap_or_else(|| sk.create_trivial_zero_radix(acc_blocks));
-        sk.sub_parallelized(&p, &n)
+        sk.sub_parallelized(&pos_sum, &neg_sum)
     }
 }
 
