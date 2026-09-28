@@ -95,6 +95,14 @@ impl NodeWidths {
                 .unwrap_or_else(|| panic!("NodeWidths: no width for output {i}")),
         }
     }
+
+    /// Extracts `(input_bits, output_bits, acc_blocks)` for single-input, single-output linear operations.
+    pub(crate) fn linear_op_blocks(&self, num_blocks: usize) -> (usize, usize, usize) {
+        let ib = self.input_bits(0, num_blocks);
+        let ob = self.output_bits(0, num_blocks);
+        let acc = signed_blocks(ob, num_blocks);
+        (ib, ob, acc)
+    }
 }
 
 #[cfg(test)]
@@ -133,5 +141,23 @@ mod tests {
         let resized_pos7 = resize(&sk, &ct_pos7, 2);
         assert_eq!(resized_pos7.blocks().len(), 2);
         assert_eq!(ck.decrypt_signed::<i64>(&resized_pos7), 7);
+    }
+
+    #[test]
+    fn test_linear_op_blocks() {
+        let w = NodeWidths::PerTensor {
+            inputs: vec![4],
+            outputs: vec![12],
+        };
+        let (ib, ob, acc) = w.linear_op_blocks(8);
+        assert_eq!(ib, 4);
+        assert_eq!(ob, 12);
+        assert_eq!(acc, signed_blocks(12, 8)); // 12 / 2 = 6 blocks
+
+        let u = NodeWidths::Uniform;
+        let (u_ib, u_ob, u_acc) = u.linear_op_blocks(8);
+        assert_eq!(u_ib, radix_capacity_bits(8));
+        assert_eq!(u_ob, radix_capacity_bits(8));
+        assert_eq!(u_acc, 8);
     }
 }

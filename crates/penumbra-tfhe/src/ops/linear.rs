@@ -13,7 +13,7 @@ use penumbra_core::ops::Op;
 use super::mac::{self, mac_cache_widths, WidthCache};
 use super::{CtVec, EvalCtx, WidthAwareOp};
 use crate::backend::TfheBackend;
-use crate::width::{signed_blocks, NodeWidths};
+use crate::width::NodeWidths;
 /// Dense layer / logistic-regression head with plaintext quantized weights.
 pub struct Linear {
     /// Quantized weight matrix, row-major `[n_out][n_in]`.
@@ -40,10 +40,7 @@ impl WidthAwareOp for Linear {
             self.bias.len()
         );
 
-        let nb = ctx.num_blocks;
-        let ib = widths.input_bits(0, nb);
-        let ob = widths.output_bits(0, nb);
-        let acc = signed_blocks(ob, nb);
+        let (ib, _ob, acc) = widths.linear_op_blocks(ctx.num_blocks);
 
         let groups: Vec<BTreeMap<i64, Vec<usize>>> = self
             .weights

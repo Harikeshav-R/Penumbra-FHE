@@ -14,7 +14,7 @@ use penumbra_core::ops::Op;
 use super::mac::{self, mac_cache_widths, WidthCache};
 use super::{CtVec, EvalCtx, WidthAwareOp};
 use crate::backend::TfheBackend;
-use crate::width::{signed_blocks, NodeWidths};
+use crate::width::NodeWidths;
 /// 2-D convolution with plaintext quantized kernel weights.
 pub struct Conv2d {
     /// Quantized kernel, row-major `[out_channels][in_channels*kernel_h*kernel_w]`.
@@ -184,10 +184,7 @@ impl WidthAwareOp for Conv2d {
             );
         }
 
-        let nb = ctx.num_blocks;
-        let ib = widths.input_bits(0, nb);
-        let ob = widths.output_bits(0, nb);
-        let acc = signed_blocks(ob, nb);
+        let (ib, _ob, acc) = widths.linear_op_blocks(ctx.num_blocks);
 
         let plane = out_h * out_w;
         let total_neurons = out_channels * plane;
