@@ -24,6 +24,7 @@ pub mod wire;
 pub use backend::{Backend, CtVec, EvalCtx};
 pub use bitwidth::{
     check_bit_width_budget, check_graph_bit_width_budget, op_spec_output_bits_multi,
+    op_spec_output_bits_multi_checked, op_spec_output_bits_n_checked,
     propagate_bit_widths, radix_capacity_bits, MESSAGE_BITS,
 };
 pub use eval::{evaluate, evaluate_graph, evaluate_graph_profiled};

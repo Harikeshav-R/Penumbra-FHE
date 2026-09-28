@@ -137,18 +137,14 @@ fn evaluate_graph_inner<B: Backend>(
             })
             .collect::<Result<_, _>>()?;
 
-        let output_bits = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::bitwidth::op_spec_output_bits_multi(&node.op, &input_bits)
-        }))
-        .ok();
+        let output_bits = crate::bitwidth::op_spec_output_bits_multi_checked(&node.op, &input_bits)
+            .map_err(|e| format!("node '{}' ({}): {e}", node.name, node.op.op_type()))?;
 
         let t_build = profile.as_ref().map(|_| Instant::now());
         let op = backend
-            .build_op_with_bits(&node.op, &input_bits, output_bits.as_deref().unwrap_or(&[]))
+            .build_op_with_bits(&node.op, &input_bits, &output_bits)
             .map_err(|e| format!("node '{}': {e}", node.name))?;
         let build = t_build.map(|t| t.elapsed()).unwrap_or_default();
-
-        let output_bits = output_bits.unwrap_or_default();
 
         let input_lens: Vec<usize> = if profile.is_some() {
             input_cts.iter().map(|v| v.len()).collect()
