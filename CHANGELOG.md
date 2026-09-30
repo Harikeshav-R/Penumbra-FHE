@@ -9,6 +9,11 @@ The Python package and the four published crates share one version, and the IR `
 
 ## [Unreleased]
 
+### Added
+- `Backend::build_op_with_bits` default-implemented trait method on `penumbra_core::backend::Backend`, allowing Layer 2 to pass derived input/output tensor bit widths to backends during topological evaluation.
+
+### Changed
+- TFHE per-tensor radix widths (Phase 14): sized each tensor's radix representation to its Layer-2 derived bit width with progressive widening and deferred carry propagation in linear operations. Yields a 2.37x overall speedup across the test suite (up to 3.27x on branching networks) and a 56.6% reduction in PBS operations, while preserving bit-for-bit exactness.
 ## [1.0.0] - 2026-09-27
 
 ### Added — Python front end

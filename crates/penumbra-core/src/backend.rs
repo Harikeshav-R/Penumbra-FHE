@@ -19,7 +19,7 @@ pub type CtVec<B> = Vec<<B as Backend>::Ciphertext>;
 pub struct EvalCtx<'a, K> {
     /// Public evaluation key enabling plaintext-weight arithmetic and bootstrapping.
     pub sk: &'a K,
-    /// Central bit-width budget (radix width shared across the model under TFHE).
+    /// Model-level radix ceiling (the central bit-width budget); no TFHE tensor is wider.
     pub num_blocks: usize,
 }
 
@@ -47,6 +47,19 @@ pub trait Backend: 'static + Send + Sync {
     ///
     /// Fails loudly at load time if an op is unsupported on this backend (`AGENTS.md` §1.4).
     fn build_op(&self, spec: &OpSpec) -> Result<Box<dyn Op<Self>>, String>;
+
+    /// Build a runnable op for a node whose tensor bit-widths Layer 2 has derived (the same
+    /// rules as [`crate::bitwidth::propagate_bit_widths`]). `input_bits` / `output_bits` follow the
+    /// node's input / output declaration order. A backend MAY size its representation from them
+    /// (TFHE sizes each radix to its tensor); the default ignores them.
+    fn build_op_with_bits(
+        &self,
+        spec: &OpSpec,
+        _input_bits: &[usize],
+        _output_bits: &[usize],
+    ) -> Result<Box<dyn Op<Self>>, String> {
+        self.build_op(spec)
+    }
 
     /// Validate a graph against this backend's resource budget before any crypto runs,
     /// naming the offending node on failure (`AGENTS.md` §1.3, §1.4).

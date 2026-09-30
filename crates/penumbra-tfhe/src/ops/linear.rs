@@ -2,19 +2,18 @@
 //!
 //! Covers dense layers and logistic/linear regression (`PROJECT.md` §6). This is the
 //! *cheap* regime (`PROJECT.md` §5): the data is encrypted but the weights are plaintext,
-//! so each output is `sum_i (ciphertext_i * plaintext_weight) + plaintext_bias` —
-//! scalar-multiplies and additions only, **no programmable bootstrap**.
+//! scalar-multiplies, additions, and deferred carry propagation (widening and carries cost PBS).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use rayon::prelude::*;
-use tfhe::integer::SignedRadixCiphertext;
 
 use penumbra_core::ops::Op;
 
-use super::{CtVec, EvalCtx};
+use super::mac::{self, mac_cache_widths, WidthCache};
+use super::{CtVec, EvalCtx, WidthAwareOp};
 use crate::backend::TfheBackend;
-
+use crate::width::NodeWidths;
 /// Dense layer / logistic-regression head with plaintext quantized weights.
 pub struct Linear {
     /// Quantized weight matrix, row-major `[n_out][n_in]`.
@@ -25,8 +24,14 @@ pub struct Linear {
     pub weight_bits: usize,
 }
 
-impl Op<TfheBackend> for Linear {
-    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+impl WidthAwareOp for Linear {
+    fn eval_with_widths(
+        &self,
+        ctx: &EvalCtx,
+        inputs: &[&CtVec],
+        widths: &NodeWidths,
+    ) -> Vec<CtVec> {
+        let in_cts = inputs[0];
         assert_eq!(
             self.weights.len(),
             self.bias.len(),
@@ -35,30 +40,45 @@ impl Op<TfheBackend> for Linear {
             self.bias.len()
         );
 
-        self.weights
+        let (ib, _ob, acc) = widths.linear_op_blocks(ctx.num_blocks);
+
+        let groups: Vec<BTreeMap<i64, Vec<usize>>> = self
+            .weights
             .par_iter()
-            .zip(self.bias.par_iter())
-            .map(|(row, &b)| {
+            .map(|row| {
                 assert_eq!(
                     row.len(),
-                    inputs.len(),
+                    in_cts.len(),
                     "Linear weight row width ({}) must match input length ({})",
                     row.len(),
-                    inputs.len()
+                    in_cts.len()
                 );
-
-                // Group inputs by non-zero weight into a BTreeMap for deterministic order.
-                let mut groups: BTreeMap<i64, Vec<&SignedRadixCiphertext>> = BTreeMap::new();
-                for (ct, &w) in inputs.iter().zip(row) {
-                    if w == 0 {
-                        continue;
+                let mut g: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
+                for (idx, &w) in row.iter().enumerate() {
+                    if w != 0 {
+                        g.entry(w).or_default().push(idx);
                     }
-                    groups.entry(w).or_default().push(ct);
                 }
-
-                super::evaluate_weighted_mac(ctx, groups, b)
+                g
             })
-            .collect()
+            .collect();
+
+        let needed_widths = mac_cache_widths(&groups, ib, acc);
+        let cache = WidthCache::build(ctx.sk, in_cts, &needed_widths);
+
+        let out: CtVec = groups
+            .par_iter()
+            .zip(self.bias.par_iter())
+            .map(|(g, &b)| mac::evaluate_weighted_mac(ctx.sk, &cache, g, b, ib, acc))
+            .collect();
+
+        vec![out]
+    }
+}
+
+impl Op<TfheBackend> for Linear {
+    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+        super::single(self.eval_with_widths(ctx, &[inputs], &NodeWidths::Uniform))
     }
 
     fn output_bits(&self, input_bits: usize) -> usize {

@@ -2,7 +2,8 @@
 
 use penumbra_core::bitwidth::{
     ceil_log2, check_graph_bit_width_budget, magnitude_bits, op_spec_internal_bits_n,
-    op_spec_output_bits_multi, op_spec_output_bits_n, propagate_bit_widths, radix_capacity_bits,
+    op_spec_output_bits_multi, op_spec_output_bits_multi_checked, op_spec_output_bits_n,
+    op_spec_output_bits_n_checked, propagate_bit_widths, radix_capacity_bits,
 };
 use penumbra_core::ir::{Graph, Node, OpSpec, SCHEMA_VERSION};
 
@@ -130,8 +131,55 @@ fn test_op_spec_bit_growths() {
     };
     assert_eq!(op_spec_output_bits_n(&rq_pc, &[10]), 2);
     assert_eq!(op_spec_internal_bits_n(&rq_pc, &[10]), 12);
-}
 
+    // Checked bit-width API: valid inputs
+    assert_eq!(op_spec_output_bits_n_checked(&linear, &[4]).unwrap(), 11);
+    assert_eq!(op_spec_output_bits_n_checked(&conv, &[4]).unwrap(), 11);
+    assert_eq!(op_spec_output_bits_n_checked(&pool_avg, &[4]).unwrap(), 6);
+    assert_eq!(op_spec_output_bits_n_checked(&pool_max, &[4]).unwrap(), 4);
+    let pool_fallback = OpSpec::Pool {
+        mode: "unknown_mode".to_string(),
+        in_h: 4,
+        in_w: 4,
+        channels: 1,
+        pool_h: 2,
+        pool_w: 2,
+        stride: 2,
+        padding: 0,
+    };
+    assert_eq!(
+        op_spec_output_bits_n_checked(&pool_fallback, &[4]).unwrap(),
+        6
+    );
+    assert_eq!(op_spec_output_bits_n_checked(&act, &[4]).unwrap(), 2);
+    assert_eq!(op_spec_output_bits_n_checked(&argmax, &[16]).unwrap(), 1);
+    assert_eq!(op_spec_output_bits_n_checked(&cmp, &[8]).unwrap(), 1);
+    assert_eq!(op_spec_output_bits_n_checked(&add, &[4, 6]).unwrap(), 7);
+    assert_eq!(op_spec_output_bits_n_checked(&concat, &[4, 5]).unwrap(), 5);
+    assert_eq!(op_spec_output_bits_n_checked(&split, &[4]).unwrap(), 4);
+    assert_eq!(
+        op_spec_output_bits_multi_checked(&split, &[4]).unwrap(),
+        vec![4, 4]
+    );
+    assert_eq!(op_spec_output_bits_n_checked(&rq, &[10]).unwrap(), 2);
+    assert_eq!(op_spec_output_bits_n_checked(&rq_pc, &[10]).unwrap(), 2);
+
+    // Checked bit-width API: input length mismatch error cases
+    assert!(op_spec_output_bits_n_checked(&linear, &[4, 4]).is_err());
+    assert!(op_spec_output_bits_n_checked(&linear, &[]).is_err());
+    assert!(op_spec_output_bits_n_checked(&conv, &[4, 4]).is_err());
+    assert!(op_spec_output_bits_n_checked(&pool_avg, &[]).is_err());
+    assert!(op_spec_output_bits_n_checked(&pool_max, &[4, 4]).is_err());
+    assert!(op_spec_output_bits_n_checked(&act, &[]).is_err());
+    assert!(op_spec_output_bits_n_checked(&argmax, &[16, 16]).is_err());
+    assert!(op_spec_output_bits_n_checked(&cmp, &[]).is_err());
+    assert!(op_spec_output_bits_n_checked(&add, &[4]).is_err());
+    assert!(op_spec_output_bits_n_checked(&add, &[4, 6, 8]).is_err());
+    assert!(op_spec_output_bits_n_checked(&concat, &[4]).is_err());
+    assert!(op_spec_output_bits_n_checked(&split, &[4, 4]).is_err());
+    assert!(op_spec_output_bits_multi_checked(&split, &[4, 4]).is_err());
+    assert!(op_spec_output_bits_n_checked(&rq, &[]).is_err());
+}
 #[test]
 fn test_check_graph_bit_width_budget_errors() {
     let bad_graph = Graph {
@@ -200,4 +248,92 @@ fn test_check_graph_bit_width_budget_errors() {
         }],
     };
     assert!(propagate_bit_widths(&unlinked_graph).is_err());
+}
+
+#[test]
+fn test_propagate_bit_widths_validation_errors() {
+    // Node with empty inputs
+    let empty_inputs_graph = Graph {
+        schema_version: SCHEMA_VERSION.to_string(),
+        num_blocks: 4,
+        input_bits: 4,
+        inputs: vec!["x".to_string()],
+        outputs: vec!["y".to_string()],
+        nodes: vec![Node {
+            name: "bad_node".to_string(),
+            inputs: vec![],
+            outputs: vec!["y".to_string()],
+            op: OpSpec::Add {},
+        }],
+    };
+    let err = propagate_bit_widths(&empty_inputs_graph).unwrap_err();
+    assert!(err.contains("must have at least one input and at least one output"));
+
+    // Node with empty outputs
+    let empty_outputs_graph = Graph {
+        schema_version: SCHEMA_VERSION.to_string(),
+        num_blocks: 4,
+        input_bits: 4,
+        inputs: vec!["x".to_string()],
+        outputs: vec!["y".to_string()],
+        nodes: vec![Node {
+            name: "bad_node".to_string(),
+            inputs: vec!["x".to_string()],
+            outputs: vec![],
+            op: OpSpec::Activation {
+                lut: vec![0, 1],
+                output_bits: 1,
+            },
+        }],
+    };
+    let err = propagate_bit_widths(&empty_outputs_graph).unwrap_err();
+    assert!(err.contains("must have at least one input and at least one output"));
+
+    // Node declaring wrong number of outputs (Split with 2 sizes but 1 output name)
+    let wrong_outputs_graph = Graph {
+        schema_version: SCHEMA_VERSION.to_string(),
+        num_blocks: 4,
+        input_bits: 4,
+        inputs: vec!["x".to_string()],
+        outputs: vec!["y".to_string()],
+        nodes: vec![Node {
+            name: "split_node".to_string(),
+            inputs: vec!["x".to_string()],
+            outputs: vec!["y".to_string()],
+            op: OpSpec::Split { sizes: vec![2, 2] },
+        }],
+    };
+    let err = propagate_bit_widths(&wrong_outputs_graph).unwrap_err();
+    assert!(err.contains("declares 1 output(s) but produces 2"));
+
+    // Duplicate tensor output name
+    let dup_output_graph = Graph {
+        schema_version: SCHEMA_VERSION.to_string(),
+        num_blocks: 4,
+        input_bits: 4,
+        inputs: vec!["x".to_string()],
+        outputs: vec!["y".to_string()],
+        nodes: vec![
+            Node {
+                name: "node1".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["t".to_string()],
+                op: OpSpec::Activation {
+                    lut: vec![0, 1],
+                    output_bits: 1,
+                },
+            },
+            Node {
+                name: "node2".to_string(),
+                inputs: vec!["x".to_string()],
+                outputs: vec!["t".to_string()],
+                op: OpSpec::Activation {
+                    lut: vec![0, 1],
+                    output_bits: 1,
+                },
+            },
+        ],
+    };
+    let err = propagate_bit_widths(&dup_output_graph).unwrap_err();
+    assert!(err.contains("already exists — tensor names must be unique"));
 }

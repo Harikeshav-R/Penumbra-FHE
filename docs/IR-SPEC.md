@@ -108,7 +108,7 @@ a mismatch fails with an actionable message rather than a deserialization panic
 | Field | Type | Meaning |
 |---|---|---|
 | `schema_version` | string | Must equal `SCHEMA_VERSION`. |
-| `num_blocks` | int | The shared radix width — the central **bit-width budget** (`PROJECT.md` §9). Every ciphertext in the model has this many `shortint` blocks; capacity is `num_blocks × MESSAGE_BITS` bits (`MESSAGE_BITS = 2` under the default profile). **TFHE-specific and advisory to other backends** — see [Backend neutrality](#backend-neutrality). |
+| `num_blocks` | int | The shared radix width — the central **bit-width budget** (`PROJECT.md` §9). No tensor's radix exceeds this many `shortint` blocks; the TFHE backend sizes each tensor to its derived bit width; capacity is `num_blocks × MESSAGE_BITS` bits (`MESSAGE_BITS = 2` under the default profile). **TFHE-specific and advisory to other backends** — see [Backend neutrality](#backend-neutrality). |
 | `input_bits` | int | Declared bit-width of the encrypted model input; seeds the bit-width tracker. |
 | `inputs` | [string] | Names of the graph's input tensors. |
 | `outputs` | [string] | Names of the graph's output tensors. |

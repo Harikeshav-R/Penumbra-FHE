@@ -168,7 +168,7 @@ fn build_op_rejection_names_the_node() {
         outputs: vec!["y".to_string()],
         nodes: vec![Node {
             name: "layer0".to_string(),
-            inputs: vec!["x".to_string()],
+            inputs: vec!["x".to_string(), "x".to_string()],
             outputs: vec!["y".to_string()],
             op: OpSpec::Add {},
         }],
@@ -187,5 +187,34 @@ fn build_op_rejection_names_the_node() {
     assert!(
         err.contains("unsupported on backend 'stub'"),
         "error must preserve the backend's own message: {err}"
+    );
+    assert!(RejectingBackend.measured_counters().is_empty());
+}
+
+#[test]
+fn node_with_invalid_input_count_fails_loudly_before_eval() {
+    let graph = Graph {
+        schema_version: SCHEMA_VERSION.to_string(),
+        num_blocks: 8,
+        input_bits: 4,
+        inputs: vec!["a".to_string()],
+        outputs: vec!["out".to_string()],
+        nodes: vec![Node {
+            name: "malformed_add".to_string(),
+            inputs: vec!["a".to_string()], // Add requires 2 inputs
+            outputs: vec!["out".to_string()],
+            op: OpSpec::Add {},
+        }],
+    };
+
+    let backend = RejectingBackend;
+    let ctx = EvalCtx::new(&(), 4);
+    let mut inputs = HashMap::new();
+    inputs.insert("a".to_string(), vec![1]);
+    let err = evaluate_graph(&backend, &ctx, &graph, inputs)
+        .expect_err("node with invalid input count must fail loudly");
+    assert!(
+        err.contains("node 'malformed_add' (Add): Add is a two-input op: expected 2 inputs, got 1"),
+        "unexpected error message: {err}"
     );
 }

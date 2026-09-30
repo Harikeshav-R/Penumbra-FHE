@@ -38,49 +38,65 @@ pub fn ceil_log2(n: usize) -> usize {
     }
 }
 
-/// Output bit-width growth for an [`OpSpec`].
-pub fn op_spec_output_bits_n(spec: &OpSpec, input_bits: &[usize]) -> usize {
+/// Checked version of [`op_spec_output_bits_n`] returning an actionable error message on input count mismatch.
+pub fn op_spec_output_bits_n_checked(spec: &OpSpec, input_bits: &[usize]) -> Result<usize, String> {
     match spec {
         OpSpec::Linear {
             weights,
             bias,
             weight_bits,
         } => {
-            assert_eq!(input_bits.len(), 1, "Linear is a single-input op");
+            if input_bits.len() != 1 {
+                return Err(format!(
+                    "Linear is a single-input op: expected 1 input, got {}",
+                    input_bits.len()
+                ));
+            }
             let in_b = input_bits[0];
             let n = weights.first().map_or(0, Vec::len);
             let sum_growth = ceil_log2(n);
             let sum_bits = in_b + weight_bits + sum_growth;
             let bias_bits = bias.iter().map(|&b| magnitude_bits(b)).max().unwrap_or(0);
-            sum_bits.max(bias_bits) + 2
+            Ok(sum_bits.max(bias_bits) + 2)
         }
         OpSpec::Conv2d {
-            weights: _,
             bias,
             weight_bits,
-            in_h: _,
-            in_w: _,
             in_channels,
             kernel_h,
             kernel_w,
-            stride: _,
-            padding: _,
+            ..
         } => {
-            assert_eq!(input_bits.len(), 1, "Conv2d is a single-input op");
+            if input_bits.len() != 1 {
+                return Err(format!(
+                    "Conv2d is a single-input op: expected 1 input, got {}",
+                    input_bits.len()
+                ));
+            }
             let in_b = input_bits[0];
             let fan_in = in_channels * kernel_h * kernel_w;
             let sum_growth = ceil_log2(fan_in);
             let sum_bits = in_b + weight_bits + sum_growth;
             let bias_bits = bias.iter().map(|&b| magnitude_bits(b)).max().unwrap_or(0);
-            sum_bits.max(bias_bits) + 2
+            Ok(sum_bits.max(bias_bits) + 2)
         }
         OpSpec::Activation { output_bits, .. } => {
-            assert_eq!(input_bits.len(), 1, "Activation is a single-input op");
-            *output_bits
+            if input_bits.len() != 1 {
+                return Err(format!(
+                    "Activation is a single-input op: expected 1 input, got {}",
+                    input_bits.len()
+                ));
+            }
+            Ok(*output_bits)
         }
         OpSpec::Requant { out_bits, .. } => {
-            assert_eq!(input_bits.len(), 1, "Requant is a single-input op");
-            *out_bits
+            if input_bits.len() != 1 {
+                return Err(format!(
+                    "Requant is a single-input op: expected 1 input, got {}",
+                    input_bits.len()
+                ));
+            }
+            Ok(*out_bits)
         }
         OpSpec::Pool {
             mode,
@@ -88,7 +104,12 @@ pub fn op_spec_output_bits_n(spec: &OpSpec, input_bits: &[usize]) -> usize {
             pool_w,
             ..
         } => {
-            assert_eq!(input_bits.len(), 1, "Pool is a single-input op");
+            if input_bits.len() != 1 {
+                return Err(format!(
+                    "Pool is a single-input op: expected 1 input, got {}",
+                    input_bits.len()
+                ));
+            }
             let in_b = input_bits[0];
             let k = pool_h * pool_w;
             let parsed_mode = match mode.as_str() {
@@ -97,43 +118,87 @@ pub fn op_spec_output_bits_n(spec: &OpSpec, input_bits: &[usize]) -> usize {
                 _ => PoolMode::Avg,
             };
             match parsed_mode {
-                PoolMode::Avg => in_b + ceil_log2(k),
-                PoolMode::Max => in_b,
+                PoolMode::Avg => Ok(in_b + ceil_log2(k)),
+                PoolMode::Max => Ok(in_b),
             }
         }
         OpSpec::Add {} => {
-            assert_eq!(input_bits.len(), 2, "Add is a two-input op");
-            input_bits[0].max(input_bits[1]) + 1
+            if input_bits.len() != 2 {
+                return Err(format!(
+                    "Add is a two-input op: expected 2 inputs, got {}",
+                    input_bits.len()
+                ));
+            }
+            Ok(input_bits[0].max(input_bits[1]) + 1)
         }
         OpSpec::Argmax { .. } => {
-            assert_eq!(input_bits.len(), 1, "Argmax is a single-input op");
-            1
+            if input_bits.len() != 1 {
+                return Err(format!(
+                    "Argmax is a single-input op: expected 1 input, got {}",
+                    input_bits.len()
+                ));
+            }
+            Ok(1)
         }
         OpSpec::Compare { .. } => {
-            assert_eq!(input_bits.len(), 1, "Compare is a single-input op");
-            1
+            if input_bits.len() != 1 {
+                return Err(format!(
+                    "Compare is a single-input op: expected 1 input, got {}",
+                    input_bits.len()
+                ));
+            }
+            Ok(1)
         }
         OpSpec::Concat { sizes } => {
-            assert_eq!(
-                input_bits.len(),
-                sizes.len(),
-                "Concat takes one input per declared segment"
-            );
-            input_bits.iter().copied().max().unwrap_or(0)
+            if input_bits.len() != sizes.len() {
+                return Err(format!(
+                    "Concat takes one input per declared segment: expected {}, got {}",
+                    sizes.len(),
+                    input_bits.len()
+                ));
+            }
+            Ok(input_bits.iter().copied().max().unwrap_or(0))
         }
         OpSpec::Split { .. } => {
-            assert_eq!(input_bits.len(), 1, "Split is a single-input op");
-            input_bits[0]
+            if input_bits.len() != 1 {
+                return Err(format!(
+                    "Split is a single-input op: expected 1 input, got {}",
+                    input_bits.len()
+                ));
+            }
+            Ok(input_bits[0])
         }
     }
 }
 
+/// Checked version of [`op_spec_output_bits_multi`].
+pub fn op_spec_output_bits_multi_checked(
+    spec: &OpSpec,
+    input_bits: &[usize],
+) -> Result<Vec<usize>, String> {
+    match spec {
+        OpSpec::Split { sizes } => {
+            if input_bits.len() != 1 {
+                return Err(format!(
+                    "Split is a single-input op: expected 1 input, got {}",
+                    input_bits.len()
+                ));
+            }
+            Ok(vec![input_bits[0]; sizes.len()])
+        }
+        _ => op_spec_output_bits_n_checked(spec, input_bits).map(|b| vec![b]),
+    }
+}
+
+/// Output bit-width growth for an [`OpSpec`].
+pub fn op_spec_output_bits_n(spec: &OpSpec, input_bits: &[usize]) -> usize {
+    op_spec_output_bits_n_checked(spec, input_bits).expect("op_spec_output_bits_n: invalid inputs")
+}
+
 /// Bit-widths of every output tensor. Only `Split` produces more than one.
 pub fn op_spec_output_bits_multi(spec: &OpSpec, input_bits: &[usize]) -> Vec<usize> {
-    match spec {
-        OpSpec::Split { sizes } => vec![input_bits[0]; sizes.len()],
-        _ => vec![op_spec_output_bits_n(spec, input_bits)],
-    }
+    op_spec_output_bits_multi_checked(spec, input_bits)
+        .expect("op_spec_output_bits_multi: invalid inputs")
 }
 
 /// Peak internal bit-width the rescale needs before the shift narrows it.

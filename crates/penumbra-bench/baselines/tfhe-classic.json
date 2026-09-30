@@ -10,7 +10,7 @@
       "client_key_bytes": 23940,
       "server_key_bytes": 120419227,
       "input_ct_bytes": 6322708,
-      "output_ct_bytes": 98812,
+      "output_ct_bytes": 16492,
       "cost_proxy": {
         "cmp_pbs_ops": 1,
         "ct_add": 31,
@@ -18,7 +18,7 @@
         "scalar_mul": 1
       },
       "measured_totals": {
-        "pbs": 137
+        "pbs": 91
       },
       "labels_matched": 1,
       "labels_checked": 1
@@ -40,7 +40,7 @@
         "scalar_mul": 114
       },
       "measured_totals": {
-        "pbs": 9104
+        "pbs": 6134
       },
       "labels_matched": 1,
       "labels_checked": 1
@@ -60,7 +60,7 @@
         "scalar_mul": 140
       },
       "measured_totals": {
-        "pbs": 13376
+        "pbs": 4704
       },
       "labels_matched": 1,
       "labels_checked": 1
@@ -81,7 +81,7 @@
         "scalar_mul": 76
       },
       "measured_totals": {
-        "pbs": 4156
+        "pbs": 1699
       },
       "labels_matched": 1,
       "labels_checked": 1

@@ -6,10 +6,10 @@ use tfhe::shortint::Ciphertext;
 use penumbra_core::ops::Op;
 use rayon::prelude::*;
 
-use super::{CtVec, EvalCtx};
+use super::{CtVec, EvalCtx, WidthAwareOp};
 use crate::backend::TfheBackend;
 use crate::keys::MESSAGE_BITS;
-
+use crate::width::{resize_tensor, scalar_blocks, tensor_blocks, value_blocks, NodeWidths};
 /// Minimum bits needed to represent every entry of a LUT (its true output width).
 fn lut_output_bits(lut: &[u64]) -> usize {
     let max = lut.iter().copied().max().unwrap_or(0);
@@ -56,8 +56,14 @@ pub struct Requant {
     pub channel_size: usize,
 }
 
-impl Op<TfheBackend> for Requant {
-    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+impl WidthAwareOp for Requant {
+    fn eval_with_widths(
+        &self,
+        ctx: &EvalCtx,
+        inputs: &[&CtVec],
+        widths: &NodeWidths,
+    ) -> Vec<CtVec> {
+        let in_cts = inputs[0];
         let sk = ctx.sk;
         let shortint_sk = sk.as_ref();
 
@@ -88,27 +94,39 @@ impl Op<TfheBackend> for Requant {
             ctx.num_blocks
         );
 
-        let max_val = (1i64 << self.out_bits) - 1;
-
         let per_channel = !self.mults.is_empty();
         if per_channel {
             assert!(
-                self.channel_size >= 1,
-                "Requant per-channel channel_size must be >= 1"
+                self.channel_size > 0,
+                "Requant per-channel requires non-zero channel_size"
             );
             assert_eq!(
-                inputs.len() % self.channel_size,
+                self.mults.len(),
+                self.shifts.len(),
+                "Requant per-channel: {} mults != {} shifts",
+                self.mults.len(),
+                self.shifts.len()
+            );
+            assert_eq!(
+                self.mults.len(),
+                self.round_biases.len(),
+                "Requant per-channel: {} mults != {} round_biases",
+                self.mults.len(),
+                self.round_biases.len()
+            );
+            assert_eq!(
+                in_cts.len() % self.channel_size,
                 0,
                 "Requant per-channel: {} elements not divisible by channel_size {}",
-                inputs.len(),
+                in_cts.len(),
                 self.channel_size
             );
             assert_eq!(
-                inputs.len() / self.channel_size,
+                in_cts.len() / self.channel_size,
                 self.mults.len(),
                 "Requant per-channel: {} channels (len {} / channel_size {}) != {} multipliers",
-                inputs.len() / self.channel_size,
-                inputs.len(),
+                in_cts.len() / self.channel_size,
+                in_cts.len(),
                 self.channel_size,
                 self.mults.len()
             );
@@ -130,10 +148,49 @@ impl Op<TfheBackend> for Requant {
             self.zero_point
         );
 
+        let max_val = (1i64 << self.out_bits) - 1;
+
+        let nb = ctx.num_blocks;
+        let ib = widths.input_bits(0, nb);
+        let ob = widths.output_bits(0, nb);
+
+        let c = tensor_blocks(in_cts, ib, nb);
+        let internal = if self.mults.is_empty() {
+            penumbra_core::bitwidth::requant_internal_bits(
+                MESSAGE_BITS * c,
+                self.mult,
+                self.round_bias,
+                self.clamp_lo,
+            )
+        } else {
+            self.mults
+                .iter()
+                .zip(&self.round_biases)
+                .map(|(&m, &rb)| {
+                    penumbra_core::bitwidth::requant_internal_bits(
+                        MESSAGE_BITS * c,
+                        m,
+                        rb,
+                        self.clamp_lo,
+                    )
+                })
+                .max()
+                .expect("per-channel Requant has at least one channel")
+        };
+
+        let r = value_blocks(internal, nb)
+            .max(c)
+            .max(scalar_blocks(self.clamp_lo, nb))
+            .max(scalar_blocks(max_val, nb))
+            .max(scalar_blocks(self.zero_point as i64, nb));
+
+        let in_resized = resize_tensor(sk, in_cts, r);
+
         let table = self.clamp_lut.clone();
         let lut = shortint_sk.generate_lookup_table(move |v| *table.get(v as usize).unwrap_or(&0));
+        let o = value_blocks(ob, nb);
 
-        inputs
+        let out: CtVec = in_resized
             .par_iter()
             .enumerate()
             .map(|(idx, ct)| {
@@ -147,7 +204,7 @@ impl Op<TfheBackend> for Requant {
                 } else {
                     (self.mult, self.shift, self.round_bias as i64)
                 };
-                let floored = sk.scalar_max_parallelized(ct, self.clamp_lo);
+                let floored = sk.scalar_max_parallelized(ct.as_ref(), self.clamp_lo);
                 let scaled = if mult == 1 {
                     floored
                 } else {
@@ -168,14 +225,22 @@ impl Op<TfheBackend> for Requant {
                 let saturated = sk.scalar_min_parallelized(&shifted, max_val);
                 let mapped: Ciphertext =
                     shortint_sk.apply_lookup_table(&saturated.blocks()[0], &lut);
-                let mut blocks = Vec::with_capacity(ctx.num_blocks);
+                let mut blocks = Vec::with_capacity(o);
                 blocks.push(mapped);
-                for _ in 1..ctx.num_blocks {
+                for _ in 1..o {
                     blocks.push(shortint_sk.create_trivial(0));
                 }
                 SignedRadixCiphertext::from(blocks)
             })
-            .collect()
+            .collect();
+
+        vec![out]
+    }
+}
+
+impl Op<TfheBackend> for Requant {
+    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+        super::single(self.eval_with_widths(ctx, &[inputs], &NodeWidths::Uniform))
     }
 
     fn output_bits(&self, _input_bits: usize) -> usize {

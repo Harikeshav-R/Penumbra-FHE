@@ -132,8 +132,9 @@ SQNR is low.
 
 ## The bit-width budget (why requantization exists)
 
-A value is carried as a **signed radix integer** of `num_blocks` blocks; each block holds
-`MESSAGE_BITS = 2` bits, so the radix holds `num_blocks × 2` bits (`PROJECT.md` §9). A
+A value is carried as a **signed radix integer** sized to its derived bit width, bounded by the
+model-level ceiling `num_blocks` blocks; each block holds `MESSAGE_BITS = 2` bits, so the radix
+capacity ceiling is `num_blocks × 2` bits (`PROJECT.md` §9). A
 `Linear`/`Conv2d` summing `N` products of `b`-bit values produces an accumulator needing
 ~`b + log2(N)` bits — it **grows every layer**. A bootstrap (the only way to apply an activation)
 is feasible only over a narrow single-block value, so between accumulator layers the wide value

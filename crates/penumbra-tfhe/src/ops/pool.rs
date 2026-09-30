@@ -6,9 +6,9 @@ use penumbra_core::ops::Op;
 use rayon::prelude::*;
 use tfhe::integer::SignedRadixCiphertext;
 
-use super::{CtVec, EvalCtx};
+use super::{CtVec, EvalCtx, WidthAwareOp};
 use crate::backend::TfheBackend;
-
+use crate::width::{resize_tensor, tensor_blocks, value_blocks, NodeWidths};
 /// Spatial pooling over a flattened `[channels][in_h][in_w]` feature map.
 pub struct Pool {
     pub mode: PoolMode,
@@ -86,13 +86,19 @@ impl Pool {
     }
 }
 
-impl Op<TfheBackend> for Pool {
-    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+impl WidthAwareOp for Pool {
+    fn eval_with_widths(
+        &self,
+        ctx: &EvalCtx,
+        inputs: &[&CtVec],
+        widths: &NodeWidths,
+    ) -> Vec<CtVec> {
+        let in_cts = inputs[0];
         assert_eq!(
-            inputs.len(),
+            in_cts.len(),
             self.channels * self.in_h * self.in_w,
             "Pool input length {} != channels*in_h*in_w = {}*{}*{}",
-            inputs.len(),
+            in_cts.len(),
             self.channels,
             self.in_h,
             self.in_w
@@ -115,17 +121,47 @@ impl Op<TfheBackend> for Pool {
             self.in_w + 2 * self.padding
         );
 
+        let nb = ctx.num_blocks;
+        let ib = widths.input_bits(0, nb);
+        let ob = widths.output_bits(0, nb);
+        let sk = ctx.sk;
+
+        let in_resized: Vec<SignedRadixCiphertext> = match self.mode {
+            PoolMode::Avg => {
+                let o = value_blocks(ob, nb);
+                resize_tensor(sk, in_cts, o)
+                    .into_iter()
+                    .map(|c| c.into_owned())
+                    .collect()
+            }
+            PoolMode::Max => {
+                let c = tensor_blocks(in_cts, ib, nb);
+                resize_tensor(sk, in_cts, c)
+                    .into_iter()
+                    .map(|c| c.into_owned())
+                    .collect()
+            }
+        };
+
         let (out_h, out_w) = self.out_dims();
         let plane = out_h * out_w;
-        (0..self.channels * plane)
+        let out: CtVec = (0..self.channels * plane)
             .into_par_iter()
             .map(|idx| {
                 let c = idx / plane;
                 let oy = (idx % plane) / out_w;
                 let ox = idx % out_w;
-                self.eval_window(ctx, inputs, c, oy, ox)
+                self.eval_window(ctx, &in_resized, c, oy, ox)
             })
-            .collect()
+            .collect();
+
+        vec![out]
+    }
+}
+
+impl Op<TfheBackend> for Pool {
+    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+        super::single(self.eval_with_widths(ctx, &[inputs], &NodeWidths::Uniform))
     }
 
     fn output_bits(&self, input_bits: usize) -> usize {

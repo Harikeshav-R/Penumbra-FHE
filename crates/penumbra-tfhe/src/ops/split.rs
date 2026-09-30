@@ -2,12 +2,57 @@
 
 use penumbra_core::ops::Op;
 
-use super::{CtVec, EvalCtx};
+use super::{CtVec, EvalCtx, WidthAwareOp};
 use crate::backend::TfheBackend;
+use crate::width::{resize_tensor, tensor_blocks, NodeWidths};
 
 /// Contiguous segmentation of a flat wire into N output tensors.
 pub struct Split {
     pub sizes: Vec<usize>,
+}
+
+impl WidthAwareOp for Split {
+    fn eval_with_widths(
+        &self,
+        ctx: &EvalCtx,
+        inputs: &[&CtVec],
+        widths: &NodeWidths,
+    ) -> Vec<CtVec> {
+        assert_eq!(
+            inputs.len(),
+            1,
+            "Split takes exactly one input tensor; got {}",
+            inputs.len()
+        );
+        let in_cts = inputs[0];
+        let total: usize = self.sizes.iter().sum();
+        assert_eq!(
+            in_cts.len(),
+            total,
+            "Split input length {} does not match sum of declared sizes {}",
+            in_cts.len(),
+            total
+        );
+
+        let nb = ctx.num_blocks;
+        let ib = widths.input_bits(0, nb);
+        let c = tensor_blocks(in_cts, ib, nb);
+        let sk = ctx.sk;
+
+        let resized = resize_tensor(sk, in_cts, c);
+
+        let mut results = Vec::with_capacity(self.sizes.len());
+        let mut offset = 0;
+        for &sz in &self.sizes {
+            let seg: CtVec = resized[offset..offset + sz]
+                .iter()
+                .map(|item| item.clone().into_owned())
+                .collect();
+            results.push(seg);
+            offset += sz;
+        }
+        results
+    }
 }
 
 impl Op<TfheBackend> for Split {
@@ -19,29 +64,8 @@ impl Op<TfheBackend> for Split {
         input_bits
     }
 
-    fn eval_multi(&self, _ctx: &EvalCtx, inputs: &[&CtVec]) -> Vec<CtVec> {
-        assert_eq!(
-            inputs.len(),
-            1,
-            "Split takes exactly one input tensor; got {}",
-            inputs.len()
-        );
-        let total: usize = self.sizes.iter().sum();
-        assert_eq!(
-            inputs[0].len(),
-            total,
-            "Split input length {} does not match sum of declared sizes {}",
-            inputs[0].len(),
-            total
-        );
-
-        let mut results = Vec::with_capacity(self.sizes.len());
-        let mut offset = 0;
-        for &sz in &self.sizes {
-            results.push(inputs[0][offset..offset + sz].to_vec());
-            offset += sz;
-        }
-        results
+    fn eval_multi(&self, ctx: &EvalCtx, inputs: &[&CtVec]) -> Vec<CtVec> {
+        self.eval_with_widths(ctx, inputs, &NodeWidths::Uniform)
     }
 
     fn output_bits_multi(&self, input_bits: &[usize]) -> Vec<usize> {

@@ -3,8 +3,9 @@
 use penumbra_core::ops::Op;
 use rayon::prelude::*;
 
-use super::{CtVec, EvalCtx};
+use super::{CtVec, EvalCtx, WidthAwareOp};
 use crate::backend::TfheBackend;
+use crate::width::{resize, scalar_blocks, tensor_blocks, value_blocks, NodeWidths};
 
 /// `out[i] = (x[indices[i]] >= thresholds[i]) ? 1 : 0` — one comparison PBS per entry.
 pub struct Compare {
@@ -12,29 +13,51 @@ pub struct Compare {
     pub thresholds: Vec<i64>,
 }
 
-impl Op<TfheBackend> for Compare {
-    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+impl WidthAwareOp for Compare {
+    fn eval_with_widths(
+        &self,
+        ctx: &EvalCtx,
+        inputs: &[&CtVec],
+        widths: &NodeWidths,
+    ) -> Vec<CtVec> {
+        let in_cts = inputs[0];
         if let Some((i, &idx)) = self
             .indices
             .iter()
             .enumerate()
-            .find(|&(_, &idx)| idx >= inputs.len())
+            .find(|&(_, &idx)| idx >= in_cts.len())
         {
             panic!(
                 "Compare indices[{i}] = {idx} is out of range for an input tensor of length {}; \
                  the graph wiring feeding this Compare is wrong",
-                inputs.len()
+                in_cts.len()
             );
         }
         let sk = ctx.sk;
-        self.indices
+        let nb = ctx.num_blocks;
+        let ib = widths.input_bits(0, nb);
+        let ob = widths.output_bits(0, nb);
+        let c = tensor_blocks(in_cts, ib, nb);
+
+        let out: CtVec = self
+            .indices
             .par_iter()
             .zip(self.thresholds.par_iter())
             .map(|(&idx, &t)| {
-                let ge = sk.scalar_ge_parallelized(&inputs[idx], t);
-                ge.into_radix(ctx.num_blocks, sk)
+                let w = c.max(scalar_blocks(t, nb));
+                let resized = resize(sk, &in_cts[idx], w);
+                let ge = sk.scalar_ge_parallelized(resized.as_ref(), t);
+                ge.into_radix(value_blocks(ob, nb), sk)
             })
-            .collect()
+            .collect();
+
+        vec![out]
+    }
+}
+
+impl Op<TfheBackend> for Compare {
+    fn eval(&self, ctx: &EvalCtx, inputs: &CtVec) -> CtVec {
+        super::single(self.eval_with_widths(ctx, &[inputs], &NodeWidths::Uniform))
     }
 
     fn output_bits(&self, _input_bits: usize) -> usize {

@@ -1,6 +1,13 @@
 //! Tests for topological evaluation, Kahn ordering, and multi-output ops in penumbra-core.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+
+type SeenBitsRecord = (&'static str, Vec<usize>, Vec<usize>);
+
+thread_local! {
+    static SEEN_BITS: RefCell<Vec<SeenBitsRecord>> = const { RefCell::new(Vec::new()) };
+}
 
 use penumbra_core::backend::{Backend, CtVec, EvalCtx};
 use penumbra_core::eval::evaluate_graph;
@@ -29,6 +36,19 @@ impl Backend for StubBackend {
             })),
             _ => Err(format!("op {} unsupported in StubBackend", spec.op_type())),
         }
+    }
+
+    fn build_op_with_bits(
+        &self,
+        spec: &OpSpec,
+        input_bits: &[usize],
+        output_bits: &[usize],
+    ) -> Result<Box<dyn Op<Self>>, String> {
+        SEEN_BITS.with(|b| {
+            b.borrow_mut()
+                .push((spec.op_type(), input_bits.to_vec(), output_bits.to_vec()));
+        });
+        self.build_op(spec)
     }
 
     fn check_graph_budget(&self, _graph: &Graph) -> Result<(), String> {
@@ -407,5 +427,58 @@ fn node_declaring_wrong_number_of_outputs_fails() {
     assert!(
         err.contains("node 'bad_add' (Add) declares 2 output tensor(s) but its op produced 1"),
         "got: {err}"
+    );
+}
+
+#[test]
+fn eval_loop_passes_derived_bit_widths_to_backend() {
+    SEEN_BITS.with(|b| b.borrow_mut().clear());
+
+    let graph = Graph {
+        schema_version: SCHEMA_VERSION.to_string(),
+        num_blocks: 8,
+        input_bits: 4,
+        inputs: vec!["a".to_string(), "b".to_string()],
+        outputs: vec!["out".to_string()],
+        nodes: vec![
+            Node {
+                name: "add1".to_string(),
+                op: OpSpec::Add {},
+                inputs: vec!["a".to_string(), "b".to_string()],
+                outputs: vec!["add1_out".to_string()],
+            },
+            Node {
+                name: "split".to_string(),
+                op: OpSpec::Split { sizes: vec![1, 1] },
+                inputs: vec!["add1_out".to_string()],
+                outputs: vec!["s0".to_string(), "s1".to_string()],
+            },
+            Node {
+                name: "out_node".to_string(),
+                op: OpSpec::Add {},
+                inputs: vec!["s0".to_string(), "s1".to_string()],
+                outputs: vec!["out".to_string()],
+            },
+        ],
+    };
+
+    let backend = StubBackend;
+    let ctx = EvalCtx::new(&(), 8);
+    let mut inputs = HashMap::new();
+    inputs.insert("a".to_string(), vec![1, 2]);
+    inputs.insert("b".to_string(), vec![3, 4]);
+
+    let res =
+        evaluate_graph(&backend, &ctx, &graph, inputs).expect("evaluate_graph should succeed");
+    assert_eq!(res["out"], vec![4 + 6]);
+
+    let recorded = SEEN_BITS.with(|b| b.borrow().clone());
+    assert_eq!(
+        recorded,
+        vec![
+            ("Add", vec![4, 4], vec![5]),
+            ("Split", vec![5], vec![5, 5]),
+            ("Add", vec![5, 5], vec![6]),
+        ]
     );
 }

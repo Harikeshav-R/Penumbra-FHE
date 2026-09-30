@@ -93,14 +93,14 @@ fn evaluate_graph_inner<B: Backend>(
     let t_total = profile.as_ref().map(|_| Instant::now());
 
     let mut env = inputs;
+    let mut bits_env: HashMap<String, usize> = graph
+        .inputs
+        .iter()
+        .map(|n| (n.clone(), graph.input_bits))
+        .collect();
     let order = crate::ir::topological_order(graph)?;
     for &idx in &order {
         let node = &graph.nodes[idx];
-        let t_build = profile.as_ref().map(|_| Instant::now());
-        let op = backend
-            .build_op(&node.op)
-            .map_err(|e| format!("node '{}': {e}", node.name))?;
-        let build = t_build.map(|t| t.elapsed()).unwrap_or_default();
 
         if node.inputs.is_empty() {
             return Err(format!(
@@ -123,6 +123,28 @@ fn evaluate_graph_inner<B: Backend>(
                 })
             })
             .collect::<Result<_, _>>()?;
+
+        let input_bits: Vec<usize> = node
+            .inputs
+            .iter()
+            .map(|name| {
+                bits_env.get(name).copied().ok_or_else(|| {
+                    format!(
+                        "node '{}' reads tensor '{name}' whose bit width was never derived",
+                        node.name
+                    )
+                })
+            })
+            .collect::<Result<_, _>>()?;
+
+        let output_bits = crate::bitwidth::op_spec_output_bits_multi_checked(&node.op, &input_bits)
+            .map_err(|e| format!("node '{}' ({}): {e}", node.name, node.op.op_type()))?;
+
+        let t_build = profile.as_ref().map(|_| Instant::now());
+        let op = backend
+            .build_op_with_bits(&node.op, &input_bits, &output_bits)
+            .map_err(|e| format!("node '{}': {e}", node.name))?;
+        let build = t_build.map(|t| t.elapsed()).unwrap_or_default();
 
         let input_lens: Vec<usize> = if profile.is_some() {
             input_cts.iter().map(|v| v.len()).collect()
@@ -182,7 +204,10 @@ fn evaluate_graph_inner<B: Backend>(
                 results.len()
             ));
         }
-        for (output_name, result) in node.outputs.iter().zip(results) {
+        for (i, (output_name, result)) in node.outputs.iter().zip(results).enumerate() {
+            if let Some(&b) = output_bits.get(i) {
+                bits_env.insert(output_name.clone(), b);
+            }
             env.insert(output_name.clone(), result);
         }
     }

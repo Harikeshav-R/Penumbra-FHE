@@ -8,7 +8,18 @@ use penumbra_core::ops::Op;
 use tfhe::integer::{IntegerCiphertext, RadixClientKey, ServerKey, SignedRadixCiphertext};
 use tfhe::shortint::Ciphertext;
 
-use crate::ops::{Activation, Add, Argmax, Compare, Concat, Conv2d, Linear, Pool, Requant, Split};
+use crate::ops::{
+    Activation, Add, Argmax, Compare, Concat, Conv2d, Linear, Pool, Requant, Split, WidthAwareOp,
+    WithWidths,
+};
+use crate::width::NodeWidths;
+
+fn sized<O: WidthAwareOp + 'static>(op: O, w: Option<NodeWidths>) -> Box<dyn Op<TfheBackend>> {
+    match w {
+        Some(w) => Box::new(WithWidths { op, widths: w }),
+        None => Box::new(op),
+    }
+}
 
 /// The concrete TFHE / CGGI backend.
 #[derive(Debug, Clone, Copy, Default)]
@@ -21,33 +32,27 @@ impl TfheBackend {
         Self { profile }
     }
 }
-impl Backend for TfheBackend {
-    type Ciphertext = SignedRadixCiphertext;
-    type ServerKey = ServerKey;
-    type ClientKey = RadixClientKey;
 
-    fn name(&self) -> &'static str {
-        crate::keys::SCHEME_TFHE
-    }
-
-    fn check_graph_budget(&self, graph: &Graph) -> Result<(), String> {
-        penumbra_core::bitwidth::check_graph_bit_width_budget(graph)
-    }
-    fn measured_counters(&self) -> Vec<(&'static str, u64)> {
-        vec![("pbs", tfhe::shortint::server_key::get_pbs_count())]
-    }
-    fn build_op(&self, spec: &OpSpec) -> Result<Box<dyn Op<Self>>, String> {
+impl TfheBackend {
+    fn build(
+        &self,
+        spec: &OpSpec,
+        widths: Option<NodeWidths>,
+    ) -> Result<Box<dyn Op<Self>>, String> {
         spec.validate()?;
         match spec {
             OpSpec::Linear {
                 weights,
                 bias,
                 weight_bits,
-            } => Ok(Box::new(Linear {
-                weights: weights.clone(),
-                bias: bias.clone(),
-                weight_bits: *weight_bits,
-            })),
+            } => Ok(sized(
+                Linear {
+                    weights: weights.clone(),
+                    bias: bias.clone(),
+                    weight_bits: *weight_bits,
+                },
+                widths,
+            )),
             OpSpec::Conv2d {
                 weights,
                 bias,
@@ -59,25 +64,34 @@ impl Backend for TfheBackend {
                 kernel_w,
                 stride,
                 padding,
-            } => Ok(Box::new(Conv2d {
-                weights: weights.clone(),
-                bias: bias.clone(),
-                weight_bits: *weight_bits,
-                in_h: *in_h,
-                in_w: *in_w,
-                in_channels: *in_channels,
-                kernel_h: *kernel_h,
-                kernel_w: *kernel_w,
-                stride: *stride,
-                padding: *padding,
-            })),
-            OpSpec::Activation { lut, output_bits } => Ok(Box::new(Activation {
-                lut: lut.clone(),
-                output_bits: *output_bits,
-            })),
-            OpSpec::Argmax { threshold } => Ok(Box::new(Argmax {
-                threshold: *threshold,
-            })),
+            } => Ok(sized(
+                Conv2d {
+                    weights: weights.clone(),
+                    bias: bias.clone(),
+                    weight_bits: *weight_bits,
+                    in_h: *in_h,
+                    in_w: *in_w,
+                    in_channels: *in_channels,
+                    kernel_h: *kernel_h,
+                    kernel_w: *kernel_w,
+                    stride: *stride,
+                    padding: *padding,
+                },
+                widths,
+            )),
+            OpSpec::Activation { lut, output_bits } => Ok(sized(
+                Activation {
+                    lut: lut.clone(),
+                    output_bits: *output_bits,
+                },
+                widths,
+            )),
+            OpSpec::Argmax { threshold } => Ok(sized(
+                Argmax {
+                    threshold: *threshold,
+                },
+                widths,
+            )),
             OpSpec::Requant {
                 shift,
                 mult,
@@ -90,19 +104,22 @@ impl Backend for TfheBackend {
                 shifts,
                 round_biases,
                 channel_size,
-            } => Ok(Box::new(Requant {
-                shift: *shift,
-                mult: *mult,
-                round_bias: *round_bias,
-                clamp_lo: *clamp_lo,
-                zero_point: *zero_point,
-                out_bits: *out_bits,
-                clamp_lut: clamp_lut.clone(),
-                mults: mults.clone(),
-                shifts: shifts.clone(),
-                round_biases: round_biases.clone(),
-                channel_size: channel_size.unwrap_or(0),
-            })),
+            } => Ok(sized(
+                Requant {
+                    shift: *shift,
+                    mult: *mult,
+                    round_bias: *round_bias,
+                    clamp_lo: *clamp_lo,
+                    zero_point: *zero_point,
+                    out_bits: *out_bits,
+                    clamp_lut: clamp_lut.clone(),
+                    mults: mults.clone(),
+                    shifts: shifts.clone(),
+                    round_biases: round_biases.clone(),
+                    channel_size: channel_size.unwrap_or(0),
+                },
+                widths,
+            )),
             OpSpec::Pool {
                 mode,
                 in_h,
@@ -122,32 +139,78 @@ impl Backend for TfheBackend {
                         ))
                     }
                 };
-                Ok(Box::new(Pool {
-                    mode: pool_mode,
-                    in_h: *in_h,
-                    in_w: *in_w,
-                    channels: *channels,
-                    pool_h: *pool_h,
-                    pool_w: *pool_w,
-                    stride: *stride,
-                    padding: *padding,
-                }))
+                Ok(sized(
+                    Pool {
+                        mode: pool_mode,
+                        in_h: *in_h,
+                        in_w: *in_w,
+                        channels: *channels,
+                        pool_h: *pool_h,
+                        pool_w: *pool_w,
+                        stride: *stride,
+                        padding: *padding,
+                    },
+                    widths,
+                ))
             }
-            OpSpec::Add {} => Ok(Box::new(Add)),
+            OpSpec::Add {} => Ok(sized(Add, widths)),
             OpSpec::Compare {
                 indices,
                 thresholds,
-            } => Ok(Box::new(Compare {
-                indices: indices.clone(),
-                thresholds: thresholds.clone(),
-            })),
-            OpSpec::Concat { sizes } => Ok(Box::new(Concat {
-                sizes: sizes.clone(),
-            })),
-            OpSpec::Split { sizes } => Ok(Box::new(Split {
-                sizes: sizes.clone(),
-            })),
+            } => Ok(sized(
+                Compare {
+                    indices: indices.clone(),
+                    thresholds: thresholds.clone(),
+                },
+                widths,
+            )),
+            OpSpec::Concat { sizes } => Ok(sized(
+                Concat {
+                    sizes: sizes.clone(),
+                },
+                widths,
+            )),
+            OpSpec::Split { sizes } => Ok(sized(
+                Split {
+                    sizes: sizes.clone(),
+                },
+                widths,
+            )),
         }
+    }
+}
+impl Backend for TfheBackend {
+    type Ciphertext = SignedRadixCiphertext;
+    type ServerKey = ServerKey;
+    type ClientKey = RadixClientKey;
+
+    fn name(&self) -> &'static str {
+        crate::keys::SCHEME_TFHE
+    }
+
+    fn check_graph_budget(&self, graph: &Graph) -> Result<(), String> {
+        penumbra_core::bitwidth::check_graph_bit_width_budget(graph)
+    }
+    fn measured_counters(&self) -> Vec<(&'static str, u64)> {
+        vec![("pbs", tfhe::shortint::server_key::get_pbs_count())]
+    }
+    fn build_op(&self, spec: &OpSpec) -> Result<Box<dyn Op<Self>>, String> {
+        self.build(spec, None)
+    }
+
+    fn build_op_with_bits(
+        &self,
+        spec: &OpSpec,
+        input_bits: &[usize],
+        output_bits: &[usize],
+    ) -> Result<Box<dyn Op<Self>>, String> {
+        self.build(
+            spec,
+            Some(NodeWidths::PerTensor {
+                inputs: input_bits.to_vec(),
+                outputs: output_bits.to_vec(),
+            }),
+        )
     }
 
     fn create_trivial_zero(&self, sk: &Self::ServerKey, num_blocks: usize) -> Self::Ciphertext {
