@@ -188,6 +188,7 @@ fn build_op_rejection_names_the_node() {
         err.contains("unsupported on backend 'stub'"),
         "error must preserve the backend's own message: {err}"
     );
+    assert!(RejectingBackend.measured_counters().is_empty());
 }
 
 #[test]

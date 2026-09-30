@@ -60,3 +60,32 @@ pub fn decode_tagged<T: DeserializeOwned>(
         .map_err(|e| format!("cannot deserialize {kind} (is it a Penumbra ciphertext?): {e}"))?;
     Ok(tagged.payload)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encode_decode_tagged_roundtrip() {
+        let payload = vec![1i64, 2, 3];
+        let bytes = encode_tagged(&payload, "tfhe", "test_tensor").unwrap();
+        let decoded: Vec<i64> = decode_tagged(&bytes, "tfhe", "test_tensor").unwrap();
+        assert_eq!(decoded, payload);
+    }
+
+    #[test]
+    fn test_decode_tagged_scheme_mismatch() {
+        let payload = vec![1i64, 2, 3];
+        let bytes = encode_tagged(&payload, "tfhe", "ciphertext").unwrap();
+        let err = decode_tagged::<Vec<i64>>(&bytes, "ckks", "ciphertext").unwrap_err();
+        assert!(err
+            .contains("backend/scheme mismatch for ciphertext: expected 'ckks', but found 'tfhe'"));
+    }
+
+    #[test]
+    fn test_decode_tagged_corrupted_bytes() {
+        let bad_bytes = vec![0u8, 1, 2];
+        let err = decode_tagged::<Vec<i64>>(&bad_bytes, "tfhe", "ciphertext").unwrap_err();
+        assert!(err.contains("cannot deserialize ciphertext"));
+    }
+}
