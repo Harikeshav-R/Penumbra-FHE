@@ -31,10 +31,14 @@ fn test_op_set_parity_every_committed_fixture_no_crypto() {
         // 2. CKKS budget check and build_op for every node
         #[cfg(feature = "ckks")]
         {
-            if fixture.key == "phase8_trees" {
+            if fixture.key == "phase8_trees" || fixture.key == "phase8_xgb" {
+                let err = ckks
+                    .check_graph_budget(&loaded.graph)
+                    .expect_err("CKKS must reject tree ensemble models by depth budget");
                 assert!(
-                    ckks.check_graph_budget(&loaded.graph).is_err(),
-                    "CKKS must reject phase8_trees by depth budget"
+                    err.contains("budget") && err.contains("depth"),
+                    "expected depth budget rejection for '{}', got: {err}",
+                    fixture.key
                 );
             } else {
                 let branch_backend;

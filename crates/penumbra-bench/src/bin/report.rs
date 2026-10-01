@@ -1,13 +1,22 @@
 //! `penumbra-bench-report` — CLI tool emitting benchmark and comparison reports.
 //!
-//! Generates latency, op breakdown, and resource overhead tables across models and backends.
+//! Supports diagnostics, CKKS calibration, paper protocol benchmarks, and security input extraction.
 
 use std::fs;
-use std::path::PathBuf;
-use std::process::ExitCode;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitCode};
 
 use penumbra_bench::available_backends;
 use penumbra_bench::models::{find, load, ModelFixture, MODELS};
+#[cfg(feature = "ckks")]
+use penumbra_bench::paper::{calibrate_ckks_model, CalibrationArtifact, ModelCalibrationResult};
+use penumbra_bench::paper::{
+    run_metrics_worker, run_paper_model, run_prepare_worker, run_server_rss_worker,
+};
+use penumbra_bench::protocol::{
+    MetricsWorkerConfig, PaperConfig, PaperModelRun, PaperReport, PaperReportMeta,
+    PrepareWorkerConfig, ServerRssWorkerConfig,
+};
 use penumbra_bench::report::{run_model, to_json, to_markdown, ModelRun, Report, ReportMeta};
 
 #[cfg(feature = "ckks")]
@@ -23,14 +32,32 @@ fn main() -> ExitCode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Diagnostics,
+    Calibrate,
+    Paper,
+    SecurityInputs,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Markdown,
     Json,
 }
 
+#[derive(Debug)]
+enum WorkerKind {
+    Prepare,
+    ServerRss,
+    Metrics,
+}
+
 struct CliArgs {
+    mode: Mode,
     models: Vec<&'static ModelFixture>,
     backends: Vec<String>,
+    threads: Option<usize>,
     tfhe_profile: penumbra_tfhe::keys::TfheProfile,
     samples: usize,
     format: OutputFormat,
@@ -39,21 +66,74 @@ struct CliArgs {
     write_baseline_path: Option<PathBuf>,
     #[allow(dead_code)]
     ckks_poly_degree: Option<usize>,
+    worker: Option<(WorkerKind, PathBuf)>,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
     let mut args = std::env::args().skip(1);
+    let mut mode = Mode::Diagnostics;
     let mut models_arg: Option<String> = None;
     let mut backends_arg: Option<String> = None;
+    let mut threads: Option<usize> = None;
     let mut samples: usize = 1;
+    let mut samples_explicit = false;
     let mut format = OutputFormat::Markdown;
     let mut out_path: Option<PathBuf> = None;
     let mut baseline_path: Option<PathBuf> = None;
     let mut write_baseline_path: Option<PathBuf> = None;
     let mut tfhe_profile = penumbra_tfhe::keys::TfheProfile::default();
+    let mut tfhe_profile_explicit = false;
     let mut ckks_poly_degree: Option<usize> = None;
+    let mut worker_kind: Option<WorkerKind> = None;
+    let mut worker_config: Option<PathBuf> = None;
+
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--mode" => {
+                let m = args.next().ok_or_else(|| {
+                    "--mode requires an argument ('diagnostics', 'calibrate', 'paper', 'security-inputs')".to_string()
+                })?;
+                mode = match m.to_lowercase().as_str() {
+                    "diagnostics" => Mode::Diagnostics,
+                    "calibrate" => Mode::Calibrate,
+                    "paper" => Mode::Paper,
+                    "security-inputs" => Mode::SecurityInputs,
+                    other => {
+                        return Err(format!(
+                            "unknown mode '{other}'; valid modes are 'diagnostics', 'calibrate', 'paper', 'security-inputs'"
+                        ));
+                    }
+                };
+            }
+            "--threads" => {
+                let t = args
+                    .next()
+                    .ok_or_else(|| "--threads requires an integer argument".to_string())?;
+                let n = t
+                    .parse::<usize>()
+                    .map_err(|e| format!("invalid --threads value '{t}': {e}"))?;
+                if n == 0 {
+                    return Err("--threads must be > 0".to_string());
+                }
+                threads = Some(n);
+            }
+            "--worker" => {
+                let w = args.next().ok_or_else(|| {
+                    "--worker requires an argument ('prepare', 'server-rss', 'metrics')".to_string()
+                })?;
+                worker_kind = Some(match w.to_lowercase().as_str() {
+                    "prepare" => WorkerKind::Prepare,
+                    "server-rss" => WorkerKind::ServerRss,
+                    "metrics" => WorkerKind::Metrics,
+                    other => return Err(format!("unknown worker kind '{other}'")),
+                });
+            }
+            "--config" => {
+                let c = args
+                    .next()
+                    .ok_or_else(|| "--config requires a file path argument".to_string())?;
+                worker_config = Some(PathBuf::from(c));
+            }
             "--models" => {
                 models_arg = Some(args.next().ok_or_else(|| {
                     "--models requires an argument (e.g. 'all' or 'phase2_logreg')".to_string()
@@ -74,6 +154,7 @@ fn parse_args() -> Result<CliArgs, String> {
                 if samples == 0 {
                     return Err("--samples must be >= 1".to_string());
                 }
+                samples_explicit = true;
             }
             "--format" => {
                 let f = args.next().ok_or_else(|| {
@@ -100,6 +181,7 @@ fn parse_args() -> Result<CliArgs, String> {
                     "--tfhe-profile requires an argument (e.g. 'classic')".to_string()
                 })?;
                 tfhe_profile = penumbra_tfhe::keys::TfheProfile::from_name(&p)?;
+                tfhe_profile_explicit = true;
             }
             "--ckks-poly-degree" => {
                 let p = args
@@ -124,19 +206,14 @@ fn parse_args() -> Result<CliArgs, String> {
             "-h" | "--help" => {
                 let avail = available_backends().join(", ");
                 let valid_models = MODELS.iter().map(|m| m.key).collect::<Vec<_>>().join(", ");
-                let default_prof = penumbra_tfhe::keys::TfheProfile::default().name();
-                let valid_profiles = penumbra_tfhe::keys::TfheProfile::NAMES.join(", ");
                 println!(
                     "usage: penumbra-bench-report [OPTIONS]\n\n\
                      Options:\n  \
+                       --mode <diagnostics|calibrate|paper|security-inputs>  Operational mode (default: diagnostics)\n  \
+                       --threads <N>            Rayon thread count (required in paper/calibrate modes)\n  \
                        --models <all|key,...>   Models to run (default: all)\n                           \
                                                 Valid keys: {valid_models}\n  \
-                       --backends <name,...>    Backends to run (default: {avail})\n                           \
-                                                Available: {avail}\n  \
-                       --tfhe-profile <name>    TFHE crypto profile (default: {default_prof})\n                           \
-                                                Valid names: {valid_profiles}\n  \
-                       --ckks-poly-degree <N>   CKKS max polynomial degree override (default: 15; 3 for phase8_branch)\n  \
-                       --samples <N>            Number of samples to evaluate per model (default: 1)\n  \
+                       --backends <name,...>    Backends to run (default: {avail})\n  \
                        --format <markdown|json> Output format (default: markdown)\n  \
                        --out <PATH>             Write output to PATH instead of stdout\n  \
                        --baseline <PATH>        Check run against a committed regression baseline\n  \
@@ -150,6 +227,40 @@ fn parse_args() -> Result<CliArgs, String> {
                     "unknown option '{unknown}'. Run with --help to see valid options."
                 ));
             }
+        }
+    }
+
+    let worker = match (worker_kind, worker_config) {
+        (Some(kind), Some(cfg)) => Some((kind, cfg)),
+        (Some(_), None) => return Err("--worker requires --config <PATH>".to_string()),
+        (None, Some(_)) => return Err("--config requires --worker <KIND>".to_string()),
+        (None, None) => None,
+    };
+
+    if worker.is_none() && (mode == Mode::Paper || mode == Mode::Calibrate) {
+        if threads.is_none() {
+            return Err(format!("--threads <N> is required in {:?} mode", mode));
+        }
+        if samples_explicit {
+            return Err(format!("--samples is not permitted in {:?} mode", mode));
+        }
+        if baseline_path.is_some() || write_baseline_path.is_some() {
+            return Err(format!(
+                "--baseline/--write-baseline are not permitted in {:?} mode",
+                mode
+            ));
+        }
+        if tfhe_profile_explicit {
+            return Err(format!(
+                "--tfhe-profile override is not permitted in {:?} mode",
+                mode
+            ));
+        }
+        if ckks_poly_degree.is_some() {
+            return Err(format!(
+                "--ckks-poly-degree override is not permitted in {:?} mode",
+                mode
+            ));
         }
     }
 
@@ -201,13 +312,11 @@ fn parse_args() -> Result<CliArgs, String> {
         }
     };
 
-    if baseline_path.is_some() && write_baseline_path.is_some() {
-        return Err("cannot specify both --baseline and --write-baseline".to_string());
-    }
-
     Ok(CliArgs {
+        mode,
         models,
         backends,
+        threads,
         tfhe_profile,
         samples,
         format,
@@ -215,103 +324,479 @@ fn parse_args() -> Result<CliArgs, String> {
         baseline_path,
         write_baseline_path,
         ckks_poly_degree,
+        worker,
     })
+}
+
+fn configure_threads(threads: Option<usize>) -> Result<(), String> {
+    if let Some(t) = threads {
+        if let Ok(env_val) = std::env::var("RAYON_NUM_THREADS") {
+            if let Ok(parsed) = env_val.parse::<usize>() {
+                if parsed != t {
+                    return Err(format!(
+                        "RAYON_NUM_THREADS ({parsed}) conflicts with --threads ({t})"
+                    ));
+                }
+            }
+        }
+        std::env::set_var("RAYON_NUM_THREADS", t.to_string());
+        let _ = rayon::ThreadPoolBuilder::new()
+            .num_threads(t)
+            .build_global();
+    }
+    Ok(())
+}
+
+fn capture_paper_meta(mode: &str, requested_threads: usize) -> Result<PaperReportMeta, String> {
+    let machine_model = if cfg!(target_os = "macos") {
+        let out = Command::new("sysctl")
+            .args(["-n", "hw.model"])
+            .output()
+            .map_err(|e| format!("sysctl failed: {e}"))?;
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    } else {
+        std::fs::read_to_string("/proc/cpuinfo")
+            .ok()
+            .and_then(|text| {
+                for line in text.lines() {
+                    if line.starts_with("model name") {
+                        return line.split(':').nth(1).map(|s| s.trim().to_string());
+                    }
+                }
+                None
+            })
+            .unwrap_or_else(|| "linux-x86_64".to_string())
+    };
+
+    let os_product_version = if cfg!(target_os = "macos") {
+        let out = Command::new("sw_vers")
+            .args(["-productVersion"])
+            .output()
+            .map_err(|e| format!("sw_vers failed: {e}"))?;
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    } else {
+        std::fs::read_to_string("/etc/os-release")
+            .ok()
+            .and_then(|text| {
+                for line in text.lines() {
+                    if line.starts_with("PRETTY_NAME=") {
+                        return Some(
+                            line.trim_start_matches("PRETTY_NAME=")
+                                .trim_matches('"')
+                                .to_string(),
+                        );
+                    }
+                }
+                None
+            })
+            .unwrap_or_else(|| std::env::consts::OS.to_string())
+    };
+
+    let kernel_version = Command::new("uname")
+        .args(["-r"])
+        .output()
+        .map_err(|e| format!("uname -r failed: {e}"))
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())?;
+
+    let runtime_commit = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .map_err(|e| format!("git rev-parse HEAD failed: {e}"))
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())?;
+
+    let build_commit = env!("PENUMBRA_BUILD_COMMIT").to_string();
+
+    let dirty = Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .map_err(|e| format!("git status failed: {e}"))
+        .map(|out| !out.stdout.is_empty())?;
+
+    let rustc_version = env!("PENUMBRA_BUILD_RUSTC").to_string();
+
+    #[cfg(feature = "ckks")]
+    let hal_name = penumbra_ckks::hal_backend_name().to_string();
+    #[cfg(not(feature = "ckks"))]
+    let hal_name = "none".to_string();
+
+    let actual_threads = rayon::current_num_threads();
+
+    if mode == "paper" || mode == "calibrate" {
+        if dirty {
+            return Err(
+                "working tree has uncommitted changes; paper and calibrate modes require a clean working tree"
+                    .to_string(),
+            );
+        }
+        if runtime_commit != build_commit {
+            return Err(format!(
+                "runtime commit ({runtime_commit}) does not match build commit ({build_commit}); binary must be rebuilt at HEAD"
+            ));
+        }
+    }
+
+    Ok(PaperReportMeta {
+        machine_model,
+        os_product_version,
+        kernel_version,
+        runtime_commit,
+        build_commit,
+        dirty,
+        rustc_version,
+        requested_threads,
+        actual_threads,
+        hal_name,
+        protocol_version: 1,
+        mode: mode.to_string(),
+    })
+}
+
+fn run_worker(kind: WorkerKind, config_path: &Path) -> Result<(), String> {
+    let text = std::fs::read_to_string(config_path)
+        .map_err(|e| format!("cannot read {}: {e}", config_path.display()))?;
+
+    match kind {
+        WorkerKind::Prepare => {
+            let config: PrepareWorkerConfig = serde_json::from_str(&text)
+                .map_err(|e| format!("failed to parse prepare config: {e}"))?;
+            let fixture = find(&config.model_key)?;
+            let model = load(fixture)?;
+            match config.backend.as_str() {
+                "tfhe" => {
+                    let be = penumbra_bench::tfhe_backend();
+                    run_prepare_worker(&be, &model, &config)?;
+                }
+                #[cfg(feature = "ckks")]
+                "ckks" => {
+                    let be = if model.fixture.key == "phase8_branch" {
+                        let p = penumbra_ckks::params::DEFAULT_PARAMS
+                            .with_max_poly_degree(3)
+                            .unwrap();
+                        penumbra_ckks::CkksBackend::new(p)
+                    } else {
+                        penumbra_bench::ckks_backend()
+                    };
+                    run_prepare_worker(&be, &model, &config)?;
+                }
+                other => return Err(format!("unknown backend: {other}")),
+            }
+        }
+        WorkerKind::ServerRss => {
+            let config: ServerRssWorkerConfig = serde_json::from_str(&text)
+                .map_err(|e| format!("failed to parse server-rss config: {e}"))?;
+            let fixture = find(&config.model_key)?;
+            let model = load(fixture)?;
+            match config.backend.as_str() {
+                "tfhe" => {
+                    let be = penumbra_bench::tfhe_backend();
+                    run_server_rss_worker(be, &model, &config)?;
+                }
+                #[cfg(feature = "ckks")]
+                "ckks" => {
+                    let be = if model.fixture.key == "phase8_branch" {
+                        let p = penumbra_ckks::params::DEFAULT_PARAMS
+                            .with_max_poly_degree(3)
+                            .unwrap();
+                        penumbra_ckks::CkksBackend::new(p)
+                    } else {
+                        penumbra_bench::ckks_backend()
+                    };
+                    run_server_rss_worker(be, &model, &config)?;
+                }
+                other => return Err(format!("unknown backend: {other}")),
+            }
+        }
+        WorkerKind::Metrics => {
+            let config: MetricsWorkerConfig = serde_json::from_str(&text)
+                .map_err(|e| format!("failed to parse metrics config: {e}"))?;
+            let fixture = find(&config.model_key)?;
+            let model = load(fixture)?;
+            let run = match config.backend.as_str() {
+                "tfhe" => {
+                    let be = penumbra_bench::tfhe_backend();
+                    run_metrics_worker(be, &model, &config)?
+                }
+                #[cfg(feature = "ckks")]
+                "ckks" => {
+                    let be = if model.fixture.key == "phase8_branch" {
+                        let p = penumbra_ckks::params::DEFAULT_PARAMS
+                            .with_max_poly_degree(3)
+                            .unwrap();
+                        penumbra_ckks::CkksBackend::new(p)
+                    } else {
+                        penumbra_bench::ckks_backend()
+                    };
+                    run_metrics_worker(be, &model, &config)?
+                }
+                other => return Err(format!("unknown backend: {other}")),
+            };
+            let run_json = serde_json::to_string_pretty(&run)
+                .map_err(|e| format!("failed to format run json: {e}"))?;
+            std::fs::write(&config.output_path, run_json)
+                .map_err(|e| format!("cannot write {}: {e}", config.output_path.display()))?;
+        }
+    }
+    Ok(())
 }
 
 fn run() -> Result<(), String> {
     let args = parse_args()?;
-    let mut runs: Vec<ModelRun> = Vec::new();
 
-    for fixture in &args.models {
-        let loaded = load(fixture)?;
-        for backend_name in &args.backends {
-            eprintln!(
-                "Running model '{}' ({}) on backend '{}' ({} sample(s))...",
-                fixture.key, fixture.label, backend_name, args.samples
-            );
-            match backend_name.as_str() {
-                "tfhe" => {
-                    let mut run = run_model(
-                        penumbra_tfhe::TfheBackend::new(args.tfhe_profile),
-                        &loaded,
-                        args.samples,
-                    )?;
-                    run.profile = Some(args.tfhe_profile.name().to_string());
-                    runs.push(run);
-                }
-                #[cfg(feature = "ckks")]
-                "ckks" => {
-                    let mut be = ckks_backend();
-                    let deg = args.ckks_poly_degree.unwrap_or_else(|| {
-                        if loaded.fixture.key == "phase8_branch" {
-                            3
-                        } else {
-                            be.params.max_poly_degree
+    // Internal worker mode
+    if let Some((kind, cfg)) = args.worker {
+        return run_worker(kind, &cfg);
+    }
+
+    configure_threads(args.threads)?;
+
+    match args.mode {
+        Mode::SecurityInputs => {
+            let out = args
+                .out_path
+                .unwrap_or_else(|| PathBuf::from("target/security/inputs.json"));
+            penumbra_bench::security::generate_security_inputs_file(&out)?;
+            eprintln!("Security inputs written to {}", out.display());
+            Ok(())
+        }
+        Mode::Calibrate => {
+            #[cfg(not(feature = "ckks"))]
+            {
+                Err("calibrate mode requires --features ckks".to_string())
+            }
+            #[cfg(feature = "ckks")]
+            {
+                let threads = args.threads.unwrap();
+                let meta = capture_paper_meta("calibrate", threads)?;
+                let mut results: Vec<ModelCalibrationResult> = Vec::new();
+
+                for fixture in &args.models {
+                    let loaded = load(fixture)?;
+                    if loaded.paper.is_none() {
+                        return Err(format!(
+                            "model '{}' does not have paper protocol data",
+                            fixture.key
+                        ));
+                    }
+                    eprintln!("Calibrating model '{}' on CKKS...", fixture.key);
+                    match calibrate_ckks_model(&loaded) {
+                        Ok(res) => results.push(res),
+                        Err(e) => {
+                            if fixture.key == "phase8_trees" || fixture.key == "phase8_xgb" {
+                                eprintln!("  Tree model '{}' correctly rejected: {e}", fixture.key);
+                            } else {
+                                return Err(format!(
+                                    "calibration failed for '{}': {e}",
+                                    fixture.key
+                                ));
+                            }
                         }
-                    });
-                    be.params = be.params.with_max_poly_degree(deg)?;
-                    let mut run = run_model(be, &loaded, args.samples)?;
-                    run.profile = Some(format!("deg{deg}"));
-                    runs.push(run);
+                    }
                 }
-                _ => unreachable!(),
+
+                let artifact = CalibrationArtifact {
+                    schema_version: 1,
+                    meta,
+                    margin: 2.0,
+                    results,
+                };
+
+                let json = serde_json::to_string_pretty(&artifact)
+                    .map_err(|e| format!("failed to serialize calibration artifact: {e}"))?;
+
+                if let Some(path) = &args.out_path {
+                    if let Some(parent) = path.parent() {
+                        fs::create_dir_all(parent)
+                            .map_err(|e| format!("cannot create dir {}: {e}", parent.display()))?;
+                    }
+                    fs::write(path, json + "\n")
+                        .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+                    eprintln!("Calibration artifact written to {}", path.display());
+                } else {
+                    println!("{json}");
+                }
+
+                Ok(())
             }
         }
-    }
-    if let Some(path) = &args.write_baseline_path {
-        let baseline = penumbra_bench::baseline_from_runs(&runs);
-        let json = serde_json::to_string_pretty(&baseline)
-            .map_err(|e| format!("cannot serialize baseline: {e}"))?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                format!("cannot create baseline directory {}: {e}", parent.display())
-            })?;
-        }
-        fs::write(path, json + "\n")
-            .map_err(|e| format!("cannot write baseline to {}: {e}", path.display()))?;
-        eprintln!("Baseline written to {}", path.display());
-    }
+        Mode::Paper => {
+            let threads = args.threads.unwrap();
+            let meta = capture_paper_meta("paper", threads)?;
+            let output_dir = args
+                .out_path
+                .as_ref()
+                .and_then(|p| p.parent())
+                .unwrap_or_else(|| Path::new("target/bench-results/phase15"))
+                .to_path_buf();
 
-    if let Some(path) = &args.baseline_path {
-        let text = fs::read_to_string(path)
-            .map_err(|e| format!("cannot read baseline file {}: {e}", path.display()))?;
-        let baseline: penumbra_bench::Baseline = serde_json::from_str(&text)
-            .map_err(|e| format!("cannot parse baseline {}: {e}", path.display()))?;
-        let warnings = penumbra_bench::check_against(&baseline, &runs).map_err(|violations| {
-            for v in &violations {
-                eprintln!("REGRESSION: {v}");
+            let paper_config = PaperConfig {
+                threads,
+                output_dir,
+                protocol_version: 1,
+            };
+            let mut runs: Vec<PaperModelRun> = Vec::new();
+            #[allow(unused_mut)]
+            let mut has_unsupported_selected = false;
+
+            for fixture in &args.models {
+                let loaded = load(fixture)?;
+                for backend_name in &args.backends {
+                    eprintln!(
+                        "Running paper model '{}' ({}) on backend '{}'...",
+                        fixture.key, fixture.label, backend_name
+                    );
+                    match backend_name.as_str() {
+                        "tfhe" => {
+                            let be = penumbra_bench::tfhe_backend();
+                            let run = run_paper_model(be, &loaded, &paper_config)?;
+                            runs.push(run);
+                        }
+                        #[cfg(feature = "ckks")]
+                        "ckks" => {
+                            let be = if loaded.fixture.key == "phase8_branch" {
+                                let p = penumbra_ckks::params::DEFAULT_PARAMS
+                                    .with_max_poly_degree(3)
+                                    .unwrap();
+                                penumbra_ckks::CkksBackend::new(p)
+                            } else {
+                                penumbra_bench::ckks_backend()
+                            };
+                            let run = run_paper_model(be, &loaded, &paper_config)?;
+                            if run.status == "unsupported" && args.models.len() < MODELS.len() {
+                                has_unsupported_selected = true;
+                            }
+                            runs.push(run);
+                        }
+                        other => return Err(format!("unsupported backend: {other}")),
+                    }
+                }
             }
-            format!(
-                "baseline check failed with {} violation(s)",
-                violations.len()
-            )
-        })?;
-        for w in warnings {
-            eprintln!("WARNING: {w}");
+
+            let report = PaperReport {
+                schema_version: 1,
+                meta,
+                runs,
+            };
+
+            let json = serde_json::to_string_pretty(&report)
+                .map_err(|e| format!("cannot serialize paper report: {e}"))?;
+
+            if let Some(path) = &args.out_path {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent)
+                        .map_err(|e| format!("cannot create dir {}: {e}", parent.display()))?;
+                }
+                fs::write(path, json + "\n")
+                    .map_err(|e| format!("cannot write report to {}: {e}", path.display()))?;
+                eprintln!("Paper report written to {}", path.display());
+            } else {
+                println!("{json}");
+            }
+
+            if has_unsupported_selected {
+                return Err(
+                    "specifically selected model was rejected by backend depth/op budget"
+                        .to_string(),
+                );
+            }
+
+            Ok(())
         }
-        eprintln!(
-            "Baseline check passed successfully against {}",
-            path.display()
-        );
+        Mode::Diagnostics => {
+            let mut runs: Vec<ModelRun> = Vec::new();
+
+            for fixture in &args.models {
+                let loaded = load(fixture)?;
+                for backend_name in &args.backends {
+                    eprintln!(
+                        "Running model '{}' ({}) on backend '{}' ({} sample(s))...",
+                        fixture.key, fixture.label, backend_name, args.samples
+                    );
+                    match backend_name.as_str() {
+                        "tfhe" => {
+                            let mut run = run_model(
+                                penumbra_tfhe::TfheBackend::new(args.tfhe_profile),
+                                &loaded,
+                                args.samples,
+                            )?;
+                            run.profile = Some(args.tfhe_profile.name().to_string());
+                            runs.push(run);
+                        }
+                        #[cfg(feature = "ckks")]
+                        "ckks" => {
+                            let mut be = ckks_backend();
+                            let deg = args.ckks_poly_degree.unwrap_or_else(|| {
+                                if loaded.fixture.key == "phase8_branch" {
+                                    3
+                                } else {
+                                    be.params.max_poly_degree
+                                }
+                            });
+                            be.params = be.params.with_max_poly_degree(deg)?;
+                            let mut run = run_model(be, &loaded, args.samples)?;
+                            run.profile = Some(format!("deg{deg}"));
+                            runs.push(run);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            if let Some(path) = &args.write_baseline_path {
+                let baseline = penumbra_bench::baseline_from_runs(&runs);
+                let json = serde_json::to_string_pretty(&baseline)
+                    .map_err(|e| format!("cannot serialize baseline: {e}"))?;
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).map_err(|e| {
+                        format!("cannot create baseline directory {}: {e}", parent.display())
+                    })?;
+                }
+                fs::write(path, json + "\n")
+                    .map_err(|e| format!("cannot write baseline to {}: {e}", path.display()))?;
+                eprintln!("Baseline written to {}", path.display());
+            }
+
+            if let Some(path) = &args.baseline_path {
+                let text = fs::read_to_string(path)
+                    .map_err(|e| format!("cannot read baseline file {}: {e}", path.display()))?;
+                let baseline: penumbra_bench::Baseline = serde_json::from_str(&text)
+                    .map_err(|e| format!("cannot parse baseline {}: {e}", path.display()))?;
+                let warnings =
+                    penumbra_bench::check_against(&baseline, &runs).map_err(|violations| {
+                        for v in &violations {
+                            eprintln!("REGRESSION: {v}");
+                        }
+                        format!(
+                            "baseline check failed with {} violation(s)",
+                            violations.len()
+                        )
+                    })?;
+                for w in warnings {
+                    eprintln!("WARNING: {w}");
+                }
+                eprintln!(
+                    "Baseline check passed successfully against {}",
+                    path.display()
+                );
+            }
+
+            let report = Report {
+                meta: ReportMeta::capture(args.samples),
+                runs,
+            };
+
+            let output = match args.format {
+                OutputFormat::Markdown => to_markdown(&report),
+                OutputFormat::Json => to_json(&report)?,
+            };
+
+            if let Some(path) = args.out_path {
+                fs::write(&path, output)
+                    .map_err(|e| format!("cannot write report to {}: {e}", path.display()))?;
+                eprintln!("Report written to {}", path.display());
+            } else {
+                println!("{output}");
+            }
+
+            Ok(())
+        }
     }
-
-    let report = Report {
-        meta: ReportMeta::capture(args.samples),
-        runs,
-    };
-
-    let output = match args.format {
-        OutputFormat::Markdown => to_markdown(&report),
-        OutputFormat::Json => to_json(&report)?,
-    };
-
-    if let Some(path) = args.out_path {
-        fs::write(&path, output)
-            .map_err(|e| format!("cannot write report to {}: {e}", path.display()))?;
-        eprintln!("Report written to {}", path.display());
-    } else {
-        println!("{output}");
-    }
-
-    Ok(())
 }

@@ -4,10 +4,16 @@
 //! benchmarks parameterized over backend x model (ROADMAP Phase 12.3).
 
 pub mod baseline;
+pub mod latency;
+pub mod memory;
+pub mod metrics;
 pub mod models;
+pub mod paper;
+pub mod paper_backend;
+pub mod protocol;
 pub mod report;
+pub mod security;
 pub mod session;
-
 pub use baseline::{baseline_from_runs, check_against, Baseline, BaselineEntry};
 
 pub use models::{find, load, selection_from_env, LoadedModel, ModelFixture, MODELS};

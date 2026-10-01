@@ -116,6 +116,7 @@ target-version = ["py310"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = [".", "python"]
 
 [tool.coverage.run]
 source = ["penumbra"]

@@ -37,26 +37,14 @@ impl<B: Backend> Session<B> {
         self.backend.encrypt(&self.ck, input)
     }
 
-    /// The measured forward pass: one call into the shared walker, nothing else.
+    /// The measured forward pass: delegates to `eval_server` and extracts the single output.
     pub fn eval(
         &self,
         graph: &Graph,
         input: &CtVec<B>,
     ) -> Result<(CtVec<B>, GraphProfile), String> {
-        if graph.inputs.len() != 1 {
-            return Err(format!(
-                "Session::eval expects single-input graph; got {} inputs: {:?}",
-                graph.inputs.len(),
-                graph.inputs
-            ));
-        }
-        let input_name = graph.inputs[0].clone();
-        let mut env = HashMap::with_capacity(1);
-        env.insert(input_name, input.clone());
-
-        let ctx = EvalCtx::new(&self.sk, self.num_blocks);
-        let mut profile = GraphProfile::default();
-        let mut outputs = evaluate_graph_profiled(&self.backend, &ctx, graph, env, &mut profile)?;
+        let (mut outputs, profile) =
+            eval_server(&self.backend, &self.sk, self.num_blocks, graph, input)?;
 
         if graph.outputs.len() != 1 {
             return Err(format!(
@@ -71,7 +59,34 @@ impl<B: Backend> Session<B> {
             .ok_or_else(|| format!("missing output tensor '{output_name}' in result"))?;
         Ok((out, profile))
     }
+}
 
+/// Server-only forward evaluation without client keys. Returns all named outputs and profile.
+pub fn eval_server<B: Backend>(
+    backend: &B,
+    sk: &B::ServerKey,
+    num_blocks: usize,
+    graph: &Graph,
+    input: &CtVec<B>,
+) -> Result<(HashMap<String, CtVec<B>>, GraphProfile), String> {
+    if graph.inputs.len() != 1 {
+        return Err(format!(
+            "eval_server expects single-input graph; got {} inputs: {:?}",
+            graph.inputs.len(),
+            graph.inputs
+        ));
+    }
+    let input_name = graph.inputs[0].clone();
+    let mut env = HashMap::with_capacity(1);
+    env.insert(input_name, input.clone());
+
+    let ctx = EvalCtx::new(sk, num_blocks);
+    let mut profile = GraphProfile::default();
+    let outputs = evaluate_graph_profiled(backend, &ctx, graph, env, &mut profile)?;
+    Ok((outputs, profile))
+}
+
+impl<B: Backend> Session<B> {
     /// Decrypt output ciphertexts to a vector of signed integers.
     pub fn decrypt(&self, cts: &[B::Ciphertext]) -> Vec<i64> {
         self.backend.decrypt_vec(&self.ck, cts)
