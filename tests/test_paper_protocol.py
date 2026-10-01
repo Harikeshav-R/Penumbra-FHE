@@ -7,6 +7,7 @@ from examples.paper_protocol import (
     CALIBRATION_LIMIT,
     CALIBRATION_SEED,
     CKKS_BOUND_MARGIN,
+    FIXTURE_PATHS,
     SPOT_CHECK_SEED,
     TFHE_SPOT_CHECK_COUNT,
     canonical_graph_hash,
@@ -116,6 +117,22 @@ def test_spot_check_selection_faces():
 
 
 def test_qat_float_evidence_marked_historical():
+    """Verify that committed QAT fixture preserves historical float accuracy
+    without recomputation."""
+    with open(FIXTURE_PATHS["phase5_qat"]) as f:
+        fixture = json.load(f)
+    assert "paper" in fixture
+    fa_committed = fixture["paper"]["float_accuracy"]
+    assert fa_committed["source"] == "historical_fixture"
+    assert fa_committed["recomputed"] is False
+    assert abs(fa_committed["value"] - 0.9333333333333333) < 1e-12
+    assert fa_committed["source_path"] is not None
+    assert fa_committed["sample_count"] == 360
+
+
+def test_qat_float_evidence_generation():
+    """Verify that live paper data generator marks QAT float accuracy as historical."""
+    pytest.importorskip("sklearn")
     data = generate_paper_data("phase5_qat")
     fa = data.float_accuracy
     assert fa.source == "historical_fixture"

@@ -411,7 +411,6 @@ def generate_paper_data(model_key: str, fixture_path: Path | None = None) -> Pap
         "phase8_gap_cnn",
         "phase8_tanh",
     }:
-        import onnxruntime as ort
         from sklearn.datasets import load_digits
         from sklearn.model_selection import train_test_split
 
@@ -476,6 +475,8 @@ def generate_paper_data(model_key: str, fixture_path: Path | None = None) -> Pap
                 recomputed=False,
             )
         else:
+            import onnxruntime as ort
+
             onnx_path = onnx_rel_paths[model_key]
             full_onnx = REPO_ROOT / onnx_path
             sess = ort.InferenceSession(str(full_onnx))
