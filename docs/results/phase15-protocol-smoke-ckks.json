@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "machine_model": "Mac15,6",
+    "os_product_version": "26.6.2",
+    "kernel_version": "25.6.0",
+    "runtime_commit": "3ddf8f4c37c44780895adda4131e045712e6780a",
+    "build_commit": "3ddf8f4c37c44780895adda4131e045712e6780a",
+    "dirty": false,
+    "rustc_version": "rustc 1.100.0-nightly (bba531001 2026-09-20)",
+    "requested_threads": 11,
+    "actual_threads": 11,
+    "hal_name": "FFT64Neon",
+    "protocol_version": 1,
+    "mode": "paper"
+  },
+  "runs": [
+    {
+      "status": "ok",
+      "model": "phase2_logreg",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "4940ddaf6584689006d9660380c11d5224d0c5dc17b68724d55fe664a0f3237f",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 0.33440704860000003,
+        "ci95_lower_secs": 0.3336244666666667,
+        "ci95_upper_secs": 0.33469493056666666,
+        "sample_count": 10,
+        "representative_sample_id": "400"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 5430099968,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 10466,
+        "sample_id": "400"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 256,
+        "encrypted_task_accuracy": 1.0,
+        "full_test_quantized_accuracy": 1.0,
+        "float_accuracy": {
+          "value": 1.0,
+          "source": "reproduced_generator",
+          "source_path": "examples/mnist/train_quantize_export.py",
+          "source_sha256": "a35022939ab775abb2b26dd821677448942bcfb4093a80dc40dfd67fad3812fc",
+          "sample_count": 256,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": {
+          "median": 0.49629761364367375,
+          "p95": 0.49738654341739336,
+          "p99": 0.49760433126833753,
+          "max": 0.4978221176922674
+        },
+        "margin_relative_score_error": {
+          "median": null,
+          "p95": null,
+          "max": null,
+          "finite_count": 0,
+          "zero_margin_samples": 256,
+          "zero_margin_with_nonzero_error": 256
+        },
+        "check_method": "raw_float_bound_check(bound=0.9952086625708774)",
+        "exact_checks_passed": 0
+      }
+    },
+    {
+      "status": "ok",
+      "model": "phase6_sklearn",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "72c5e0fc9742b7ba37c274197b2fd8717298e6bfa3de6ca599ec7e7377c651a1",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 0.3879847847,
+        "ci95_lower_secs": 0.38355904863333334,
+        "ci95_upper_secs": 0.3894243944333333,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 4506435584,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 11773,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 360,
+        "encrypted_task_accuracy": 0.8805555555555555,
+        "full_test_quantized_accuracy": 0.8805555555555555,
+        "float_accuracy": {
+          "value": 0.8944444444444445,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_linear_sklearn.onnx",
+          "source_sha256": "d3b6b929b8c7cdf6da8ad143d0285ec039bfc66243394941a2d0a6ac0e45ddb8",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 1,
+        "label_flip_rate": 0.002777777777777778,
+        "absolute_output_error": {
+          "median": 0.00006762656735048722,
+          "p95": 0.00016811109765768606,
+          "p99": 0.00021473466053123502,
+          "max": 0.00027626560712690207
+        },
+        "margin_relative_score_error": {
+          "median": 1.1897285921202045e-6,
+          "p95": 0.000012297826980756099,
+          "max": 0.0000669899276696621,
+          "finite_count": 358,
+          "zero_margin_samples": 2,
+          "zero_margin_with_nonzero_error": 2
+        },
+        "check_method": "raw_float_bound_check(bound=0.0004435212437314817)",
+        "exact_checks_passed": 0
+      }
+    }
+  ]
+}
