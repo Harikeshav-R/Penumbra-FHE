@@ -2,7 +2,7 @@
 //! Exceeding one is a bug — scale, level, or polynomial degree — before it is noise
 //! (`docs/BACKENDS.md`, "one invariant, two comparators").
 //!
-//! Calibration protocol (Phase 15, D10): derived as exactly 2.0 * p99 error over
+//! Calibration protocol (Phase 15, D7): derived as exactly 2.0 * p99 error over
 //! the calibration split (never the test split), committed before test evaluation.
 //! Source artifact: `docs/results/phase15-ckks-calibration.json`.
 

@@ -60,7 +60,7 @@ is why the shared harness is a hard requirement rather than a convenience
 3. **Thread pinning & isolation:** Threads are explicitly configured via `--threads <N>` (`RAYON_NUM_THREADS = N`).
    Server peak RSS is captured via `getrusage` in an isolated child process executing only the server key load
    and forward evaluation, strictly excluding keygen, client secret keys, encryption, decryption, and size measurements.
-4. **Calibration chronology (D10):** CKKS error bounds are derived over the training calibration split ($2.0 \times \text{p99}$),
+4. **Calibration chronology (D7):** CKKS error bounds are derived over the training calibration split ($2.0 \times \text{p99}$),
    committed to `crates/penumbra-ckks/src/bounds.rs` and `docs/results/phase15-ckks-calibration.json` *before* evaluating test rows.
 5. **Full-test vs. spot-check execution:**
    - **TFHE:** 30 distinct seeded spot checks (seed 1503; for faces, 20 test + 10 calibration rows) are verified bit-for-bit exact against `evaluate_graph_int`. Full-test task accuracy is reported as `quantized_reference_inferred_exact` with evidence of the 30 passed encrypted checks.

@@ -132,7 +132,7 @@ the encrypted result is compared to it.
 
 1. **The reference never changes:** The quantized-integer reference `evaluate_graph_int` remains the oracle for both schemes.
 2. **Raw unrounded output decoding:** In the comparison harness, CKKS output ciphertexts are decrypted to raw IEEE-754 floats (`decrypt_raw_vec`) rather than integer-rounded before comparison. This ensures small approximation errors are not masked by rounding.
-3. **Calibration chronology (D10):** All twelve supported model error bounds in `crates/penumbra-ckks/src/bounds.rs` are derived as exactly $2.0 \times \text{p99}$ over the training calibration split and committed to git *before* evaluating test rows.
+3. **Calibration chronology (D7):** All twelve supported model error bounds in `crates/penumbra-ckks/src/bounds.rs` are derived as exactly $2.0 \times \text{p99}$ over the training calibration split and committed to git *before* evaluating test rows.
 4. **Full test vs. inferred exact:**
    - **TFHE:** 30 distinct seeded spot checks (seed 1503; for faces, 20 test + 10 calibration rows) are verified bit-for-bit exact against `evaluate_graph_int`. Full-test task accuracy is reported as `quantized_reference_inferred_exact` with evidence of the 30 passed encrypted checks.
    - **CKKS:** All samples in the full test split are evaluated encrypted against the predeclared bound.
