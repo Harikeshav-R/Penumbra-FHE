@@ -66,14 +66,7 @@ pub fn calibrate_ckks_model(model: &LoadedModel) -> Result<ModelCalibrationResul
         ));
     }
 
-    let backend = if model.fixture.key == "phase8_branch" {
-        let p = penumbra_ckks::params::DEFAULT_PARAMS
-            .with_max_poly_degree(3)
-            .map_err(|e| format!("invalid max_poly_degree: {e}"))?;
-        penumbra_ckks::CkksBackend::new(p)
-    } else {
-        crate::ckks_backend()
-    };
+    let backend = model.fixture.ckks_backend();
 
     let session = Session::new(backend, &model.graph)?;
     let mut records = Vec::with_capacity(paper.calibration.len());

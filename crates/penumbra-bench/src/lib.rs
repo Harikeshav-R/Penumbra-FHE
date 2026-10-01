@@ -33,6 +33,22 @@ pub fn ckks_backend() -> penumbra_ckks::CkksBackend {
     penumbra_ckks::CkksBackend::default()
 }
 
+/// Return a configured instance of the CKKS backend tailored for the given model fixture key.
+///
+/// For `phase8_branch`, overrides `max_poly_degree` to 3 to satisfy depth requirements
+/// while maintaining standard default parameters for all other models.
+#[cfg(feature = "ckks")]
+pub fn ckks_backend_for_model(model_key: &str) -> penumbra_ckks::CkksBackend {
+    if model_key == "phase8_branch" {
+        let params = penumbra_ckks::params::DEFAULT_PARAMS
+            .with_max_poly_degree(3)
+            .expect("phase8_branch requires valid degree-3 polynomial parameters");
+        penumbra_ckks::CkksBackend::new(params)
+    } else {
+        ckks_backend()
+    }
+}
+
 /// Backend names compiled into this build, in report order.
 pub fn available_backends() -> Vec<&'static str> {
     vec![

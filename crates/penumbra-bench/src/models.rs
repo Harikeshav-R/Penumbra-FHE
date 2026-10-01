@@ -21,6 +21,14 @@ pub struct ModelFixture {
     pub default_bench: bool,
 }
 
+impl ModelFixture {
+    /// Return a configured instance of the CKKS backend tailored for this model.
+    #[cfg(feature = "ckks")]
+    pub fn ckks_backend(&self) -> penumbra_ckks::CkksBackend {
+        crate::ckks_backend_for_model(self.key)
+    }
+}
+
 pub const MODELS: &[ModelFixture] = &[
     ModelFixture {
         key: "phase2_logreg",

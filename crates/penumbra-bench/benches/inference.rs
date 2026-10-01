@@ -47,14 +47,7 @@ fn bench_inference(c: &mut Criterion) {
                     if fixture.key == "phase8_trees" || fixture.key == "phase8_xgb" {
                         continue;
                     }
-                    let backend = if fixture.key == "phase8_branch" {
-                        let p = penumbra_ckks::params::DEFAULT_PARAMS
-                            .with_max_poly_degree(3)
-                            .unwrap();
-                        penumbra_ckks::CkksBackend::new(p)
-                    } else {
-                        penumbra_bench::ckks_backend()
-                    };
+                    let backend = fixture.ckks_backend();
                     let session = Session::new(backend, &model.graph).unwrap_or_else(|e| {
                         panic!("CKKS session creation failed for '{}': {e}", fixture.key)
                     });

@@ -468,14 +468,7 @@ fn run_worker(kind: WorkerKind, config_path: &Path) -> Result<(), String> {
                 }
                 #[cfg(feature = "ckks")]
                 "ckks" => {
-                    let be = if model.fixture.key == "phase8_branch" {
-                        let p = penumbra_ckks::params::DEFAULT_PARAMS
-                            .with_max_poly_degree(3)
-                            .unwrap();
-                        penumbra_ckks::CkksBackend::new(p)
-                    } else {
-                        penumbra_bench::ckks_backend()
-                    };
+                    let be = model.fixture.ckks_backend();
                     run_prepare_worker(&be, &model, &config)?;
                 }
                 other => return Err(format!("unknown backend: {other}")),
@@ -493,14 +486,7 @@ fn run_worker(kind: WorkerKind, config_path: &Path) -> Result<(), String> {
                 }
                 #[cfg(feature = "ckks")]
                 "ckks" => {
-                    let be = if model.fixture.key == "phase8_branch" {
-                        let p = penumbra_ckks::params::DEFAULT_PARAMS
-                            .with_max_poly_degree(3)
-                            .unwrap();
-                        penumbra_ckks::CkksBackend::new(p)
-                    } else {
-                        penumbra_bench::ckks_backend()
-                    };
+                    let be = model.fixture.ckks_backend();
                     run_server_rss_worker(be, &model, &config)?;
                 }
                 other => return Err(format!("unknown backend: {other}")),
@@ -518,14 +504,7 @@ fn run_worker(kind: WorkerKind, config_path: &Path) -> Result<(), String> {
                 }
                 #[cfg(feature = "ckks")]
                 "ckks" => {
-                    let be = if model.fixture.key == "phase8_branch" {
-                        let p = penumbra_ckks::params::DEFAULT_PARAMS
-                            .with_max_poly_degree(3)
-                            .unwrap();
-                        penumbra_ckks::CkksBackend::new(p)
-                    } else {
-                        penumbra_bench::ckks_backend()
-                    };
+                    let be = model.fixture.ckks_backend();
                     run_metrics_worker(be, &model, &config)?
                 }
                 other => return Err(format!("unknown backend: {other}")),
@@ -652,14 +631,7 @@ fn run() -> Result<(), String> {
                         }
                         #[cfg(feature = "ckks")]
                         "ckks" => {
-                            let be = if loaded.fixture.key == "phase8_branch" {
-                                let p = penumbra_ckks::params::DEFAULT_PARAMS
-                                    .with_max_poly_degree(3)
-                                    .unwrap();
-                                penumbra_ckks::CkksBackend::new(p)
-                            } else {
-                                penumbra_bench::ckks_backend()
-                            };
+                            let be = loaded.fixture.ckks_backend();
                             let run = run_paper_model(be, &loaded, &paper_config)?;
                             if run.status == "unsupported" && args.models.len() < MODELS.len() {
                                 has_unsupported_selected = true;

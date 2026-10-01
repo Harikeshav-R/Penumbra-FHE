@@ -43,10 +43,7 @@ fn test_op_set_parity_every_committed_fixture_no_crypto() {
             } else {
                 let branch_backend;
                 let b = if fixture.key == "phase8_branch" {
-                    let p = penumbra_ckks::params::DEFAULT_PARAMS
-                        .with_max_poly_degree(3)
-                        .unwrap();
-                    branch_backend = penumbra_ckks::CkksBackend::new(p);
+                    branch_backend = fixture.ckks_backend();
                     &branch_backend
                 } else {
                     &ckks
