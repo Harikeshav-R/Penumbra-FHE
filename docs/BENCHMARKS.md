@@ -582,8 +582,9 @@ cargo run -p penumbra-bench --release --bin penumbra-bench-report -- \
   --models phase2_logreg,phase4_cnn,phase6_sklearn --backends tfhe --samples 1 \
   --write-baseline crates/penumbra-bench/baselines/tfhe-classic.json
 
-# Calibrate and verify CKKS error bounds:
-cargo +nightly run -p penumbra-ckks --features ckks --release --example calibrate
+# Calibrate and verify CKKS error bounds (predeclared Phase 15 protocol):
+cargo +nightly run -p penumbra-bench --features ckks --release --bin penumbra-bench-report -- \
+  --mode calibrate --models all --backends ckks --threads 11 --format json --out docs/results/phase15-ckks-calibration.json
 cargo +nightly test -p penumbra-ckks --features ckks --release
 
 # Time the encrypted forward pass (release; the golden tests carry the timing):
