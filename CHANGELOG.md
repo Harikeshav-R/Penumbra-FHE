@@ -10,9 +10,12 @@ The Python package and the four published crates share one version, and the IR `
 ## [Unreleased]
 
 ### Added
-- `Backend::build_op_with_bits` default-implemented trait method on `penumbra_core::backend::Backend`, allowing Layer 2 to pass derived input/output tensor bit widths to backends during topological evaluation.
+- Paper benchmark evaluation protocol (Phase 15): added `examples/paper_protocol.py` establishing canonical evaluation datasets, frozen input quantization, and exact reference outputs across all 14 model fixtures under a root `paper` schema (version 1).
+- Registered `phase8_tanh` and `phase8_xgb` in `penumbra-bench` model fixtures.
+- Added `Backend::build_op_with_bits` default-implemented trait method on `penumbra_core::backend::Backend`, allowing Layer 2 to pass derived input/output tensor bit widths to backends during topological evaluation.
 
 ### Changed
+- Unified benchmark harness protocol (`penumbra-bench`): added `--mode paper|calibrate|diagnostics|security-inputs`, multi-stage worker isolation for server peak RSS capture (`getrusage`), canonical Criterion latency parsing with confidence intervals, and D16 logical lookup vs carry PBS breakdown.
 - TFHE per-tensor radix widths (Phase 14): sized each tensor's radix representation to its Layer-2 derived bit width with progressive widening and deferred carry propagation in linear operations. Yields a 2.37x overall speedup across the test suite (up to 3.27x on branching networks) and a 56.6% reduction in PBS operations, while preserving bit-for-bit exactness.
 ## [1.0.0] - 2026-09-27
 

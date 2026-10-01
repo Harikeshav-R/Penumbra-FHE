@@ -102,6 +102,32 @@ but the public API is still subject to change."* Note that 0.6.0 was yanked.
 | Security level | 128-bit classical security | verified against HomomorphicEncryption.org standard table (`log q <= 438`) |
 | Single packed ciphertext size | 4.75 MB | 4,980,843 bytes (`phase10-final-sweep.json` @ `9b38c1b`; binary MB) |
 | Key generation time | 1.915–2.458 s | `phase10-final-sweep.json` @ `9b38c1b`, 7 models, `FFT64Neon` |
+
+### Lattice security estimation (Phase 15)
+
+Concrete classical lattice security for `DEFAULT_PARAMS` was estimated using the pinned
+`malb/lattice-estimator` (commit `53da598`) under SageMath 10.6, evaluating the MATZOV
+reduction cost model (`RC.MATZOV`) and GSA shape model (`GSA`) under unbounded samples ($m=\infty$):
+
+- **Ciphertext parameters:** $N = 16384, q = 2^{360}, \text{Ternary secret}, \text{DiscreteGaussian}(3.2)$.
+  - Primal uSVP: $\approx 2^{155.3}$ operations ($\beta=427, d=32125$)
+  - Primal BDD: $\approx 2^{155.3}$ operations ($\beta=426, \eta=468, d=32592$)
+  - Dual lattice: $\approx 2^{156.6}$ operations ($\beta=428, d=32747$)
+  - Dual hybrid: $\approx 2^{156.0}$ operations ($\beta=426$)
+  - **Ciphertext bottleneck security: 155.3 bits**
+- **Public evaluation-key parameters:** $N = 16384, q = 2^{432}, \text{Ternary secret}, \text{DiscreteGaussian}(3.2)$
+  (public tensor and automorphism keys require higher auxiliary precision during gadget decomposition).
+  - Primal uSVP: $\approx 2^{127.9}$ operations ($\beta=328, d=31608$)
+  - Primal BDD: $\approx 2^{127.6}$ operations ($\beta=327, \eta=355, d=32398$) — **bottleneck attack: 127.6 bits**
+  - Dual lattice: $\approx 2^{128.9}$ operations ($\beta=328, d=32759$)
+  - Dual hybrid: $\approx 2^{128.6}$ operations ($\beta=327$)
+- **Overall CKKS security:** **127.6 bits** classical security (bounded by the evaluation key at the 128-bit target).
+
+RLWE is modeled as unstructured LWE at $n = \text{rank} \times N = 16384$. The nominal discrete Gaussian sampler
+($\sigma=3.2$) models Poulpy's rounded, 6-sigma truncated sampler.
+
+Artifact: [`docs/results/phase15-security-estimates.json`](./results/phase15-security-estimates.json),
+reproducible via `python examples/security/run.py`.
 ## The primitives everything composes from
 
 Structured to mirror `NOTES-tfhe.md`'s "two primitives" framing, because the contrast is the

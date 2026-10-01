@@ -536,12 +536,30 @@ Across all seven committed models, bit-width minimization achieves a **1.46x geo
 *Source: [`docs/results/phase10-final-sweep.json`](./results/phase10-final-sweep.json) @ `9b38c1b`.*
 **Decision:** Across all models and both backends, IR load time is under **0.6 ms** (0.38 ms – 0.58 ms) and accounts for at most **0.084%** of evaluation time (and less than 0.002% on multi-layer models). Wire sizes are compact (5.0 KB – 27.6 KB). Because IR loading is orders of magnitude below the noise floor of encrypted evaluation, introducing a binary IR format is unnecessary. Penumbra retains its backend-neutral, human-readable JSON IR format (`SCHEMA_VERSION = 0.6.0`, `AGENTS.md` §5).
 
+### Table C: Phase 15 Protocol Validation and Benchmark Seams
+
+*Measured under the hardened Phase 15 harness protocol on Apple M3 Pro, macOS 26.6.2 (Darwin 25.6.0), commit `3ddf8f4`, with 11 threads configured (`RAYON_NUM_THREADS=11`, CKKS single-threaded `FFT64Neon`). Latencies are canonical Criterion medians over 10 flat samples with 95% confidence intervals. Server memory is peak RSS captured via `getrusage` in an isolated child process evaluating the forward pass without client keys or keygen.*
+
+| Model | Backend | Criterion Latency (median [95% CI]) | Server Peak RSS | Client Key | Server Key | Input CT | Output CT | PBS Split (total / lookup / carry) | Task Accuracy (Encrypted / Quantized) | Error vs Bound |
+|---|---|---|---:|---:|---:|---:|---:|---|---|---|
+| `phase2_logreg` | TFHE | 0.3272 s [0.3259 s .. 0.3388 s] | 276.78 MB | 23.4 KB | 114.84 MB | 6.03 MB | 16.1 KB | 91 / 1 / 90 | 1.0000 / 1.0000 (30 exact checks passed) | Exact bit-for-bit |
+| `phase2_logreg` | CKKS | 0.3344 s [0.3336 s .. 0.3347 s] | 5178.55 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB | - | 1.0000 / 1.0000 (0 flips / 256 test samples) | max \|err\| = 0.4978 < bound 0.9952 |
+| `phase6_sklearn` | TFHE | 12.2527 s [12.1231 s .. 12.4502 s] | 354.14 MB | 23.4 KB | 114.84 MB | 10.05 MB | 1.57 MB | 4704 / 0 / 4704 | 0.8806 / 0.8806 (30 exact checks passed) | Exact bit-for-bit |
+| `phase6_sklearn` | CKKS | 0.3880 s [0.3836 s .. 0.3894 s] | 4297.67 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB | - | 0.8806 / 0.8806 (1 flip / 360 test samples, 0.28%) | max \|err\| = 0.00028 < bound 0.00044 |
+| `phase8_trees` | CKKS | - | - | - | - | - | - | - | - | Unsupported: depth budget exceeded |
+| `phase8_xgb` | CKKS | - | - | - | - | - | - | - | - | Unsupported: depth budget exceeded |
+
+*Sources: [`docs/results/phase15-protocol-smoke-tfhe.json`](./results/phase15-protocol-smoke-tfhe.json), [`docs/results/phase15-protocol-smoke-ckks.json`](./results/phase15-protocol-smoke-ckks.json), [`docs/results/phase15-ckks-calibration.json`](./results/phase15-ckks-calibration.json).*
+
 ## Results provenance
 
 Every figure in this document, `COMPARISON.md`, and `NOTES-*.md` cites one of these files and the commit shown; sizes are binary units as printed by `penumbra-bench` (1 KB = 1,024 B, 1 MB = 2^20 B).
 
 | File | Run commit (`meta.commit`) | Committed in | Caveat |
 |---|---|---|---|
+| `docs/results/phase15-protocol-smoke-{tfhe,ckks}.json` | `3ddf8f4` | pending | Hardened Phase 15 protocol smoke runs on Apple M3 Pro, macOS 26.6.2, 11 threads. Criterion medians with 95% CI, isolated server peak RSS via `getrusage`, wire sizes, D16 lookup/carry PBS split, exact integer checks for TFHE, raw float error and label flips for CKKS. |
+| `docs/results/phase15-ckks-calibration.json` | `1aaa8eb` | `de2ae6b` | Calibration artifact deriving 2.0 * p99 error bounds over training calibration splits across 12 supported models and 2 depth rejections. |
+| `docs/results/phase15-security-estimates.json` | `de2ae6b` | `3ddf8f4` | Lattice estimator security estimates under SageMath 10.6 for TFHE and CKKS parameter tuples. |
 | `docs/results/phase12-4-comparison.json` as of `4d033d2` (pre-fix version; read with `git show 4d033d2:docs/results/phase12-4-comparison.json`) | `dc20d05` | `4d033d2` | Pre-fix CKKS arm. CKKS max \|err\| per sample: cnn 15/10, digits 188/209, qat 238/234, onnx 188/209, sklearn 0/0, faces 105/192 (faces sample 1 label mismatch). Declared bounds then (`git show 4d033d2:crates/penumbra-ckks/src/bounds.rs`): logreg 0.5, cnn 30, digits 250, qat 300, onnx 250, sklearn 1e-3, faces 150. |
 | `docs/results/phase12-4-comparison.json` (current) | TFHE `dc20d05`; CKKS `meta.ckks_rerun.commit` = `3f6bd68` | `7d04993` | CKKS arm re-run on a working tree holding the uncommitted floor-bias fix, committed as `7d04993` ("fix(ckks): correct Requant target floor bias…"). `3f6bd68` itself is docs-only. Pre-Phase-10 fixtures (digits/qat/onnx/faces 11 blocks). CKKS max \|err\|: cnn 3/2, digits 25/35, qat 28/28, onnx 25/35, sklearn 0/0, faces 74/40, all labels match. TFHE digits op_type_secs: Conv2d 338.2062, Linear 287.042, Requant 54.6112; no measured PBS counters in this file. |
 | `docs/results/phase10-tfhe-sweep.json` | `78f5db7` | `eb158a0` | TFHE only. logreg 4.238 s / 1269 PBS; cnn 38.912 s / 10328 PBS. |
@@ -582,8 +600,9 @@ cargo run -p penumbra-bench --release --bin penumbra-bench-report -- \
   --models phase2_logreg,phase4_cnn,phase6_sklearn --backends tfhe --samples 1 \
   --write-baseline crates/penumbra-bench/baselines/tfhe-classic.json
 
-# Calibrate and verify CKKS error bounds:
-cargo +nightly run -p penumbra-ckks --features ckks --release --example calibrate
+# Calibrate and verify CKKS error bounds (predeclared Phase 15 protocol):
+cargo +nightly run -p penumbra-bench --features ckks --release --bin penumbra-bench-report -- \
+  --mode calibrate --models all --backends ckks --threads 11 --format json --out docs/results/phase15-ckks-calibration.json
 cargo +nightly test -p penumbra-ckks --features ckks --release
 
 # Time the encrypted forward pass (release; the golden tests carry the timing):

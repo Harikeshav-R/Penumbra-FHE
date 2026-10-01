@@ -54,33 +54,35 @@ is why the shared harness is a hard requirement rather than a convenience
 
 1. Both backends are registered with `penumbra-bench` and driven through the same entry point:
    `penumbra_bench::report::run_model` dispatches through `penumbra_core::eval::evaluate_graph_profiled`.
-2. The `penumbra-bench-report` CLI binary runs the models and emits the comparison as Markdown or JSON tables.
-3. For each of the seven committed models (`phase2_logreg`, `phase4_cnn`, `phase5_digits`,
-   `phase5_qat`, `phase6_onnx`, `phase6_sklearn`, `phase7_faces`), run $N = 2$ encrypted
-   inferences per backend in `--release` — too few to support any accuracy claim; superseded by the Phase 15–16 protocol (`docs/PAPER.md` D3).
-4. Record per-model: wall-clock latency per sample, per-op-type time breakdown, accuracy
-   against the shared quantized-cleartext reference, accuracy against the float model,
-   ciphertext and key sizes, and each scheme's own cost proxy (bootstrap count for TFHE;
-   multiplicative depth, rotation count, and rescale count for CKKS).
-5. Report the TFHE bit-exactness gate as pass/fail and the CKKS error as a measured
-   distribution, not a single number.
+2. The `penumbra-bench-report` CLI binary provides unified operational modes:
+   `--mode paper` for headline evaluation, `--mode calibrate` for calibration-derived bound estimation,
+   `--mode diagnostics` for per-op timing breakdowns, and `--mode security-inputs` for lattice estimator extraction.
+3. **Thread pinning & isolation:** Threads are explicitly configured via `--threads <N>` (`RAYON_NUM_THREADS = N`).
+   Server peak RSS is captured via `getrusage` in an isolated child process executing only the server key load
+   and forward evaluation, strictly excluding keygen, client secret keys, encryption, decryption, and size measurements.
+4. **Calibration chronology (D7):** CKKS error bounds are derived over the training calibration split ($2.0 \times \text{p99}$),
+   committed to `crates/penumbra-ckks/src/bounds.rs` and `docs/results/phase15-ckks-calibration.json` *before* evaluating test rows.
+5. **Full-test vs. spot-check execution:**
+   - **TFHE:** 30 distinct seeded spot checks (seed 1503; for faces, 20 test + 10 calibration rows) are verified bit-for-bit exact against `evaluate_graph_int`. Full-test task accuracy is reported as `quantized_reference_inferred_exact` with evidence of the 30 passed encrypted checks.
+   - **CKKS:** All samples in the full test split are evaluated encrypted. Raw unrounded floating-point outputs are compared directly against the integer reference to prevent rounding from masking error noise.
+6. **Tie-breaking & zero-margin metrics:** Multi-class predicted labels use first-maximum tie-breaking (`argmax`). Margin-relative score errors divide max component error by top-two reference margin. Where reference top-two margins are zero (ties), relative error is reported as null and tracked via explicit zero-margin counters.
+7. **D16 PBS accounting:** Measured PBS operations are partitioned into logical lookup PBS (Activation/Requant `bootstraps`, Compare/Argmax `cmp_pbs_ops`) and residual carry PBS (`total_pbs - lookup_pbs`).
 
 ## Metrics
 
 | Metric | Definition | Why it is here |
 |---|---|---|
-| Latency / sample | wall clock for one encrypted forward pass, `--release`, pinned machine | the headline practical question |
+| Headline Latency | Canonical Criterion median wall clock over 10 flat samples with 95% CI | the headline practical question |
+| Server Peak RSS | `getrusage(RUSAGE_SELF)` in dedicated server evaluation child process | memory overhead of server evaluation |
 | Per-op-type breakdown | time attributed at the eval-loop seam | shows *why* one scheme wins, not just that it does |
-| Accuracy vs. reference | agreement with `evaluate_graph_int` on the test batch | isolates the scheme's own error from quantization error |
-| Accuracy vs. float | agreement with the unquantized model | what a user actually experiences |
+| D16 PBS breakdown | logical lookup PBS vs residual carry PBS | isolates LUT operations from arithmetic carry propagation |
+| Task accuracy | prediction agreement with ground-truth target labels | task performance under encryption |
+| Quantized reference accuracy | prediction agreement with `evaluate_graph_int` | isolates scheme approximation error from quantization error |
+| Absolute error distribution | raw float \|err\| distribution (median, p95, p99, max) vs integer reference | ground-truth CKKS noise behavior |
+| Margin-relative score error | max score error divided by top-two reference logit margin | score perturbation relative to decision boundaries |
 | Scheme cost proxy | bootstraps (TFHE) · depth + rotations + rescales (CKKS) | lets the numbers generalize past this machine |
-| Ciphertext size | bytes per encrypted input and output | bandwidth cost of the client/server split (`PROJECT.md` §11) |
-| Key material size | client key + evaluation key bytes | the real deployment cost; TFHE server keys are large |
-
-Accuracy is reported against **both** references on purpose. Measured against the quantized
-reference, the two backends' errors are directly comparable. Measured against float, the
-number is what a user sees — and it folds in a quantization gap that is identical for both
-backends by construction.
+| Ciphertext size | bytes per encrypted input and output wire | bandwidth cost of client/server split |
+| Key material size | client key + evaluation key bytes | deployment storage overhead |
 
 ## Threats to validity
 

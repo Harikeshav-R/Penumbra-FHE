@@ -126,21 +126,18 @@ the encrypted result is compared to it.
 | Backend | Comparator | Rationale |
 |---|---|---|
 | `tfhe` | **equality, bit-for-bit** | TFHE is exact. Any discrepancy is a quantization or implementation bug — never crypto noise. |
-| `ckks` | **within a declared, per-model error bound**, with the measured error always reported | CKKS is approximate by construction. The bound is committed alongside the model and asserted in CI; exceeding it is a bug (scale, level, or polynomial degree) first, noise second. |
+| `ckks` | **within a declared, per-model error bound**, evaluated as raw unrounded floats against the integer reference | CKKS is approximate by construction. The bound is calibrated on the training split ($2.0 \times \text{p99}$) and committed alongside the model before evaluating test data (`docs/results/phase15-ckks-calibration.json`); exceeding it is a bug first, noise second. |
 
-Two consequences worth stating plainly:
+### Evaluation methodology (Phase 15 hardening)
 
-- The TFHE invariant is **not weakened**. It remains a hard gate (`AGENTS.md` §1.1).
-- CKKS is **never** compared against a different or friendlier reference. Comparing it to a
-  float model instead of the quantized one would make its accuracy look better and the
-  comparison meaningless.
-
-Under CKKS the PBS-free ops (`Linear`, `Conv2d`, `Pool`, `Add`, `Concat`, `Split`) may well round-trip to the
-exact integers at a generous scale. That is worth **reporting as a diagnostic** — it isolates
-approximation error to the nonlinearities — but it is not a CI gate, because it is a
-property of the chosen scale rather than of the implementation.
-
-## Cost models
+1. **The reference never changes:** The quantized-integer reference `evaluate_graph_int` remains the oracle for both schemes.
+2. **Raw unrounded output decoding:** In the comparison harness, CKKS output ciphertexts are decrypted to raw IEEE-754 floats (`decrypt_raw_vec`) rather than integer-rounded before comparison. This ensures small approximation errors are not masked by rounding.
+3. **Calibration chronology (D7):** All twelve supported model error bounds in `crates/penumbra-ckks/src/bounds.rs` are derived as exactly $2.0 \times \text{p99}$ over the training calibration split and committed to git *before* evaluating test rows.
+4. **Full test vs. inferred exact:**
+   - **TFHE:** 30 distinct seeded spot checks (seed 1503; for faces, 20 test + 10 calibration rows) are verified bit-for-bit exact against `evaluate_graph_int`. Full-test task accuracy is reported as `quantized_reference_inferred_exact` with evidence of the 30 passed encrypted checks.
+   - **CKKS:** All samples in the full test split are evaluated encrypted against the predeclared bound.
+5. **Label tie-breaking and zero margins:** Argmax uses first-maximum tie-breaking matching Python reference semantics. For margin-relative score error ($e_{\max} / \text{margin}$), samples with zero reference top-two margin are recorded as null relative error and tracked explicitly.
+6. **D16 PBS breakdown:** Under TFHE, measured PBS operations are partitioned into logical lookup PBS (Activation/Requant `bootstraps`, Compare/Argmax `cmp_pbs_ops`) and residual carry PBS (`total_pbs - lookup_pbs`).
 
 The two schemes are fast and slow at opposite things. There is no single cost proxy.
 Cost proxies are derived analytically via `Op::cost(&self, input_lens: &[usize]) -> Vec<(&'static str, u64)>`

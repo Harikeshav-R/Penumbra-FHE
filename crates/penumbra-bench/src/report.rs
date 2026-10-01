@@ -330,8 +330,8 @@ pub fn to_markdown(report: &Report) -> String {
         out.push_str("> **DEBUG BUILD — these numbers are not comparison-grade.**\n\n");
     }
 
-    // Table 1: Latency
-    out.push_str("### 1. Latency (Wall-Clock)\n\n");
+    // Table 1: Diagnostic timings — not headline latency
+    out.push_str("### 1. Diagnostic timings — not headline latency (Wall-Clock)\n\n");
     out.push_str("| Model | Backend | Profile | Keygen (s) | Encrypt (s) | Eval total (s) | of which op-build (s) | Decrypt (s) | Accuracy / Error |\n");
     out.push_str("|---|---|---|---:|---:|---:|---:|---:|---|\n");
     for run in &report.runs {

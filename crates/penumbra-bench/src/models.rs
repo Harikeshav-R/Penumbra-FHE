@@ -7,6 +7,7 @@ use penumbra_core::ir::Graph;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::protocol::PaperData;
 /// Definition of a committed model fixture in the repository.
 #[derive(Debug, Clone, Copy)]
 pub struct ModelFixture {
@@ -18,6 +19,14 @@ pub struct ModelFixture {
     pub label: &'static str,
     /// Included in the default `cargo bench` set (cheap enough to sample 10x).
     pub default_bench: bool,
+}
+
+impl ModelFixture {
+    /// Return a configured instance of the CKKS backend tailored for this model.
+    #[cfg(feature = "ckks")]
+    pub fn ckks_backend(&self) -> penumbra_ckks::CkksBackend {
+        crate::ckks_backend_for_model(self.key)
+    }
 }
 
 pub const MODELS: &[ModelFixture] = &[
@@ -88,6 +97,18 @@ pub const MODELS: &[ModelFixture] = &[
         default_bench: false,
     },
     ModelFixture {
+        key: "phase8_tanh",
+        path: "../../examples/mnist/phase8_tanh_fixture.json",
+        label: "Phase-8 Tanh MLP",
+        default_bench: false,
+    },
+    ModelFixture {
+        key: "phase8_xgb",
+        path: "../../examples/trees/phase8_xgb_fixture.json",
+        label: "Phase-8 XGBoost tree ensemble",
+        default_bench: false,
+    },
+    ModelFixture {
         key: "phase11_tabular_mlp",
         path: "../../examples/tabular/phase11_tabular_mlp_fixture.json",
         label: "Phase-11 tabular MLP",
@@ -113,6 +134,7 @@ pub struct LoadedModel {
     pub bit_plan: Option<serde_json::Value>,
     pub ir_bytes: usize,
     pub ir_load_secs: f64,
+    pub paper: Option<PaperData>,
 }
 
 /// Look up a model fixture by its unique key.
@@ -147,21 +169,52 @@ pub fn load(fixture: &'static ModelFixture) -> Result<LoadedModel, String> {
     let inputs: Vec<Vec<i64>> = serde_json::from_value(inputs_val.clone())
         .map_err(|e| format!("failed to parse test_inputs in {}: {e}", path.display()))?;
 
-    let expected_logits: Option<Vec<Vec<i64>>> = value
-        .get("expected_logits")
-        .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let expected_logits: Option<Vec<Vec<i64>>> = match value.get("expected_logits") {
+        Some(v) => Some(serde_json::from_value(v.clone()).map_err(|e| {
+            format!(
+                "failed to parse 'expected_logits' in {}: {e}",
+                path.display()
+            )
+        })?),
+        None => None,
+    };
 
-    let expected_labels: Option<Vec<i64>> = value
-        .get("expected_labels")
-        .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let expected_labels: Option<Vec<i64>> = match value.get("expected_labels") {
+        Some(v) => Some(serde_json::from_value(v.clone()).map_err(|e| {
+            format!(
+                "failed to parse 'expected_labels' in {}: {e}",
+                path.display()
+            )
+        })?),
+        None => None,
+    };
 
-    let accuracy: Option<FixtureAccuracy> = value
-        .get("accuracy")
-        .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let accuracy: Option<FixtureAccuracy> = match value.get("accuracy") {
+        Some(v) => Some(
+            serde_json::from_value(v.clone())
+                .map_err(|e| format!("failed to parse 'accuracy' in {}: {e}", path.display()))?,
+        ),
+        None => None,
+    };
 
-    let bit_plan: Option<serde_json::Value> = value
-        .get("bit_plan")
-        .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let bit_plan: Option<serde_json::Value> = match value.get("bit_plan") {
+        Some(v) => Some(
+            serde_json::from_value(v.clone())
+                .map_err(|e| format!("failed to parse 'bit_plan' in {}: {e}", path.display()))?,
+        ),
+        None => None,
+    };
+
+    let paper: Option<PaperData> = match value.get("paper") {
+        Some(v) => {
+            let p: PaperData = serde_json::from_value(v.clone())
+                .map_err(|e| format!("failed to parse 'paper' in {}: {e}", path.display()))?;
+            p.validate(fixture.key, &graph)
+                .map_err(|e| format!("invalid 'paper' in {}: {e}", path.display()))?;
+            Some(p)
+        }
+        None => None,
+    };
 
     Ok(LoadedModel {
         fixture,
@@ -173,6 +226,7 @@ pub fn load(fixture: &'static ModelFixture) -> Result<LoadedModel, String> {
         bit_plan,
         ir_bytes,
         ir_load_secs,
+        paper,
     })
 }
 

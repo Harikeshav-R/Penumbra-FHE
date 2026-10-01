@@ -34,13 +34,26 @@ What this means in practice:
 ## Parameter security level
 
 All supported backend parameter profiles target $\ge 128$-bit classical security under standard
-lattice-based assumptions:
+lattice-based assumptions. In Phase 15, concrete security estimates were executed using the
+pinned [lattice-estimator](https://github.com/malb/lattice-estimator) (commit `53da598`) under SageMath 10.6,
+evaluating the MATZOV reduction cost model (`RC.MATZOV`) and GSA shape model (`GSA`) under unbounded samples ($m=\infty$).
+Full results and provenance are recorded in [`docs/results/phase15-security-estimates.json`](./results/phase15-security-estimates.json),
+reproducible via `python examples/security/run.py`.
+
+### Concrete Lattice Estimates Summary
+
+| Component | Ring Dim ($n$) | Modulus ($q$) | Secret Dist | Error Dist | Min Lattice ROP | Primary Bottleneck Attack |
+|---|---|---|---|---|---:|---|
+| **TFHE Classic LWE** | 918 | $2^{64}$ | Binary | TUniform(45) | 134.9 bits | Dual hybrid ($\beta=366$) |
+| **TFHE Classic GLWE** | 2048 | $2^{64}$ | Binary | TUniform(17) | 134.8 bits | Dual hybrid ($\beta=360$) |
+| **CKKS Ciphertext** | 16384 | $2^{360}$ | Ternary | DiscreteGaussian(3.2) | 155.3 bits | Primal BDD ($\beta=426, \eta=468$) |
+| **CKKS Evaluation Key** | 16384 | $2^{432}$ | Ternary | DiscreteGaussian(3.2) | 127.6 bits | Primal BDD ($\beta=327, \eta=355$) |
 
 ### TFHE (`tfhe-rs` 1.8.1)
 
 TFHE operates over discrete torus integers. All five supported profiles use vetted `tfhe-rs`
-parameter sets at `message_bits = 2, carry_bits = 2`, providing $\ge 128$-bit classical security
-as claimed by `tfhe-rs`:
+parameter sets at `message_bits = 2, carry_bits = 2`. The classical security of the default `classic` profile
+measures at **134.8 bits** overall (LWE 134.9 bits, GLWE 134.8 bits), exceeding the 128-bit security floor:
 
 | Profile | `tfhe-rs` Constant | Probability of Decryption Failure ($p_{\text{fail}}$) | Notes |
 |---|---|---|---|
@@ -50,26 +63,26 @@ as claimed by `tfhe-rs`:
 | `multibit3` | `PARAM_MESSAGE_2_CARRY_2_GROUP_3_KS_PBS` | $2^{-128.235}$ | 3-bit PBS grouping |
 | `multibit4` | `PARAM_MESSAGE_2_CARRY_2_GROUP_4_KS_PBS` | $2^{-134.345}$ | 4-bit PBS grouping |
 
+Note that decryption failure probability ($p_{\text{fail}} \le 2^{-128}$) represents statistical correctness
+(the chance that carry noise spills into the message space), which is distinct from the computational cost of
+lattice reduction attacks ($134.8$ bits).
+
 ### CKKS (`poulpy-ckks` 0.8.3)
 
 Because `poulpy-ckks` does not ship general parameter presets, Penumbra-FHE defines its own
 calibrated parameter profile (`crates/penumbra-ckks/src/params.rs`):
 
 - **Ring dimension:** $N = 16384$
-- **Total modulus:** $k = \log_2(q) = 360$ bits
+- **Ciphertext modulus:** $k = \log_2(q) = 360$ bits
+- **Evaluation key modulus:** $\log_2(q) = 432$ bits (gadget decomposition precision)
 - **Scaling factor:** $\log_2(\Delta) = 30$ bits (multiplicative depth budget: 330 bits)
 - **Secret key distribution:** Uniform ternary secret ($\{-1, 0, 1\}$)
 
-This profile achieves $\ge 128$-bit classical security by standard table lookup against the
-[HomomorphicEncryption.org standard security tables](https://homomorphicencryption.org/standard/)
-($\log_2(q) \le 438$ at $N = 16384$ for ternary secrets). The only exposed tuning knob,
-`max_poly_degree`, adjusts polynomial approximation degrees for non-linear activations and does not
-alter these ring parameters or compromise security.
-
-Parameter tuning optimizes execution speed **within a fixed security level** — security is never
-traded for performance. The backends' security levels are kept matched so neither is weakened and
-the scheme comparison (`docs/COMPARISON.md`) remains fair.
-
+Lattice security estimation yields **155.3 bits** for ciphertexts and **127.6 bits** for evaluation keys
+(the public tensor and automorphism keys require higher auxiliary precision $q=2^{432}$ during gadget decomposition).
+The overall CKKS security level is bounded by the evaluation key at **127.6 bits** (at the 128-bit target).
+GLWE/RLWE is modeled as unstructured LWE at $n = \text{rank} \times N = 16384$, and discrete Gaussian noise
+($\sigma=3.2$) is modeled as a nominal approximation to Poulpy's rounded, 6-sigma truncated sampler.
 ## CKKS-specific caveats
 
 Two things are worth stating plainly, because they are easy to overlook when a second scheme

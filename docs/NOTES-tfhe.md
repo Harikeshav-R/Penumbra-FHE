@@ -22,6 +22,27 @@ holding security constant at $\ge 128$ bits ($p_{\text{fail}} \le 2^{-128}$) acr
 5. **`multibit4`:** `V1_8_PARAM_MULTI_BIT_GROUP_4_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128`. Multi-bit PBS,
    grouping factor 4. $p_{\text{fail}} = 2^{-134.345}$, algorithmic cost ~ 100, server key 302.07 MB.
 
+### Lattice security estimation (Phase 15)
+
+Concrete classical lattice security for the default `classic` profile (`PARAM_MESSAGE_2_CARRY_2_KS_PBS`)
+was estimated using the pinned `malb/lattice-estimator` (commit `53da598`) under SageMath 10.6,
+evaluating the MATZOV reduction cost model (`RC.MATZOV`) and GSA shape model (`GSA`) under unbounded samples ($m=\infty$):
+
+- **LWE input:** $n = 918, q = 2^{64}, \text{Binary secret}, \text{TUniform}(45)$.
+  - Primal uSVP: $\approx 2^{141.3}$ operations ($\beta=393, d=1660$)
+  - Primal BDD: $\approx 2^{138.9}$ operations ($\beta=383, \eta=413, d=1688$)
+  - Dual lattice: $\approx 2^{145.2}$ operations ($\beta=403, d=1740$)
+  - Dual hybrid: $\approx 2^{134.9}$ operations ($\beta=366$) — **bottleneck attack: 134.9 bits**
+  - Coded BKW: $\approx 2^{209.3}$ operations
+- **GLWE input:** $n = 2048, q = 2^{64}, \text{Binary secret}, \text{TUniform}(17)$ (modeled as unstructured LWE at $n = \text{rank} \times N = 2048$).
+  - Primal uSVP: $\approx 2^{137.5}$ operations ($\beta=374, d=3901$)
+  - Primal BDD: $\approx 2^{136.5}$ operations ($\beta=369, \eta=404, d=3952$)
+  - Dual lattice: $\approx 2^{139.6}$ operations ($\beta=378, d=4010$)
+  - Dual hybrid: $\approx 2^{134.8}$ operations ($\beta=360$) — **bottleneck attack: 134.8 bits**
+- **Overall TFHE security:** **134.8 bits** classical security (exceeds the 128-bit floor).
+
+Artifact: [`docs/results/phase15-security-estimates.json`](./results/phase15-security-estimates.json),
+reproducible via `python examples/security/run.py`.
 Server-key sizes: `phase10-param-sweep-<profile>.json` (committed in `9b38c1b`), binary MB.
 
 All multi-bit profiles enable `with_deterministic_execution()`: without deterministic execution,

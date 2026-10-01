@@ -48,10 +48,6 @@ poulpy-cpu-arm = { version = "=0.8.3", features = ["enable-neon", "enable-ckks"]
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 poulpy-cpu-avx = { version = "=0.8.3", features = ["enable-avx", "enable-ckks"], optional = true }
 
-[[example]]
-name = "calibrate"
-required-features = ["ckks"]
-
 [[test]]
 name = "wire_format_tags"
 required-features = ["ckks"]

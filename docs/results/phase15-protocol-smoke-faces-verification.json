@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "model": "phase7_faces",
+  "rule": "20 test + 10 calibration seeded spot checks (owner-approved rule)",
+  "seed": 1503,
+  "total_checks": 30,
+  "test_checks_count": 20,
+  "calibration_checks_count": 10,
+  "distinct_ids_count": 30,
+  "test_spot_checks": [
+    {
+      "spot_check_index": 0,
+      "split": "test",
+      "sample_id": "16",
+      "expected_label": 1,
+      "target": 1
+    },
+    {
+      "spot_check_index": 1,
+      "split": "test",
+      "sample_id": "24",
+      "expected_label": 2,
+      "target": 2
+    },
+    {
+      "spot_check_index": 2,
+      "split": "test",
+      "sample_id": "64",
+      "expected_label": 6,
+      "target": 6
+    },
+    {
+      "spot_check_index": 3,
+      "split": "test",
+      "sample_id": "2",
+      "expected_label": 0,
+      "target": 0
+    },
+    {
+      "spot_check_index": 4,
+      "split": "test",
+      "sample_id": "38",
+      "expected_label": 3,
+      "target": 3
+    },
+    {
+      "spot_check_index": 5,
+      "split": "test",
+      "sample_id": "33",
+      "expected_label": 3,
+      "target": 3
+    },
+    {
+      "spot_check_index": 6,
+      "split": "test",
+      "sample_id": "72",
+      "expected_label": 7,
+      "target": 7
+    },
+    {
+      "spot_check_index": 7,
+      "split": "test",
+      "sample_id": "40",
+      "expected_label": 4,
+      "target": 4
+    },
+    {
+      "spot_check_index": 8,
+      "split": "test",
+      "sample_id": "5",
+      "expected_label": 4,
+      "target": 0
+    },
+    {
+      "spot_check_index": 9,
+      "split": "test",
+      "sample_id": "54",
+      "expected_label": 5,
+      "target": 5
+    },
+    {
+      "spot_check_index": 10,
+      "split": "test",
+      "sample_id": "44",
+      "expected_label": 4,
+      "target": 4
+    },
+    {
+      "spot_check_index": 11,
+      "split": "test",
+      "sample_id": "39",
+      "expected_label": 3,
+      "target": 3
+    },
+    {
+      "spot_check_index": 12,
+      "split": "test",
+      "sample_id": "50",
+      "expected_label": 5,
+      "target": 5
+    },
+    {
+      "spot_check_index": 13,
+      "split": "test",
+      "sample_id": "47",
+      "expected_label": 4,
+      "target": 4
+    },
+    {
+      "spot_check_index": 14,
+      "split": "test",
+      "sample_id": "59",
+      "expected_label": 5,
+      "target": 5
+    },
+    {
+      "spot_check_index": 15,
+      "split": "test",
+      "sample_id": "17",
+      "expected_label": 1,
+      "target": 1
+    },
+    {
+      "spot_check_index": 16,
+      "split": "test",
+      "sample_id": "28",
+      "expected_label": 2,
+      "target": 2
+    },
+    {
+      "spot_check_index": 17,
+      "split": "test",
+      "sample_id": "70",
+      "expected_label": 7,
+      "target": 7
+    },
+    {
+      "spot_check_index": 18,
+      "split": "test",
+      "sample_id": "4",
+      "expected_label": 7,
+      "target": 0
+    },
+    {
+      "spot_check_index": 19,
+      "split": "test",
+      "sample_id": "68",
+      "expected_label": 6,
+      "target": 6
+    }
+  ],
+  "calibration_spot_checks": [
+    {
+      "spot_check_index": 0,
+      "split": "calibration",
+      "sample_id": "51",
+      "expected_label": 5,
+      "target": 5
+    },
+    {
+      "spot_check_index": 3,
+      "split": "calibration",
+      "sample_id": "20",
+      "expected_label": 2,
+      "target": 2
+    },
+    {
+      "spot_check_index": 20,
+      "split": "calibration",
+      "sample_id": "62",
+      "expected_label": 6,
+      "target": 6
+    },
+    {
+      "spot_check_index": 28,
+      "split": "calibration",
+      "sample_id": "67",
+      "expected_label": 6,
+      "target": 6
+    },
+    {
+      "spot_check_index": 32,
+      "split": "calibration",
+      "sample_id": "58",
+      "expected_label": 5,
+      "target": 5
+    },
+    {
+      "spot_check_index": 33,
+      "split": "calibration",
+      "sample_id": "45",
+      "expected_label": 4,
+      "target": 4
+    },
+    {
+      "spot_check_index": 38,
+      "split": "calibration",
+      "sample_id": "73",
+      "expected_label": 7,
+      "target": 7
+    },
+    {
+      "spot_check_index": 50,
+      "split": "calibration",
+      "sample_id": "43",
+      "expected_label": 4,
+      "target": 4
+    },
+    {
+      "spot_check_index": 53,
+      "split": "calibration",
+      "sample_id": "0",
+      "expected_label": 0,
+      "target": 0
+    },
+    {
+      "spot_check_index": 58,
+      "split": "calibration",
+      "sample_id": "30",
+      "expected_label": 3,
+      "target": 3
+    }
+  ]
+}
