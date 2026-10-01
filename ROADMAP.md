@@ -928,14 +928,17 @@ calibration row showing how Penumbra's TFHE compares with Concrete-ML on the sam
       - Build a small 28×28 MNIST CNN: a new graph and fixture through the normal Layer-3 path
         (`examples/mnist/`, Python quantization, ONNX); **no backend change**.
       - Time one post-fix TFHE sample.
-      - If ≤ 10 min per sample: add it to the model suite, run the full protocol on it, and
-        pass its golden test on both backends.
-      - Otherwise: don't add it, and record the measured time as a stated scale limit in
-        `docs/COMPARISON.md` threats.
+      - Record the full elapsed time and whether it is ≤ 600 seconds.
+      - Owner-approved D18 amendment: keep the raw 784-element input probe separate
+        from the controlled suite regardless of timing, because the fixed CKKS
+        linear-transform capacity is 256. Record actual capacity evidence and the
+        measured TFHE time in `docs/COMPARISON.md` threats; no packing/backend change.
 - [ ] **Concrete-ML calibration (D15).**
       - In a separate environment in the **paper repo** (not a Penumbra dependency), train or
-        import the same architectures and run Concrete-ML in **exact mode**: no
-        `rounding_threshold_bits`, `p_error` at its minimum.
+        import the same architectures and run Concrete-ML unrounded with
+        `rounding_threshold_bits=None`, `p_error=2**-40`, `global_p_error=None`.
+        This owner-approved D15 amendment uses the pinned default, not a claimed
+        universal minimum; disclose configured and compiler-reported probabilities.
       - Record latency and accuracy on the same M3 Pro.
       - Report it as a calibration row **outside** the controlled comparison.
       - If it won't install on macOS arm64, record the failure and cite published numbers
