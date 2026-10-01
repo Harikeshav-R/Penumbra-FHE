@@ -834,7 +834,7 @@ security estimate from the same tool.
 
 ### Tasks
 
-- [ ] **Criterion as the only source of headline latency (D6).**
+- [x] **Criterion as the only source of headline latency (D6).**
       - Criterion benches in `penumbra-bench` for every model × backend, ≥ 10 samples, using
         the Phase 13 explanation to exclude one-time setup consistently for both backends.
       - Emit median and 95% CI into the results JSON.
@@ -842,13 +842,13 @@ security estimate from the same tool.
         backend, and commit in every output.
       - The per-sample report path keeps the per-op breakdown and cost proxies only, and is
         labelled that way.
-- [ ] **Peak server memory (D10).** Measure peak RSS of server-side evaluation (keys loaded +
+- [x] **Peak server memory (D10).** Measure peak RSS of server-side evaluation (keys loaded +
       eval) per model per backend, in a separate process per measurement so runs don't
       contaminate each other. Add it to the results JSON and to `docs/BENCHMARKS.md` Table C.
-- [ ] **TFHE PBS split (D16).** Report **lookup PBS** (one per logical table lookup in
+- [x] **TFHE PBS split (D16).** Report **lookup PBS** (one per logical table lookup in
       `Requant`, `Activation`, `Compare`, `Argmax`) and **carry PBS** (measured total − lookup
       PBS) per op and per model. Add both to the JSON and the cost-proxy table.
-- [ ] **Calibration split for CKKS bounds (D7).**
+- [x] **Calibration split for CKKS bounds (D7).**
       - Extend the committed fixtures (Python/Layer-3 data only; no IR change) with a
         calibration set **separate from** the test inputs.
       - Fix the margin rule before any test run: bound = p99(calibration |err|) × margin, with
@@ -856,25 +856,25 @@ security estimate from the same tool.
       - Recompute the bounds in `crates/penumbra-ckks/src/bounds.rs` with a derivation comment
         per model.
       - The golden tests keep asserting at those bounds.
-- [ ] **CKKS accuracy metrics (D7).**
+- [x] **CKKS accuracy metrics (D7).**
       - **Label-flip rate** vs `evaluate_graph_int`.
       - The |err| distribution relative to each sample's **top-2 logit margin** (median, p95,
         max).
       - Absolute |err| distribution.
       - Emitted per model into the results JSON.
-- [ ] **Evaluation protocol (D3).**
+- [x] **Evaluation protocol (D3).**
       - Harness modes for: CKKS encrypted over the **full test split**; TFHE bit-exact
         spot-check on **n = 30** samples per model (fixed, seeded selection).
       - TFHE full-test-set accuracy computed in cleartext via the quantized reference.
       - Float and quantized accuracy on the full test split (`docs/MODEL-ZOO.md` columns).
-- [ ] **Security estimates (D19).**
+- [x] **Security estimates (D19).**
       - Run the [lattice-estimator](https://github.com/malb/lattice-estimator) (Sage) on the
         TFHE `classic` parameter set (both its LWE and GLWE components) and on the CKKS set
         (N = 16384, log q = 360, ternary secret, the configured error distribution).
       - Commit the script and its output, and record the estimates in `docs/NOTES-tfhe.md`,
         `docs/NOTES-ckks.md`, and `SECURITY.md`.
       - **Do not retune** if they differ; report both.
-- [ ] Update `docs/BENCHMARKS.md` (method section) and `docs/COMPARISON.md` (Method, Metrics)
+- [x] Update `docs/BENCHMARKS.md` (method section) and `docs/COMPARISON.md` (Method, Metrics)
       to describe the new protocol.
 
 ### Exit Criteria
