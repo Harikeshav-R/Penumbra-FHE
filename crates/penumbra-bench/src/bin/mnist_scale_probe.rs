@@ -7,10 +7,10 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
 use std::time::Instant;
 
-use penumbra_bench::protocol::canonical_graph_hash;
+use penumbra_bench::protocol::{canonical_graph_hash, PaperReportMeta};
 use penumbra_bench::report::NodeReport;
 use penumbra_bench::session::Session;
 use penumbra_bench::tfhe_backend;
@@ -161,78 +161,6 @@ fn compute_sha256(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-fn run_command_strict(cmd: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new(cmd)
-        .args(args)
-        .output()
-        .map_err(|e| format!("failed to execute '{cmd} {args:?}': {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "command '{cmd} {args:?}' failed with status {}: {stderr}",
-            output.status
-        ));
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if stdout.is_empty() {
-        return Err(format!("command '{cmd} {args:?}' returned empty output"));
-    }
-    Ok(stdout)
-}
-
-struct ProbeProvenance {
-    machine_model: String,
-    os_product_version: String,
-    kernel_version: String,
-    runtime_commit: String,
-    build_commit: String,
-    dirty: bool,
-    rustc_version: String,
-}
-
-fn check_provenance() -> Result<ProbeProvenance, String> {
-    let machine_model = run_command_strict("sysctl", &["-n", "hw.model"])?;
-    let os_product_version = run_command_strict("sw_vers", &["-productVersion"])?;
-    let kernel_version = run_command_strict("uname", &["-r"])?;
-    let runtime_commit = run_command_strict("git", &["rev-parse", "HEAD"])?;
-    let build_commit = env!("PENUMBRA_BUILD_COMMIT").to_string();
-
-    let git_status_output = Command::new("git")
-        .args(["status", "--porcelain"])
-        .output()
-        .map_err(|e| format!("git status failed: {e}"))?;
-    if !git_status_output.status.success() {
-        return Err("git status --porcelain command failed".to_string());
-    }
-    let dirty = !git_status_output.stdout.is_empty();
-
-    let rustc_version = env!("PENUMBRA_BUILD_RUSTC").to_string();
-    if rustc_version.is_empty() {
-        return Err("PENUMBRA_BUILD_RUSTC environment variable is empty".to_string());
-    }
-
-    if dirty {
-        return Err(
-            "working tree has uncommitted changes; scale probe measurement requires a clean working tree"
-                .to_string(),
-        );
-    }
-    if runtime_commit != build_commit {
-        return Err(format!(
-            "runtime commit ({runtime_commit}) does not match build commit ({build_commit}); binary must be rebuilt at HEAD"
-        ));
-    }
-
-    Ok(ProbeProvenance {
-        machine_model,
-        os_product_version,
-        kernel_version,
-        runtime_commit,
-        build_commit,
-        dirty,
-        rustc_version,
-    })
-}
 
 #[cfg(feature = "ckks")]
 fn check_ckks_capacity() -> Result<(String, usize, String), String> {
@@ -284,7 +212,7 @@ fn run() -> Result<(), String> {
     }
 
     // Provenance verification
-    let prov = check_provenance()?;
+    let meta = PaperReportMeta::capture("probe", requested_threads)?;
 
     // Early CKKS capacity preflight: fails before any expensive TFHE keygen/eval
     let (ckks_capacity_error, ckks_linear_capacity, ckks_capacity_source) = check_ckks_capacity()?;
@@ -366,15 +294,15 @@ fn run() -> Result<(), String> {
         schema_version: 1,
         probe: "mnist28_scale_probe".to_string(),
         backend: "tfhe".to_string(),
-        machine_model: prov.machine_model,
-        os_product_version: prov.os_product_version,
-        kernel_version: prov.kernel_version,
-        build_commit: prov.build_commit,
-        runtime_commit: prov.runtime_commit,
-        dirty: prov.dirty,
-        rustc_version: prov.rustc_version,
-        requested_threads,
-        actual_threads,
+        machine_model: meta.machine_model,
+        os_product_version: meta.os_product_version,
+        kernel_version: meta.kernel_version,
+        build_commit: meta.build_commit,
+        runtime_commit: meta.runtime_commit,
+        dirty: meta.dirty,
+        rustc_version: meta.rustc_version,
+        requested_threads: meta.requested_threads,
+        actual_threads: meta.actual_threads,
         fixture_path: args.fixture_path.display().to_string(),
         fixture_sha256,
         graph_sha256,

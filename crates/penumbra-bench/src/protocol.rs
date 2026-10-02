@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::process::Command;
 
 pub const CALIBRATION_SEED: u64 = 1507;
 pub const SPOT_CHECK_SEED: u64 = 1503;
@@ -395,9 +396,130 @@ pub struct PaperReportMeta {
     pub mode: String,
 }
 
+
+impl PaperReportMeta {
+    pub fn capture(mode: &str, requested_threads: usize) -> Result<Self, String> {
+        let machine_model = if cfg!(target_os = "macos") {
+            let out = Command::new("sysctl")
+                .args(["-n", "hw.model"])
+                .output()
+                .map_err(|e| format!("sysctl failed: {e}"))?;
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        } else {
+            std::fs::read_to_string("/proc/cpuinfo")
+                .ok()
+                .and_then(|text| {
+                    for line in text.lines() {
+                        if line.starts_with("model name") {
+                            return line.split(':').nth(1).map(|s| s.trim().to_string());
+                        }
+                    }
+                    None
+                })
+                .unwrap_or_else(|| "linux-x86_64".to_string())
+        };
+
+        let os_product_version = if cfg!(target_os = "macos") {
+            let out = Command::new("sw_vers")
+                .args(["-productVersion"])
+                .output()
+                .map_err(|e| format!("sw_vers failed: {e}"))?;
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        } else {
+            std::fs::read_to_string("/etc/os-release")
+                .ok()
+                .and_then(|text| {
+                    for line in text.lines() {
+                        if line.starts_with("PRETTY_NAME=") {
+                            return Some(
+                                line.trim_start_matches("PRETTY_NAME=")
+                                    .trim_matches('"')
+                                    .to_string(),
+                            );
+                        }
+                    }
+                    None
+                })
+                .unwrap_or_else(|| std::env::consts::OS.to_string())
+        };
+
+        let kernel_version = Command::new("uname")
+            .args(["-r"])
+            .output()
+            .map_err(|e| format!("uname -r failed: {e}"))
+            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())?;
+
+        let runtime_commit = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .map_err(|e| format!("git rev-parse HEAD failed: {e}"))
+            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())?;
+
+        let build_commit = env!("PENUMBRA_BUILD_COMMIT").to_string();
+
+        let dirty = Command::new("git")
+            .args(["status", "--porcelain"])
+            .output()
+            .map_err(|e| format!("git status failed: {e}"))
+            .map(|out| !out.stdout.is_empty())?;
+
+        let rustc_version = env!("PENUMBRA_BUILD_RUSTC").to_string();
+
+        #[cfg(feature = "ckks")]
+        let hal_name = penumbra_ckks::hal_backend_name().to_string();
+        #[cfg(not(feature = "ckks"))]
+        let hal_name = "none".to_string();
+
+        let actual_threads = rayon::current_num_threads();
+
+        if mode == "paper" || mode == "calibrate" || mode == "probe" {
+            if dirty {
+                return Err(format!(
+                    "working tree has uncommitted changes; {mode} mode requires a clean working tree"
+                ));
+            }
+            if runtime_commit != build_commit {
+                return Err(format!(
+                    "runtime commit ({runtime_commit}) does not match build commit ({build_commit}); binary must be rebuilt at HEAD"
+                ));
+            }
+        }
+
+        Ok(Self {
+            machine_model,
+            os_product_version,
+            kernel_version,
+            runtime_commit,
+            build_commit,
+            dirty,
+            rustc_version,
+            requested_threads,
+            actual_threads,
+            hal_name,
+            protocol_version: 1,
+            mode: mode.to_string(),
+        })
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaperReport {
     pub schema_version: usize,
     pub meta: PaperReportMeta,
     pub runs: Vec<PaperModelRun>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_paper_report_meta_capture_structure() {
+        let meta = PaperReportMeta::capture("test", 4).expect("capture should succeed");
+        assert!(!meta.machine_model.is_empty());
+        assert!(!meta.os_product_version.is_empty());
+        assert!(!meta.kernel_version.is_empty());
+        assert_eq!(meta.requested_threads, 4);
+        assert_eq!(meta.mode, "test");
+        assert_eq!(meta.protocol_version, 1);
+    }
 }
