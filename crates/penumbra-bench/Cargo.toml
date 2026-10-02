@@ -29,6 +29,10 @@ ckks = ["dep:penumbra-ckks", "penumbra-ckks/ckks", "dep:poulpy-core"]
 name = "penumbra-bench-report"
 path = "src/bin/report.rs"
 
+[[bin]]
+name = "penumbra-mnist-scale-probe"
+path = "src/bin/mnist_scale_probe.rs"
+
 [[bench]]
 name = "inference"
 harness = false

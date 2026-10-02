@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use penumbra_core::backend::Backend;
+use penumbra_core::profile::NodeProfile;
 use serde::{Deserialize, Serialize};
 
 use crate::models::LoadedModel;
@@ -21,6 +22,52 @@ pub struct NodeReport {
     pub counters: BTreeMap<String, u64>,
     #[serde(default)]
     pub measured: BTreeMap<String, u64>,
+}
+
+impl From<NodeProfile> for NodeReport {
+    fn from(n: NodeProfile) -> Self {
+        Self {
+            name: n.name,
+            op_type: n.op_type.to_string(),
+            build_secs: n.build.as_secs_f64(),
+            eval_secs: n.eval.as_secs_f64(),
+            input_lens: n.input_lens,
+            output_len: n.output_len,
+            counters: n
+                .counters
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+            measured: n
+                .measured
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+        }
+    }
+}
+
+impl From<&NodeProfile> for NodeReport {
+    fn from(n: &NodeProfile) -> Self {
+        Self {
+            name: n.name.clone(),
+            op_type: n.op_type.to_string(),
+            build_secs: n.build.as_secs_f64(),
+            eval_secs: n.eval.as_secs_f64(),
+            input_lens: n.input_lens.clone(),
+            output_len: n.output_len,
+            counters: n
+                .counters
+                .iter()
+                .map(|&(k, v)| (k.to_string(), v))
+                .collect(),
+            measured: n
+                .measured
+                .iter()
+                .map(|&(k, v)| (k.to_string(), v))
+                .collect(),
+        }
+    }
 }
 
 /// Timing and verification report for a single input sample.
@@ -554,5 +601,39 @@ mod tests {
             assert!(md.contains("PBS (measured)"));
             assert!(md.contains("measured pbs:"));
         }
+    }
+
+    #[test]
+    fn test_node_report_from_node_profile() {
+        use penumbra_core::profile::NodeProfile;
+        use std::time::Duration;
+
+        let mut profile = NodeProfile {
+            name: "test_node".to_string(),
+            op_type: "Linear",
+            build: Duration::from_millis(15),
+            eval: Duration::from_millis(42),
+            input_lens: vec![10, 20],
+            output_len: 5,
+            counters: vec![("mults", 100)].into_iter().collect(),
+            measured: vec![("pbs", 4)].into_iter().collect(),
+        };
+
+        // Test borrowed conversion
+        let rep_ref = NodeReport::from(&profile);
+        assert_eq!(rep_ref.name, "test_node");
+        assert_eq!(rep_ref.op_type, "Linear");
+        assert!((rep_ref.build_secs - 0.015).abs() < 1e-9);
+        assert!((rep_ref.eval_secs - 0.042).abs() < 1e-9);
+        assert_eq!(rep_ref.input_lens, vec![10, 20]);
+        assert_eq!(rep_ref.output_len, 5);
+        assert_eq!(rep_ref.counters.get("mults"), Some(&100));
+        assert_eq!(rep_ref.measured.get("pbs"), Some(&4));
+
+        // Test owned conversion
+        profile.name = "test_owned".to_string();
+        let rep_owned = NodeReport::from(profile);
+        assert_eq!(rep_owned.name, "test_owned");
+        assert_eq!(rep_owned.counters.get("mults"), Some(&100));
     }
 }

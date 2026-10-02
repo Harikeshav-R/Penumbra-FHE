@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "manifest_title": "Phase 16 Measurement Run Manifest and Execution Provenance",
+  "timestamp_utc": "2026-10-02T15:30:01.760623+00:00",
+  "frozen_codebase_revision": {
+    "full_commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+    "clean_worktree": true,
+    "branch": "docs/paper-results",
+    "freeze_gate_status": "enforced_after_F",
+    "description": "All executable code, IR, fixtures, and bench binaries frozen before final runs. Only results and documentation commits follow."
+  },
+  "external_calibration_revision": {
+    "full_commit": "ac26687b9acb75580a68c78fab70fd3ad765338f",
+    "clean_worktree": true,
+    "branch": "fix/concrete-calibration-metadata",
+    "repository_path": "/Users/hari/Developer/Penumbra-FHE-Paper",
+    "description": "External Concrete-ML calibration repo and environment, native execution on identical pinned machine."
+  },
+  "hardware_and_environment": {
+    "machine_model": "Mac15,6",
+    "processor": "Apple M3 Pro (11 cores: 5 performance, 6 efficiency)",
+    "memory_total_bytes": 19327352832,
+    "os_product_version": "26.6.2",
+    "kernel_version": "25.6.0",
+    "rustc_version": "rustc 1.100.0-nightly (bba531001 2026-09-20)",
+    "hal_backend": "FFT64Neon",
+    "pinned_threads": 11,
+    "power_state": "AC Power, 100% charged",
+    "idle_preflight": "Single-user idle, 91.78% CPU idle preflight, no concurrent agents, training, or external FHE during timing"
+  },
+  "executed_commands": [
+    {
+      "id": "frozen_golden_verification",
+      "command": "RUST_TEST_THREADS=1 RAYON_NUM_THREADS=11 cargo +nightly test --workspace --features penumbra-bench/ckks --release",
+      "purpose": "Verify all 163 workspace tests and ignored golden targets on frozen commit F prior to measurement"
+    },
+    {
+      "id": "paper_report_final",
+      "command": "env RAYON_NUM_THREADS=11 ./target/release/penumbra-bench-report --mode paper --models all --backends tfhe,ckks --threads 11 --format json --out docs/results/phase16-paper-final.json",
+      "purpose": "Full 28-row matrix evaluation: 14 models x 2 backends, 10 Criterion samples with 95% CI, isolated server peak RSS, wire sizes, PBS split, accuracy metrics"
+    },
+    {
+      "id": "mnist28_scale_probe",
+      "command": "env RAYON_NUM_THREADS=11 ./target/release/penumbra-mnist-scale-probe --fixture examples/mnist/phase16_mnist28_fixture.json --threads 11 --out docs/results/phase16-mnist28-probe.json",
+      "purpose": "Separate raw 28x28 784-element input CNN feasibility probe, time server eval, assert bit-for-bit logit exactness, record CKKS capacity limit"
+    },
+    {
+      "id": "tfhe_diagnostics_sweep",
+      "command": "env RAYON_NUM_THREADS=11 ./target/release/penumbra-bench-report --mode diagnostics --models all --backends tfhe --threads 11 --samples 2 --format json --out docs/results/phase16-tfhe-diagnostics.json",
+      "purpose": "Post-fix matched diagnostic observations across all 14 models (samples=2) for D17 before/after PBS and eval breakdown"
+    },
+    {
+      "id": "concrete_ml_calibration",
+      "command": "env OMP_NUM_THREADS=11 RAYON_NUM_THREADS=11 uv run python -m scripts.concrete_calibration --out target/phase16-concrete-calibration.json",
+      "purpose": "External Concrete-ML unrounded calibration on phase6_onnx architecture (p_error=2**-40, n_bits=6, 128-bit security, 10 timed encrypted runs, 30 spot checks)"
+    }
+  ],
+  "promoted_artifacts": {
+    "phase16_paper_final": {
+      "path": "target/phase16/phase16-paper-final.json",
+      "sha256": "3d3c51e3ef67af6c67c9733be01af59f33378144632344604fcc72e958469f94",
+      "bytes": 89263
+    },
+    "phase16_mnist28_probe": {
+      "path": "target/phase16/phase16-mnist28-probe.json",
+      "sha256": "1dc45b8e343477639404b65f43473e4d31146b52a07b3c61fb081c38b3b8dcf2",
+      "bytes": 2902
+    },
+    "phase16_tfhe_diagnostics": {
+      "path": "target/phase16/phase16-tfhe-diagnostics.json",
+      "sha256": "691eedd3d4195e090075cbff37bea8da75848383b9075fdc19c3ed33f6079a42",
+      "bytes": 78700
+    },
+    "phase16_tfhe_before_after": {
+      "path": "target/phase16/phase16-tfhe-before-after.json",
+      "sha256": "8507d4b4d35ab4a8e64d7a3cfeea084d659f6b41e78c92eca23440b4005ac48b",
+      "bytes": 30326
+    },
+    "phase16_concrete_calibration": {
+      "path": "/Users/hari/Developer/Penumbra-FHE-Paper/target/phase16-concrete-calibration.json",
+      "sha256": "abc1a00bf1fda6f5eff0388d25c1df2432975f1942e6593f2684351a0d1fe514",
+      "bytes": 14534
+    },
+    "phase16_mnist28_fixture": {
+      "path": "examples/mnist/phase16_mnist28_fixture.json",
+      "sha256": "770259a837103496f5848bfe16c92a5360f85c3926a688f37f160b81987e52c4",
+      "bytes": 55632
+    },
+    "phase15_ckks_calibration": {
+      "path": "docs/results/phase15-ckks-calibration.json",
+      "sha256": "d01598313f509a1a8ae1641ec9b1aa1647f6f1d2467ecab921045a3ef0c0b785",
+      "bytes": 135031
+    },
+    "phase15_security_estimates": {
+      "path": "docs/results/phase15-security-estimates.json",
+      "sha256": "4fe4ba86e4bb09635ea3026b64da11ced4490f9513d2cc8def13b6e287dec4b8",
+      "bytes": 15666
+    }
+  }
+}

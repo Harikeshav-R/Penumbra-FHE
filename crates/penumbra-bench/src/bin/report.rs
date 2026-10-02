@@ -4,7 +4,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
 
 use penumbra_bench::available_backends;
 use penumbra_bench::models::{find, load, ModelFixture, MODELS};
@@ -347,110 +347,6 @@ fn configure_threads(threads: Option<usize>) -> Result<(), String> {
     Ok(())
 }
 
-fn capture_paper_meta(mode: &str, requested_threads: usize) -> Result<PaperReportMeta, String> {
-    let machine_model = if cfg!(target_os = "macos") {
-        let out = Command::new("sysctl")
-            .args(["-n", "hw.model"])
-            .output()
-            .map_err(|e| format!("sysctl failed: {e}"))?;
-        String::from_utf8_lossy(&out.stdout).trim().to_string()
-    } else {
-        std::fs::read_to_string("/proc/cpuinfo")
-            .ok()
-            .and_then(|text| {
-                for line in text.lines() {
-                    if line.starts_with("model name") {
-                        return line.split(':').nth(1).map(|s| s.trim().to_string());
-                    }
-                }
-                None
-            })
-            .unwrap_or_else(|| "linux-x86_64".to_string())
-    };
-
-    let os_product_version = if cfg!(target_os = "macos") {
-        let out = Command::new("sw_vers")
-            .args(["-productVersion"])
-            .output()
-            .map_err(|e| format!("sw_vers failed: {e}"))?;
-        String::from_utf8_lossy(&out.stdout).trim().to_string()
-    } else {
-        std::fs::read_to_string("/etc/os-release")
-            .ok()
-            .and_then(|text| {
-                for line in text.lines() {
-                    if line.starts_with("PRETTY_NAME=") {
-                        return Some(
-                            line.trim_start_matches("PRETTY_NAME=")
-                                .trim_matches('"')
-                                .to_string(),
-                        );
-                    }
-                }
-                None
-            })
-            .unwrap_or_else(|| std::env::consts::OS.to_string())
-    };
-
-    let kernel_version = Command::new("uname")
-        .args(["-r"])
-        .output()
-        .map_err(|e| format!("uname -r failed: {e}"))
-        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())?;
-
-    let runtime_commit = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .output()
-        .map_err(|e| format!("git rev-parse HEAD failed: {e}"))
-        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())?;
-
-    let build_commit = env!("PENUMBRA_BUILD_COMMIT").to_string();
-
-    let dirty = Command::new("git")
-        .args(["status", "--porcelain"])
-        .output()
-        .map_err(|e| format!("git status failed: {e}"))
-        .map(|out| !out.stdout.is_empty())?;
-
-    let rustc_version = env!("PENUMBRA_BUILD_RUSTC").to_string();
-
-    #[cfg(feature = "ckks")]
-    let hal_name = penumbra_ckks::hal_backend_name().to_string();
-    #[cfg(not(feature = "ckks"))]
-    let hal_name = "none".to_string();
-
-    let actual_threads = rayon::current_num_threads();
-
-    if mode == "paper" || mode == "calibrate" {
-        if dirty {
-            return Err(
-                "working tree has uncommitted changes; paper and calibrate modes require a clean working tree"
-                    .to_string(),
-            );
-        }
-        if runtime_commit != build_commit {
-            return Err(format!(
-                "runtime commit ({runtime_commit}) does not match build commit ({build_commit}); binary must be rebuilt at HEAD"
-            ));
-        }
-    }
-
-    Ok(PaperReportMeta {
-        machine_model,
-        os_product_version,
-        kernel_version,
-        runtime_commit,
-        build_commit,
-        dirty,
-        rustc_version,
-        requested_threads,
-        actual_threads,
-        hal_name,
-        protocol_version: 1,
-        mode: mode.to_string(),
-    })
-}
-
 fn run_worker(kind: WorkerKind, config_path: &Path) -> Result<(), String> {
     let text = std::fs::read_to_string(config_path)
         .map_err(|e| format!("cannot read {}: {e}", config_path.display()))?;
@@ -545,7 +441,7 @@ fn run() -> Result<(), String> {
             #[cfg(feature = "ckks")]
             {
                 let threads = args.threads.unwrap();
-                let meta = capture_paper_meta("calibrate", threads)?;
+                let meta = PaperReportMeta::capture("calibrate", threads)?;
                 let mut results: Vec<ModelCalibrationResult> = Vec::new();
 
                 for fixture in &args.models {
@@ -599,7 +495,7 @@ fn run() -> Result<(), String> {
         }
         Mode::Paper => {
             let threads = args.threads.unwrap();
-            let meta = capture_paper_meta("paper", threads)?;
+            let meta = PaperReportMeta::capture("paper", threads)?;
             let output_dir = args
                 .out_path
                 .as_ref()
@@ -644,7 +540,7 @@ fn run() -> Result<(), String> {
             }
 
             let report = PaperReport {
-                schema_version: 1,
+                schema_version: 2,
                 meta,
                 runs,
             };

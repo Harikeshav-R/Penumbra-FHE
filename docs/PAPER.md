@@ -212,20 +212,31 @@ Each entry: the decision, then why. Rejected alternatives are listed where they 
   bootstrapping is out of scope.
 - **D12: Hardware.** A single M3 Pro, disclosed as a threat to validity. No second machine
   (cost; the cost proxies partly cover platform dependence).
-- **D15: External TFHE calibration.** Run **Concrete-ML in exact mode** (no
-  `rounding_threshold_bits`, `p_error` near zero) on the same architectures, on the same M3 Pro.
-  Report it as a **calibration row outside the controlled comparison**: Concrete-ML has its own
-  quantizer and cannot consume Penumbra's IR or be held to its reference. The script lives in the
-  paper repo, not here. If Concrete-ML does not install on macOS arm64, record that and cite
-  published numbers instead. [Unverified: macOS arm64 support.]
+- **D15: External TFHE calibration.** Run Concrete-ML with no
+  `rounding_threshold_bits`, explicit `p_error = 2**-40`, and `global_p_error = None`
+  on the same architectures and M3 Pro. This is **unrounded, low-failure-probability
+  calibration**, not a deterministic cryptographic exactness claim. The configured
+  probability is the [pinned v1.9.0 default](https://github.com/zama-ai/concrete-ml/blob/v1.9.0/src/concrete/ml/common/utils.py),
+  not a verified universal minimum; record the compiler-reported probability too.
+  Report it as a **calibration row outside the controlled comparison**: Concrete-ML
+  has its own quantizer and cannot consume Penumbra's IR or be held to its reference.
+  The script lives in the paper repo, not here. If native installation/import fails
+  on macOS arm64, preserve failure evidence and cite published numbers instead.
+  Compilation or inference failure after successful installation does not authorize
+  that fallback. **Phase-16 owner-approved amendment:** explicit probability wording
+  replaces the earlier “exact mode / near zero” shorthand.
 - **D16: Split the TFHE bootstrap count.** Report **lookup PBS** (inherent to the scheme: one per
   logical table lookup in Requant, Activation, Compare, Argmax) separately from **carry PBS**
   (measured total − lookup PBS: radix bookkeeping, an implementation choice). Use the split in
   the cost-proxy table and the figures.
-- **D18: The 28×28 MNIST rule.** Add a small 28×28 CNN (a new graph and fixture only, no backend
-  change) **if** post-fix TFHE measures **≤ 10 min per sample**. That keeps the D3 protocol
-  (~30 spot-check samples + 10 Criterion runs ≈ 7 h) to an overnight run. Otherwise leave it out
-  and state the scale limit as a threat.
+- **D18: The 28×28 MNIST rule.** Measure a small raw 28×28 CNN as a separate
+  graph and fixture through Layer 3, with no backend change. Record one post-fix
+  TFHE sample's full server-evaluation time and whether it is **≤ 600 seconds**.
+  **Phase-16 owner-approved amendment:** its 784 input elements exceed the fixed
+  CKKS linear-transform capacity of 256. Keep this probe outside the controlled
+  backend-parity suite regardless of its measured TFHE time; do not downsample
+  outside the encrypted graph or change CKKS packing to admit it. State both
+  the timing observation and capacity exclusion as scale limitations.
 - **D19: Security estimate.** Run **both** parameter sets through the same
   [lattice-estimator](https://github.com/malb/lattice-estimator) (Sage) and report both
   estimates in the setup table. If they differ (e.g. 128 vs 140), report both numbers and **do

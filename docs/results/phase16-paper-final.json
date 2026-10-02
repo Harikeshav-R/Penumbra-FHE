@@ -1,0 +1,3168 @@
+{
+  "schema_version": 2,
+  "meta": {
+    "machine_model": "Mac15,6",
+    "os_product_version": "26.6.2",
+    "kernel_version": "25.6.0",
+    "runtime_commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+    "build_commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+    "dirty": false,
+    "rustc_version": "rustc 1.100.0-nightly (bba531001 2026-09-20)",
+    "requested_threads": 11,
+    "actual_threads": 11,
+    "hal_name": "FFT64Neon",
+    "protocol_version": 1,
+    "mode": "paper"
+  },
+  "runs": [
+    {
+      "status": "ok",
+      "model": "phase2_logreg",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "4940ddaf6584689006d9660380c11d5224d0c5dc17b68724d55fe664a0f3237f",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 0.3257504933947369,
+        "ci95_lower_secs": 0.3245431370526316,
+        "ci95_upper_secs": 0.32687800984210524,
+        "sample_count": 10,
+        "representative_sample_id": "400"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 289865728,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 63389,
+        "sample_id": "400"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 6322708,
+        "output_ciphertext_bytes": 16492
+      },
+      "pbs_split": {
+        "total_pbs": 91,
+        "lookup_pbs": 1,
+        "carry_pbs": 90
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 1.0,
+        "full_test_quantized_accuracy": 1.0,
+        "float_accuracy": {
+          "value": 1.0,
+          "source": "reproduced_generator",
+          "source_path": "examples/mnist/train_quantize_export.py",
+          "source_sha256": "a35022939ab775abb2b26dd821677448942bcfb4093a80dc40dfd67fad3812fc",
+          "sample_count": 256,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "fc",
+          "op_type": "Linear",
+          "build_secs": 1.209e-6,
+          "eval_secs": 0.30724375,
+          "input_lens": [
+            64
+          ],
+          "output_len": 1,
+          "counters": {
+            "ct_add": 31,
+            "scalar_add": 1,
+            "scalar_mul": 1
+          },
+          "measured": {
+            "pbs": 90
+          }
+        },
+        {
+          "name": "head",
+          "op_type": "Argmax",
+          "build_secs": 7.92e-7,
+          "eval_secs": 0.015666375,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "cmp_pbs_ops": 1
+          },
+          "measured": {
+            "pbs": 1
+          }
+        }
+      ],
+      "profile_sample_id": "413"
+    },
+    {
+      "status": "ok",
+      "model": "phase2_logreg",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "4940ddaf6584689006d9660380c11d5224d0c5dc17b68724d55fe664a0f3237f",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 0.34042906861764705,
+        "ci95_lower_secs": 0.3400194583529412,
+        "ci95_upper_secs": 0.3415963382352941,
+        "sample_count": 10,
+        "representative_sample_id": "400"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 5396774912,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 64267,
+        "sample_id": "400"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 256,
+        "encrypted_task_accuracy": 1.0,
+        "full_test_quantized_accuracy": 1.0,
+        "float_accuracy": {
+          "value": 1.0,
+          "source": "reproduced_generator",
+          "source_path": "examples/mnist/train_quantize_export.py",
+          "source_sha256": "a35022939ab775abb2b26dd821677448942bcfb4093a80dc40dfd67fad3812fc",
+          "sample_count": 256,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": {
+          "median": 0.4962976138214244,
+          "p95": 0.4973865432827287,
+          "p99": 0.49760433104747154,
+          "max": 0.4978221178256042
+        },
+        "margin_relative_score_error": {
+          "median": 8.932674042873921e-8,
+          "p95": 2.6958832854973025e-7,
+          "max": 4.000241032388528e-7,
+          "finite_count": 256,
+          "zero_margin_samples": 0,
+          "zero_margin_with_nonzero_error": 0
+        },
+        "check_method": "raw_float_bound_check(bound=0.9952086625708774)",
+        "exact_checks_passed": 0
+      },
+      "nodes": [
+        {
+          "name": "fc",
+          "op_type": "Linear",
+          "build_secs": 0.000021833,
+          "eval_secs": 0.229775583,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 16
+          },
+          "measured": {}
+        },
+        {
+          "name": "head",
+          "op_type": "Argmax",
+          "build_secs": 0.0011545,
+          "eval_secs": 0.108689458,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 4,
+            "poly_evals": 1,
+            "rescales": 4
+          },
+          "measured": {}
+        }
+      ],
+      "profile_sample_id": "400"
+    },
+    {
+      "status": "ok",
+      "model": "phase4_cnn",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "79357fd6bee3fa9b755db6f771603059ffe33a574d34ed504aace30a848e6c8a",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 15.625299854,
+        "ci95_lower_secs": 15.466505271,
+        "ci95_upper_secs": 15.92447875,
+        "sample_count": 10,
+        "representative_sample_id": "600"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 306053120,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 65682,
+        "sample_id": "600"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 4149236,
+        "output_ciphertext_bytes": 1152580
+      },
+      "pbs_split": {
+        "total_pbs": 6134,
+        "lookup_pbs": 32,
+        "carry_pbs": 6102
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.95703125,
+        "full_test_quantized_accuracy": 0.95703125,
+        "float_accuracy": {
+          "value": 0.98046875,
+          "source": "reproduced_generator",
+          "source_path": "examples/mnist/cnn_export.py",
+          "source_sha256": "31b5840141c7bf256b8dea3875aee53277242cd0335e868251d5a65da81e3744",
+          "sample_count": 256,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "conv",
+          "op_type": "Conv2d",
+          "build_secs": 1.166e-6,
+          "eval_secs": 9.797457625,
+          "input_lens": [
+            36
+          ],
+          "output_len": 32,
+          "counters": {
+            "ct_add": 160,
+            "scalar_add": 32,
+            "scalar_mul": 64
+          },
+          "measured": {
+            "pbs": 3904
+          }
+        },
+        {
+          "name": "conv__requant",
+          "op_type": "Requant",
+          "build_secs": 1.459e-6,
+          "eval_secs": 2.630943375,
+          "input_lens": [
+            32
+          ],
+          "output_len": 32,
+          "counters": {
+            "bootstraps": 32,
+            "cmp_pbs_ops": 96
+          },
+          "measured": {
+            "pbs": 1024
+          }
+        },
+        {
+          "name": "pool",
+          "op_type": "Pool",
+          "build_secs": 1.417e-6,
+          "eval_secs": 0.125999208,
+          "input_lens": [
+            32
+          ],
+          "output_len": 8,
+          "counters": {
+            "ct_add": 24
+          },
+          "measured": {
+            "pbs": 80
+          }
+        },
+        {
+          "name": "head",
+          "op_type": "Linear",
+          "build_secs": 1.625e-6,
+          "eval_secs": 2.906518833,
+          "input_lens": [
+            8
+          ],
+          "output_len": 10,
+          "counters": {
+            "ct_add": 59,
+            "scalar_add": 10,
+            "scalar_mul": 50
+          },
+          "measured": {
+            "pbs": 1126
+          }
+        }
+      ],
+      "profile_sample_id": "607"
+    },
+    {
+      "status": "ok",
+      "model": "phase4_cnn",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "79357fd6bee3fa9b755db6f771603059ffe33a574d34ed504aace30a848e6c8a",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 0.49317878475,
+        "ci95_lower_secs": 0.4891223229166667,
+        "ci95_upper_secs": 0.5012894617916667,
+        "sample_count": 10,
+        "representative_sample_id": "600"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 5502615552,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 71416,
+        "sample_id": "600"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 256,
+        "encrypted_task_accuracy": 0.9921875,
+        "full_test_quantized_accuracy": 0.95703125,
+        "float_accuracy": {
+          "value": 0.98046875,
+          "source": "reproduced_generator",
+          "source_path": "examples/mnist/cnn_export.py",
+          "source_sha256": "31b5840141c7bf256b8dea3875aee53277242cd0335e868251d5a65da81e3744",
+          "sample_count": 256,
+          "recomputed": true
+        },
+        "label_flips": 11,
+        "label_flip_rate": 0.04296875,
+        "absolute_output_error": {
+          "median": 3.936008477712946,
+          "p95": 6.763864158296272,
+          "p99": 9.948294121403006,
+          "max": 11.934483555852887
+        },
+        "margin_relative_score_error": {
+          "median": 0.5884049027985212,
+          "p95": 3.127699984613315,
+          "max": 6.804935901321878,
+          "finite_count": 251,
+          "zero_margin_samples": 5,
+          "zero_margin_with_nonzero_error": 5
+        },
+        "check_method": "raw_float_bound_check(bound=16.838558349372605)",
+        "exact_checks_passed": 0
+      },
+      "nodes": [
+        {
+          "name": "conv",
+          "op_type": "Conv2d",
+          "build_secs": 0.000025541,
+          "eval_secs": 0.192921042,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 15
+          },
+          "measured": {}
+        },
+        {
+          "name": "conv__requant",
+          "op_type": "Requant",
+          "build_secs": 0.001474542,
+          "eval_secs": 0.106719834,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 4,
+            "poly_evals": 1,
+            "rescales": 4
+          },
+          "measured": {}
+        },
+        {
+          "name": "pool",
+          "op_type": "Pool",
+          "build_secs": 0.000024,
+          "eval_secs": 0.1023535,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 14
+          },
+          "measured": {}
+        },
+        {
+          "name": "head",
+          "op_type": "Linear",
+          "build_secs": 0.000020167,
+          "eval_secs": 0.085824125,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 16
+          },
+          "measured": {}
+        }
+      ],
+      "profile_sample_id": "600"
+    },
+    {
+      "status": "ok",
+      "model": "phase5_digits",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "979c00924100b9709f9d0ce0407b4f8520232849b4dee4c9a93c026c2181d5b8",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 75.369050229,
+        "ci95_lower_secs": 75.032670292,
+        "ci95_upper_secs": 75.631949167,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 345751552,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 73113,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 9483796,
+        "output_ciphertext_bytes": 1481860
+      },
+      "pbs_split": {
+        "total_pbs": 31663,
+        "lookup_pbs": 108,
+        "carry_pbs": 31555
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.9166666666666666,
+        "full_test_quantized_accuracy": 0.9166666666666666,
+        "float_accuracy": {
+          "value": 0.9638888888888888,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_cnn.onnx",
+          "source_sha256": "c80b8e347c0143c448ec923906eab4590dfe7c908587b754e02769e64e99db79",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "conv0",
+          "op_type": "Conv2d",
+          "build_secs": 1.916e-6,
+          "eval_secs": 43.48995925,
+          "input_lens": [
+            64
+          ],
+          "output_len": 108,
+          "counters": {
+            "ct_add": 801,
+            "scalar_add": 108,
+            "scalar_mul": 765
+          },
+          "measured": {
+            "pbs": 17595
+          }
+        },
+        {
+          "name": "conv0__requant",
+          "op_type": "Requant",
+          "build_secs": 1.667e-6,
+          "eval_secs": 15.273540833,
+          "input_lens": [
+            108
+          ],
+          "output_len": 108,
+          "counters": {
+            "bootstraps": 108,
+            "cmp_pbs_ops": 324,
+            "scalar_add": 108
+          },
+          "measured": {
+            "pbs": 6264
+          }
+        },
+        {
+          "name": "linear2",
+          "op_type": "Linear",
+          "build_secs": 2e-6,
+          "eval_secs": 16.118863459,
+          "input_lens": [
+            108
+          ],
+          "output_len": 10,
+          "counters": {
+            "ct_add": 990,
+            "scalar_add": 10,
+            "scalar_mul": 299
+          },
+          "measured": {
+            "pbs": 7804
+          }
+        }
+      ],
+      "profile_sample_id": "188"
+    },
+    {
+      "status": "ok",
+      "model": "phase5_digits",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "979c00924100b9709f9d0ce0407b4f8520232849b4dee4c9a93c026c2181d5b8",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 1.0833104125,
+        "ci95_lower_secs": 1.0694892582,
+        "ci95_upper_secs": 1.097382525,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 4671307776,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 533,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 360,
+        "encrypted_task_accuracy": 0.9222222222222223,
+        "full_test_quantized_accuracy": 0.9166666666666666,
+        "float_accuracy": {
+          "value": 0.9638888888888888,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_cnn.onnx",
+          "source_sha256": "c80b8e347c0143c448ec923906eab4590dfe7c908587b754e02769e64e99db79",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 14,
+        "label_flip_rate": 0.03888888888888889,
+        "absolute_output_error": {
+          "median": 33.98369995711826,
+          "p95": 57.654054242796754,
+          "p99": 73.37484071624152,
+          "max": 83.21133444578156
+        },
+        "margin_relative_score_error": {
+          "median": 0.4465988240898614,
+          "p95": 3.244995081566008,
+          "max": 32.61113090705794,
+          "finite_count": 359,
+          "zero_margin_samples": 1,
+          "zero_margin_with_nonzero_error": 1
+        },
+        "check_method": "raw_float_bound_check(bound=150.17298863027258)",
+        "exact_checks_passed": 0
+      },
+      "nodes": [
+        {
+          "name": "conv0",
+          "op_type": "Conv2d",
+          "build_secs": 0.000059834,
+          "eval_secs": 0.671756375,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 24
+          },
+          "measured": {}
+        },
+        {
+          "name": "conv0__requant",
+          "op_type": "Requant",
+          "build_secs": 0.0030185,
+          "eval_secs": 0.395418417,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 5,
+            "poly_evals": 2,
+            "rescales": 5
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear2",
+          "op_type": "Linear",
+          "build_secs": 0.000042875,
+          "eval_secs": 0.220485334,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 22
+          },
+          "measured": {}
+        }
+      ],
+      "profile_sample_id": "1496"
+    },
+    {
+      "status": "ok",
+      "model": "phase5_qat",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "58c4a8a5c017d745e365e65e1db000e656e0c322de53eac5fb9632b857047ec3",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 68.577716729,
+        "ci95_lower_secs": 68.462138,
+        "ci95_upper_secs": 68.73423575,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 340951040,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 4757,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 8430100,
+        "output_ciphertext_bytes": 1317220
+      },
+      "pbs_split": {
+        "total_pbs": 28558,
+        "lookup_pbs": 108,
+        "carry_pbs": 28450
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.9361111111111111,
+        "full_test_quantized_accuracy": 0.9361111111111111,
+        "float_accuracy": {
+          "value": 0.9333333333333332,
+          "source": "historical_fixture",
+          "source_path": "examples/mnist/phase5_qat_fixture.json",
+          "source_sha256": "3c3aaf8b5e07bced2660ae016294b213e95a74f5d62bbc1b4c20163e76758325",
+          "sample_count": 360,
+          "recomputed": false
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "conv0",
+          "op_type": "Conv2d",
+          "build_secs": 1.458e-6,
+          "eval_secs": 46.492616958,
+          "input_lens": [
+            64
+          ],
+          "output_len": 108,
+          "counters": {
+            "ct_add": 819,
+            "scalar_add": 108,
+            "scalar_mul": 855
+          },
+          "measured": {
+            "pbs": 18675
+          }
+        },
+        {
+          "name": "conv0__requant",
+          "op_type": "Requant",
+          "build_secs": 1.834e-6,
+          "eval_secs": 15.317575542,
+          "input_lens": [
+            108
+          ],
+          "output_len": 108,
+          "counters": {
+            "bootstraps": 108,
+            "cmp_pbs_ops": 324,
+            "scalar_add": 108
+          },
+          "measured": {
+            "pbs": 6264
+          }
+        },
+        {
+          "name": "linear2",
+          "op_type": "Linear",
+          "build_secs": 1.542e-6,
+          "eval_secs": 6.785310042,
+          "input_lens": [
+            108
+          ],
+          "output_len": 10,
+          "counters": {
+            "ct_add": 833,
+            "scalar_add": 10,
+            "scalar_mul": 111
+          },
+          "measured": {
+            "pbs": 3619
+          }
+        }
+      ],
+      "profile_sample_id": "705"
+    },
+    {
+      "status": "ok",
+      "model": "phase5_qat",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "58c4a8a5c017d745e365e65e1db000e656e0c322de53eac5fb9632b857047ec3",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 0.9793981076666668,
+        "ci95_lower_secs": 0.965014743,
+        "ci95_upper_secs": 0.9886279548333332,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 4133486592,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 29546,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 360,
+        "encrypted_task_accuracy": 0.9416666666666667,
+        "full_test_quantized_accuracy": 0.9361111111111111,
+        "float_accuracy": {
+          "value": 0.9333333333333332,
+          "source": "historical_fixture",
+          "source_path": "examples/mnist/phase5_qat_fixture.json",
+          "source_sha256": "3c3aaf8b5e07bced2660ae016294b213e95a74f5d62bbc1b4c20163e76758325",
+          "sample_count": 360,
+          "recomputed": false
+        },
+        "label_flips": 12,
+        "label_flip_rate": 0.03333333333333333,
+        "absolute_output_error": {
+          "median": 9.138645016049576,
+          "p95": 14.410628705505367,
+          "p99": 16.265992003568158,
+          "max": 17.486175557754223
+        },
+        "margin_relative_score_error": {
+          "median": 0.3326375443696641,
+          "p95": 2.0094790230648236,
+          "max": 15.282676638521982,
+          "finite_count": 358,
+          "zero_margin_samples": 2,
+          "zero_margin_with_nonzero_error": 2
+        },
+        "check_method": "raw_float_bound_check(bound=30.302361276093663)",
+        "exact_checks_passed": 0
+      },
+      "nodes": [
+        {
+          "name": "conv0",
+          "op_type": "Conv2d",
+          "build_secs": 0.000061,
+          "eval_secs": 0.649932708,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 24
+          },
+          "measured": {}
+        },
+        {
+          "name": "conv0__requant",
+          "op_type": "Requant",
+          "build_secs": 0.001614667,
+          "eval_secs": 0.113759125,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 5,
+            "poly_evals": 1,
+            "rescales": 5
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear2",
+          "op_type": "Linear",
+          "build_secs": 0.00003575,
+          "eval_secs": 0.209582125,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 22
+          },
+          "measured": {}
+        }
+      ],
+      "profile_sample_id": "1496"
+    },
+    {
+      "status": "ok",
+      "model": "phase6_onnx",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "979c00924100b9709f9d0ce0407b4f8520232849b4dee4c9a93c026c2181d5b8",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 75.679003104,
+        "ci95_lower_secs": 75.289041125,
+        "ci95_upper_secs": 75.995730708,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 340312064,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 33398,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 9483796,
+        "output_ciphertext_bytes": 1481860
+      },
+      "pbs_split": {
+        "total_pbs": 31663,
+        "lookup_pbs": 108,
+        "carry_pbs": 31555
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.9166666666666666,
+        "full_test_quantized_accuracy": 0.9166666666666666,
+        "float_accuracy": {
+          "value": 0.9638888888888888,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_cnn.onnx",
+          "source_sha256": "c80b8e347c0143c448ec923906eab4590dfe7c908587b754e02769e64e99db79",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "conv0",
+          "op_type": "Conv2d",
+          "build_secs": 1.375e-6,
+          "eval_secs": 44.258685,
+          "input_lens": [
+            64
+          ],
+          "output_len": 108,
+          "counters": {
+            "ct_add": 801,
+            "scalar_add": 108,
+            "scalar_mul": 765
+          },
+          "measured": {
+            "pbs": 17595
+          }
+        },
+        {
+          "name": "conv0__requant",
+          "op_type": "Requant",
+          "build_secs": 1.708e-6,
+          "eval_secs": 15.351559459,
+          "input_lens": [
+            108
+          ],
+          "output_len": 108,
+          "counters": {
+            "bootstraps": 108,
+            "cmp_pbs_ops": 324,
+            "scalar_add": 108
+          },
+          "measured": {
+            "pbs": 6264
+          }
+        },
+        {
+          "name": "linear2",
+          "op_type": "Linear",
+          "build_secs": 1.708e-6,
+          "eval_secs": 16.239952583,
+          "input_lens": [
+            108
+          ],
+          "output_len": 10,
+          "counters": {
+            "ct_add": 990,
+            "scalar_add": 10,
+            "scalar_mul": 299
+          },
+          "measured": {
+            "pbs": 7804
+          }
+        }
+      ],
+      "profile_sample_id": "1319"
+    },
+    {
+      "status": "ok",
+      "model": "phase6_onnx",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "979c00924100b9709f9d0ce0407b4f8520232849b4dee4c9a93c026c2181d5b8",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 1.08236597225,
+        "ci95_lower_secs": 1.0769672188333335,
+        "ci95_upper_secs": 1.0936070903333333,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 5110398976,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 60843,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 360,
+        "encrypted_task_accuracy": 0.9222222222222223,
+        "full_test_quantized_accuracy": 0.9166666666666666,
+        "float_accuracy": {
+          "value": 0.9638888888888888,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_cnn.onnx",
+          "source_sha256": "c80b8e347c0143c448ec923906eab4590dfe7c908587b754e02769e64e99db79",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 14,
+        "label_flip_rate": 0.03888888888888889,
+        "absolute_output_error": {
+          "median": 33.98330606011284,
+          "p95": 57.65557985503263,
+          "p99": 73.37556507500705,
+          "max": 83.21174498746366
+        },
+        "margin_relative_score_error": {
+          "median": 0.4466204321365475,
+          "p95": 3.245073926078434,
+          "max": 32.610989791714076,
+          "finite_count": 359,
+          "zero_margin_samples": 1,
+          "zero_margin_with_nonzero_error": 1
+        },
+        "check_method": "raw_float_bound_check(bound=151.03988828779268)",
+        "exact_checks_passed": 0
+      },
+      "nodes": [
+        {
+          "name": "conv0",
+          "op_type": "Conv2d",
+          "build_secs": 0.0000585,
+          "eval_secs": 0.653238084,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 24
+          },
+          "measured": {}
+        },
+        {
+          "name": "conv0__requant",
+          "op_type": "Requant",
+          "build_secs": 0.002914375,
+          "eval_secs": 0.225420167,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 5,
+            "poly_evals": 2,
+            "rescales": 5
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear2",
+          "op_type": "Linear",
+          "build_secs": 0.0000365,
+          "eval_secs": 0.210672708,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 22
+          },
+          "measured": {}
+        }
+      ],
+      "profile_sample_id": "1496"
+    },
+    {
+      "status": "ok",
+      "model": "phase6_sklearn",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "72c5e0fc9742b7ba37c274197b2fd8717298e6bfa3de6ca599ec7e7377c651a1",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 12.1230059375,
+        "ci95_lower_secs": 11.994572396,
+        "ci95_upper_secs": 12.2211223955,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 368427008,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 65029,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 10537492,
+        "output_ciphertext_bytes": 1646500
+      },
+      "pbs_split": {
+        "total_pbs": 4704,
+        "lookup_pbs": 0,
+        "carry_pbs": 4704
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.8805555555555555,
+        "full_test_quantized_accuracy": 0.8805555555555555,
+        "float_accuracy": {
+          "value": 0.8944444444444445,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_linear_sklearn.onnx",
+          "source_sha256": "d3b6b929b8c7cdf6da8ad143d0285ec039bfc66243394941a2d0a6ac0e45ddb8",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "linear0",
+          "op_type": "Linear",
+          "build_secs": 1.917e-6,
+          "eval_secs": 11.972041958,
+          "input_lens": [
+            64
+          ],
+          "output_len": 10,
+          "counters": {
+            "ct_add": 457,
+            "scalar_add": 10,
+            "scalar_mul": 140
+          },
+          "measured": {
+            "pbs": 4704
+          }
+        }
+      ],
+      "profile_sample_id": "254"
+    },
+    {
+      "status": "ok",
+      "model": "phase6_sklearn",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "72c5e0fc9742b7ba37c274197b2fd8717298e6bfa3de6ca599ec7e7377c651a1",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 0.3786973736875,
+        "ci95_lower_secs": 0.37729483075,
+        "ci95_upper_secs": 0.3828720611875,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 4536598528,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 69414,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 360,
+        "encrypted_task_accuracy": 0.8805555555555555,
+        "full_test_quantized_accuracy": 0.8805555555555555,
+        "float_accuracy": {
+          "value": 0.8944444444444445,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_linear_sklearn.onnx",
+          "source_sha256": "d3b6b929b8c7cdf6da8ad143d0285ec039bfc66243394941a2d0a6ac0e45ddb8",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 1,
+        "label_flip_rate": 0.002777777777777778,
+        "absolute_output_error": {
+          "median": 0.00006603342031841208,
+          "p95": 0.00015393860390133796,
+          "p99": 0.00020320393977613094,
+          "max": 0.0002474109851302586
+        },
+        "margin_relative_score_error": {
+          "median": 1.1031330076199149e-6,
+          "p95": 9.74845080037312e-6,
+          "max": 0.00005316092279864885,
+          "finite_count": 358,
+          "zero_margin_samples": 2,
+          "zero_margin_with_nonzero_error": 2
+        },
+        "check_method": "raw_float_bound_check(bound=0.0004435212437314817)",
+        "exact_checks_passed": 0
+      },
+      "nodes": [
+        {
+          "name": "linear0",
+          "op_type": "Linear",
+          "build_secs": 0.000031666,
+          "eval_secs": 0.371599292,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 19
+          },
+          "measured": {}
+        }
+      ],
+      "profile_sample_id": "1496"
+    },
+    {
+      "status": "ok",
+      "model": "phase7_faces",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "43ecb1dd18365e4540540506bbbbbb45ba651d16db40ec3bb00697f499e61f35",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 123.0730557085,
+        "ci95_lower_secs": 122.941533229,
+        "ci95_upper_secs": 123.290841958,
+        "sample_count": 10,
+        "representative_sample_id": "16"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 521994240,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 71236,
+        "sample_id": "16"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 46364692,
+        "output_ciphertext_bytes": 1185492
+      },
+      "pbs_split": {
+        "total_pbs": 50559,
+        "lookup_pbs": 128,
+        "carry_pbs": 50431
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.9,
+        "full_test_quantized_accuracy": 0.9,
+        "float_accuracy": {
+          "value": 0.95,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/faces/face_cnn.onnx",
+          "source_sha256": "c47ac49c7c50731761205ba33b21550963bd84a1363f8848c221756226c21a53",
+          "sample_count": 20,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "conv0",
+          "op_type": "Conv2d",
+          "build_secs": 1.292e-6,
+          "eval_secs": 63.829499583,
+          "input_lens": [
+            256
+          ],
+          "output_len": 128,
+          "counters": {
+            "ct_add": 1024,
+            "scalar_add": 128,
+            "scalar_mul": 1040
+          },
+          "measured": {
+            "pbs": 25232
+          }
+        },
+        {
+          "name": "conv0__requant",
+          "op_type": "Requant",
+          "build_secs": 1.833e-6,
+          "eval_secs": 42.109451375,
+          "input_lens": [
+            128
+          ],
+          "output_len": 128,
+          "counters": {
+            "bootstraps": 128,
+            "cmp_pbs_ops": 384,
+            "scalar_add": 128,
+            "scalar_mul": 128
+          },
+          "measured": {
+            "pbs": 16848
+          }
+        },
+        {
+          "name": "linear2",
+          "op_type": "Linear",
+          "build_secs": 1.875e-6,
+          "eval_secs": 17.538607291,
+          "input_lens": [
+            128
+          ],
+          "output_len": 8,
+          "counters": {
+            "ct_add": 938,
+            "scalar_add": 8,
+            "scalar_mul": 332
+          },
+          "measured": {
+            "pbs": 8479
+          }
+        }
+      ],
+      "profile_sample_id": "16"
+    },
+    {
+      "status": "ok",
+      "model": "phase7_faces",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "43ecb1dd18365e4540540506bbbbbb45ba651d16db40ec3bb00697f499e61f35",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 2.011356757,
+        "ci95_lower_secs": 2.003125333333333,
+        "ci95_upper_secs": 2.021170097333333,
+        "sample_count": 10,
+        "representative_sample_id": "16"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 4319363072,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 16208,
+        "sample_id": "16"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 20,
+        "encrypted_task_accuracy": 0.9,
+        "full_test_quantized_accuracy": 0.9,
+        "float_accuracy": {
+          "value": 0.95,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/faces/face_cnn.onnx",
+          "source_sha256": "c47ac49c7c50731761205ba33b21550963bd84a1363f8848c221756226c21a53",
+          "sample_count": 20,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": {
+          "median": 60.23140563607206,
+          "p95": 110.55029698770227,
+          "p99": 110.96892262871921,
+          "max": 110.96892262871921
+        },
+        "margin_relative_score_error": {
+          "median": 0.7459296347025445,
+          "p95": 1.9133014380177265,
+          "max": 10.446069015174258,
+          "finite_count": 20,
+          "zero_margin_samples": 0,
+          "zero_margin_with_nonzero_error": 0
+        },
+        "check_method": "raw_float_bound_check(bound=288.73760588410875)",
+        "exact_checks_passed": 0
+      },
+      "nodes": [
+        {
+          "name": "conv0",
+          "op_type": "Conv2d",
+          "build_secs": 0.000083125,
+          "eval_secs": 1.101167541,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 30
+          },
+          "measured": {}
+        },
+        {
+          "name": "conv0__requant",
+          "op_type": "Requant",
+          "build_secs": 0.008064667,
+          "eval_secs": 0.66324,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 5,
+            "poly_evals": 6,
+            "rescales": 5
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear2",
+          "op_type": "Linear",
+          "build_secs": 0.000037,
+          "eval_secs": 0.228578042,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 23
+          },
+          "measured": {}
+        }
+      ],
+      "profile_sample_id": "16"
+    },
+    {
+      "status": "ok",
+      "model": "phase8_trees",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "843b3cdd60ce123d84b62847411a2049a5b089f82a93f09b1e3d8228c2fe064b",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 4.6731120315,
+        "ci95_lower_secs": 4.6127906355,
+        "ci95_upper_secs": 4.7387936455,
+        "sample_count": 10,
+        "representative_sample_id": "204"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 287916032,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 17228,
+        "sample_id": "204"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 3457700,
+        "output_ciphertext_bytes": 230532
+      },
+      "pbs_split": {
+        "total_pbs": 1699,
+        "lookup_pbs": 67,
+        "carry_pbs": 1632
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.956140350877193,
+        "full_test_quantized_accuracy": 0.956140350877193,
+        "float_accuracy": {
+          "value": 0.956140350877193,
+          "source": "reproduced_generator",
+          "source_path": "examples/trees/tree_export.py",
+          "source_sha256": "31dfb96b8c224197a288a6f4386f12ce92470b789d6226742f13eb84cc189dec",
+          "sample_count": 114,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "split_cmp",
+          "op_type": "Compare",
+          "build_secs": 9.58e-7,
+          "eval_secs": 0.444519792,
+          "input_lens": [
+            30
+          ],
+          "output_len": 31,
+          "counters": {
+            "cmp_pbs_ops": 31
+          },
+          "measured": {
+            "pbs": 155
+          }
+        },
+        {
+          "name": "leaf_score",
+          "op_type": "Linear",
+          "build_secs": 2.584e-6,
+          "eval_secs": 2.660792208,
+          "input_lens": [
+            31
+          ],
+          "output_len": 36,
+          "counters": {
+            "ct_add": 68,
+            "scalar_add": 36,
+            "scalar_mul": 62
+          },
+          "measured": {
+            "pbs": 1019
+          }
+        },
+        {
+          "name": "leaf_sel",
+          "op_type": "Compare",
+          "build_secs": 1.083e-6,
+          "eval_secs": 0.478389833,
+          "input_lens": [
+            36
+          ],
+          "output_len": 36,
+          "counters": {
+            "cmp_pbs_ops": 36
+          },
+          "measured": {
+            "pbs": 180
+          }
+        },
+        {
+          "name": "logits",
+          "op_type": "Linear",
+          "build_secs": 1.584e-6,
+          "eval_secs": 1.0526895,
+          "input_lens": [
+            36
+          ],
+          "output_len": 2,
+          "counters": {
+            "ct_add": 46,
+            "scalar_add": 2,
+            "scalar_mul": 14
+          },
+          "measured": {
+            "pbs": 345
+          }
+        }
+      ],
+      "profile_sample_id": "431"
+    },
+    {
+      "status": "unsupported",
+      "model": "phase8_trees",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "843b3cdd60ce123d84b62847411a2049a5b089f82a93f09b1e3d8228c2fe064b",
+      "rejection": "depth/scale budget exceeded on backend 'ckks' at node 'logits' (Linear): the graph needs 360 bits of multiplicative budget by this node but the profile holds only 330 (k=360, log_delta=30). Reduce max_poly_degree, or widen the parameter profile."
+    },
+    {
+      "status": "ok",
+      "model": "phase8_branch",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "7daa242785ce321d2c5e0eaf7799bbf43d1695f7595d5421c8deff210bc94335",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 35.386178458,
+        "ci95_lower_secs": 35.121124625,
+        "ci95_upper_secs": 35.878169625,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 382844928,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 19290,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 11591188,
+        "output_ciphertext_bytes": 1152580
+      },
+      "pbs_split": {
+        "total_pbs": 14157,
+        "lookup_pbs": 32,
+        "carry_pbs": 14125
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.9055555555555556,
+        "full_test_quantized_accuracy": 0.9055555555555556,
+        "float_accuracy": {
+          "value": 0.9666666666666668,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_branch_mlp.onnx",
+          "source_sha256": "fdc8800ed48c3b7d22cf3144b48b742b5ae9c416722b9e47dd44ea3bfa98613b",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "linear0",
+          "op_type": "Linear",
+          "build_secs": 2.084e-6,
+          "eval_secs": 17.555018916999998,
+          "input_lens": [
+            64
+          ],
+          "output_len": 16,
+          "counters": {
+            "ct_add": 719,
+            "scalar_add": 16,
+            "scalar_mul": 236
+          },
+          "measured": {
+            "pbs": 6845
+          }
+        },
+        {
+          "name": "linear0__requant",
+          "op_type": "Requant",
+          "build_secs": 1.209e-6,
+          "eval_secs": 5.897539917,
+          "input_lens": [
+            16
+          ],
+          "output_len": 16,
+          "counters": {
+            "bootstraps": 16,
+            "cmp_pbs_ops": 48,
+            "scalar_add": 16,
+            "scalar_mul": 16
+          },
+          "measured": {
+            "pbs": 2272
+          }
+        },
+        {
+          "name": "/Split",
+          "op_type": "Split",
+          "build_secs": 8.33e-7,
+          "eval_secs": 0.000153,
+          "input_lens": [
+            16
+          ],
+          "output_len": 16,
+          "counters": {},
+          "measured": {
+            "pbs": 0
+          }
+        },
+        {
+          "name": "linear3",
+          "op_type": "Linear",
+          "build_secs": 1.042e-6,
+          "eval_secs": 1.424889541,
+          "input_lens": [
+            8
+          ],
+          "output_len": 8,
+          "counters": {
+            "ct_add": 47,
+            "scalar_add": 8,
+            "scalar_mul": 50
+          },
+          "measured": {
+            "pbs": 835
+          }
+        },
+        {
+          "name": "linear3__requant",
+          "op_type": "Requant",
+          "build_secs": 1.75e-6,
+          "eval_secs": 2.41938475,
+          "input_lens": [
+            8
+          ],
+          "output_len": 8,
+          "counters": {
+            "bootstraps": 8,
+            "cmp_pbs_ops": 24,
+            "scalar_add": 8,
+            "scalar_mul": 8
+          },
+          "measured": {
+            "pbs": 816
+          }
+        },
+        {
+          "name": "linear5",
+          "op_type": "Linear",
+          "build_secs": 1.541e-6,
+          "eval_secs": 1.037670334,
+          "input_lens": [
+            8
+          ],
+          "output_len": 8,
+          "counters": {
+            "ct_add": 29,
+            "scalar_add": 8,
+            "scalar_mul": 34
+          },
+          "measured": {
+            "pbs": 595
+          }
+        },
+        {
+          "name": "linear5__requant",
+          "op_type": "Requant",
+          "build_secs": 2.125e-6,
+          "eval_secs": 1.988557167,
+          "input_lens": [
+            8
+          ],
+          "output_len": 8,
+          "counters": {
+            "bootstraps": 8,
+            "cmp_pbs_ops": 24,
+            "scalar_add": 8,
+            "scalar_mul": 8
+          },
+          "measured": {
+            "pbs": 712
+          }
+        },
+        {
+          "name": "/Concat",
+          "op_type": "Concat",
+          "build_secs": 1.125e-6,
+          "eval_secs": 0.000026917,
+          "input_lens": [
+            8,
+            8
+          ],
+          "output_len": 16,
+          "counters": {},
+          "measured": {
+            "pbs": 0
+          }
+        },
+        {
+          "name": "/Add",
+          "op_type": "Add",
+          "build_secs": 2.08e-7,
+          "eval_secs": 0.171802916,
+          "input_lens": [
+            16,
+            16
+          ],
+          "output_len": 16,
+          "counters": {
+            "ct_add": 16
+          },
+          "measured": {
+            "pbs": 64
+          }
+        },
+        {
+          "name": "linear9",
+          "op_type": "Linear",
+          "build_secs": 2.208e-6,
+          "eval_secs": 5.184772958,
+          "input_lens": [
+            16
+          ],
+          "output_len": 10,
+          "counters": {
+            "ct_add": 135,
+            "scalar_add": 10,
+            "scalar_mul": 102
+          },
+          "measured": {
+            "pbs": 2018
+          }
+        }
+      ],
+      "profile_sample_id": "197"
+    },
+    {
+      "status": "ok",
+      "model": "phase8_branch",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "7daa242785ce321d2c5e0eaf7799bbf43d1695f7595d5421c8deff210bc94335",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 0.733265216125,
+        "ci95_lower_secs": 0.7312167421875,
+        "ci95_upper_secs": 0.7370661874375,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 4451090432,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 32302,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 360,
+        "encrypted_task_accuracy": 0.20277777777777778,
+        "full_test_quantized_accuracy": 0.9055555555555556,
+        "float_accuracy": {
+          "value": 0.9666666666666668,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_branch_mlp.onnx",
+          "source_sha256": "fdc8800ed48c3b7d22cf3144b48b742b5ae9c416722b9e47dd44ea3bfa98613b",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 289,
+        "label_flip_rate": 0.8027777777777778,
+        "absolute_output_error": {
+          "median": 42.77921875037077,
+          "p95": 60.27264976127078,
+          "p99": 64.82954256706621,
+          "max": 76.54572911648343
+        },
+        "margin_relative_score_error": {
+          "median": 1.7032273950621677,
+          "p95": 10.605460008236708,
+          "max": 40.88794419719413,
+          "finite_count": 353,
+          "zero_margin_samples": 7,
+          "zero_margin_with_nonzero_error": 7
+        },
+        "check_method": "raw_float_bound_check(bound=137.35173852570975)",
+        "exact_checks_passed": 0
+      },
+      "nodes": [
+        {
+          "name": "linear0",
+          "op_type": "Linear",
+          "build_secs": 0.000034625,
+          "eval_secs": 0.393574833,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 19
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear0__requant",
+          "op_type": "Requant",
+          "build_secs": 0.000048333,
+          "eval_secs": 0.02965725,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 2,
+            "poly_evals": 1,
+            "rescales": 2
+          },
+          "measured": {}
+        },
+        {
+          "name": "/Split",
+          "op_type": "Split",
+          "build_secs": 0.000028083,
+          "eval_secs": 0.014568375,
+          "input_lens": [
+            1
+          ],
+          "output_len": 2,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 1
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear3",
+          "op_type": "Linear",
+          "build_secs": 0.000019083,
+          "eval_secs": 0.115579375,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 15
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear3__requant",
+          "op_type": "Requant",
+          "build_secs": 0.000052583,
+          "eval_secs": 0.015148333,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 2,
+            "poly_evals": 1,
+            "rescales": 2
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear5",
+          "op_type": "Linear",
+          "build_secs": 0.00001675,
+          "eval_secs": 0.085313583,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 11
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear5__requant",
+          "op_type": "Requant",
+          "build_secs": 0.000049958,
+          "eval_secs": 0.015547333,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 2,
+            "poly_evals": 1,
+            "rescales": 2
+          },
+          "measured": {}
+        },
+        {
+          "name": "/Concat",
+          "op_type": "Concat",
+          "build_secs": 0.00002925,
+          "eval_secs": 0.008901375,
+          "input_lens": [
+            1,
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 2
+          },
+          "measured": {}
+        },
+        {
+          "name": "/Add",
+          "op_type": "Add",
+          "build_secs": 3.75e-7,
+          "eval_secs": 0.000774583,
+          "input_lens": [
+            1,
+            1
+          ],
+          "output_len": 1,
+          "counters": {},
+          "measured": {}
+        },
+        {
+          "name": "linear9",
+          "op_type": "Linear",
+          "build_secs": 0.000022208,
+          "eval_secs": 0.04216275,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 16
+          },
+          "measured": {}
+        }
+      ],
+      "profile_sample_id": "1496"
+    },
+    {
+      "status": "ok",
+      "model": "phase8_bn_cnn",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "4b59038837c326682ded74ca9bd847cdc6c4e2a2b09c4104794661c7803346c6",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 88.0627189165,
+        "ci95_lower_secs": 87.8984840625,
+        "ci95_upper_secs": 88.2596678335,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 333840384,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 35308,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 9483796,
+        "output_ciphertext_bytes": 1317220
+      },
+      "pbs_split": {
+        "total_pbs": 34686,
+        "lookup_pbs": 144,
+        "carry_pbs": 34542
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.9277777777777778,
+        "full_test_quantized_accuracy": 0.9277777777777778,
+        "float_accuracy": {
+          "value": 0.9583333333333334,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_bn_cnn.onnx",
+          "source_sha256": "708de4a002baa9fd0c174ca12795c6056590534f62f3fe46b250572c1c7fe1eb",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "conv0",
+          "op_type": "Conv2d",
+          "build_secs": 1.5e-6,
+          "eval_secs": 46.682034208,
+          "input_lens": [
+            64
+          ],
+          "output_len": 144,
+          "counters": {
+            "ct_add": 1080,
+            "scalar_add": 144,
+            "scalar_mul": 720
+          },
+          "measured": {
+            "pbs": 18180
+          }
+        },
+        {
+          "name": "conv0__requant",
+          "op_type": "Requant",
+          "build_secs": 1.542e-6,
+          "eval_secs": 33.723743417,
+          "input_lens": [
+            144
+          ],
+          "output_len": 144,
+          "counters": {
+            "bootstraps": 144,
+            "cmp_pbs_ops": 432,
+            "scalar_add": 144,
+            "scalar_mul": 144
+          },
+          "measured": {
+            "pbs": 13392
+          }
+        },
+        {
+          "name": "pool2",
+          "op_type": "Pool",
+          "build_secs": 1.166e-6,
+          "eval_secs": 0.556872917,
+          "input_lens": [
+            144
+          ],
+          "output_len": 36,
+          "counters": {
+            "ct_add": 108
+          },
+          "measured": {
+            "pbs": 360
+          }
+        },
+        {
+          "name": "linear3",
+          "op_type": "Linear",
+          "build_secs": 1.792e-6,
+          "eval_secs": 7.011854333,
+          "input_lens": [
+            36
+          ],
+          "output_len": 10,
+          "counters": {
+            "ct_add": 316,
+            "scalar_add": 10,
+            "scalar_mul": 103
+          },
+          "measured": {
+            "pbs": 2754
+          }
+        }
+      ],
+      "profile_sample_id": "442"
+    },
+    {
+      "status": "ok",
+      "model": "phase8_bn_cnn",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "4b59038837c326682ded74ca9bd847cdc6c4e2a2b09c4104794661c7803346c6",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 1.0034785208333332,
+        "ci95_lower_secs": 0.9982060971666666,
+        "ci95_upper_secs": 1.01208775,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 4251746304,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 67124,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 360,
+        "encrypted_task_accuracy": 0.9388888888888889,
+        "full_test_quantized_accuracy": 0.9277777777777778,
+        "float_accuracy": {
+          "value": 0.9583333333333334,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_bn_cnn.onnx",
+          "source_sha256": "708de4a002baa9fd0c174ca12795c6056590534f62f3fe46b250572c1c7fe1eb",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 15,
+        "label_flip_rate": 0.041666666666666664,
+        "absolute_output_error": {
+          "median": 16.91951798235641,
+          "p95": 25.80138043966126,
+          "p99": 30.386105934898836,
+          "max": 37.51637739792871
+        },
+        "margin_relative_score_error": {
+          "median": 0.3042860678402565,
+          "p95": 1.7224287940498293,
+          "max": 18.731990351824813,
+          "finite_count": 359,
+          "zero_margin_samples": 1,
+          "zero_margin_with_nonzero_error": 1
+        },
+        "check_method": "raw_float_bound_check(bound=60.96034317865079)",
+        "exact_checks_passed": 0
+      },
+      "nodes": [
+        {
+          "name": "conv0",
+          "op_type": "Conv2d",
+          "build_secs": 0.000065583,
+          "eval_secs": 0.539789375,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 23
+          },
+          "measured": {}
+        },
+        {
+          "name": "conv0__requant",
+          "op_type": "Requant",
+          "build_secs": 0.001468625,
+          "eval_secs": 0.107805917,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 4,
+            "poly_evals": 1,
+            "rescales": 4
+          },
+          "measured": {}
+        },
+        {
+          "name": "pool2",
+          "op_type": "Pool",
+          "build_secs": 0.000038583,
+          "eval_secs": 0.218015833,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 21
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear3",
+          "op_type": "Linear",
+          "build_secs": 0.000029208,
+          "eval_secs": 0.124155584,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 18
+          },
+          "measured": {}
+        }
+      ],
+      "profile_sample_id": "1496"
+    },
+    {
+      "status": "ok",
+      "model": "phase8_gap_cnn",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "618b7401202a1a5ffb6619c6a498e2fecab17a12c0efcb2c0e3c9b5ad5f7b954",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 162.9067468955,
+        "ci95_lower_secs": 162.3717920835,
+        "ci95_upper_secs": 163.067437396,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 346259456,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 70991,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 10537492,
+        "output_ciphertext_bytes": 1646500
+      },
+      "pbs_split": {
+        "total_pbs": 65629,
+        "lookup_pbs": 256,
+        "carry_pbs": 65373
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.5611111111111111,
+        "full_test_quantized_accuracy": 0.5611111111111111,
+        "float_accuracy": {
+          "value": 0.8333333333333334,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_gap_cnn.onnx",
+          "source_sha256": "bc6492b7cfbee55c6432b69164cc1e8117f6fa3eda9f06885087fdd6e88d5daa",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "conv0",
+          "op_type": "Conv2d",
+          "build_secs": 1.833e-6,
+          "eval_secs": 67.156915417,
+          "input_lens": [
+            64
+          ],
+          "output_len": 256,
+          "counters": {
+            "ct_add": 1415,
+            "scalar_add": 256,
+            "scalar_mul": 1319
+          },
+          "measured": {
+            "pbs": 26239
+          }
+        },
+        {
+          "name": "conv0__requant",
+          "op_type": "Requant",
+          "build_secs": 1.5e-6,
+          "eval_secs": 78.106426667,
+          "input_lens": [
+            256
+          ],
+          "output_len": 256,
+          "counters": {
+            "bootstraps": 256,
+            "cmp_pbs_ops": 768,
+            "scalar_add": 256,
+            "scalar_mul": 256
+          },
+          "measured": {
+            "pbs": 30720
+          }
+        },
+        {
+          "name": "pool2",
+          "op_type": "Pool",
+          "build_secs": 1e-6,
+          "eval_secs": 6.806496916,
+          "input_lens": [
+            256
+          ],
+          "output_len": 256,
+          "counters": {
+            "ct_add": 1344
+          },
+          "measured": {
+            "pbs": 4416
+          }
+        },
+        {
+          "name": "pool3",
+          "op_type": "Pool",
+          "build_secs": 9.59e-7,
+          "eval_secs": 3.40800175,
+          "input_lens": [
+            256
+          ],
+          "output_len": 16,
+          "counters": {
+            "ct_add": 240
+          },
+          "measured": {
+            "pbs": 1328
+          }
+        },
+        {
+          "name": "linear4",
+          "op_type": "Linear",
+          "build_secs": 1.708e-6,
+          "eval_secs": 8.011543334,
+          "input_lens": [
+            16
+          ],
+          "output_len": 10,
+          "counters": {
+            "ct_add": 134,
+            "scalar_add": 10,
+            "scalar_mul": 84
+          },
+          "measured": {
+            "pbs": 2926
+          }
+        }
+      ],
+      "profile_sample_id": "386"
+    },
+    {
+      "status": "ok",
+      "model": "phase8_gap_cnn",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "618b7401202a1a5ffb6619c6a498e2fecab17a12c0efcb2c0e3c9b5ad5f7b954",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 1.717982986,
+        "ci95_lower_secs": 1.7021699583333332,
+        "ci95_upper_secs": 1.7297804721666665,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 5511135232,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 30229,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 360,
+        "encrypted_task_accuracy": 0.5888888888888889,
+        "full_test_quantized_accuracy": 0.5611111111111111,
+        "float_accuracy": {
+          "value": 0.8333333333333334,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_gap_cnn.onnx",
+          "source_sha256": "bc6492b7cfbee55c6432b69164cc1e8117f6fa3eda9f06885087fdd6e88d5daa",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 118,
+        "label_flip_rate": 0.3277777777777778,
+        "absolute_output_error": {
+          "median": 117.15457622131716,
+          "p95": 190.6445603511882,
+          "p99": 234.60439131864672,
+          "max": 263.4005313676761
+        },
+        "margin_relative_score_error": {
+          "median": 1.716556283693836,
+          "p95": 21.132022006659447,
+          "max": 194.94755585052332,
+          "finite_count": 360,
+          "zero_margin_samples": 0,
+          "zero_margin_with_nonzero_error": 0
+        },
+        "check_method": "raw_float_bound_check(bound=381.4976843681731)",
+        "exact_checks_passed": 0
+      },
+      "nodes": [
+        {
+          "name": "conv0",
+          "op_type": "Conv2d",
+          "build_secs": 0.000106625,
+          "eval_secs": 1.095825667,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 30
+          },
+          "measured": {}
+        },
+        {
+          "name": "conv0__requant",
+          "op_type": "Requant",
+          "build_secs": 0.001478667,
+          "eval_secs": 0.115079834,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 4,
+            "poly_evals": 1,
+            "rescales": 4
+          },
+          "measured": {}
+        },
+        {
+          "name": "pool2",
+          "op_type": "Pool",
+          "build_secs": 0.000105958,
+          "eval_secs": 0.063121208,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 9
+          },
+          "measured": {}
+        },
+        {
+          "name": "pool3",
+          "op_type": "Pool",
+          "build_secs": 0.000051958,
+          "eval_secs": 0.358506125,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 30
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear4",
+          "op_type": "Linear",
+          "build_secs": 0.000022291,
+          "eval_secs": 0.080292333,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 16
+          },
+          "measured": {}
+        }
+      ],
+      "profile_sample_id": "1496"
+    },
+    {
+      "status": "ok",
+      "model": "phase8_tanh",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "caad971e9b2a78de9a7211b796e95225935de11f17909169e5e72bd03a990c4b",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 28.118133604,
+        "ci95_lower_secs": 27.86040125,
+        "ci95_upper_secs": 28.459811875,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 379437056,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 36442,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 10537492,
+        "output_ciphertext_bytes": 1152580
+      },
+      "pbs_split": {
+        "total_pbs": 11383,
+        "lookup_pbs": 16,
+        "carry_pbs": 11367
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.6916666666666667,
+        "full_test_quantized_accuracy": 0.6916666666666667,
+        "float_accuracy": {
+          "value": 0.9611111111111112,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_tanh_mlp.onnx",
+          "source_sha256": "7f479c0e4ace4f0a8f2f946905d6c3a3206a4f70815adb975cef80812277c35d",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "linear0",
+          "op_type": "Linear",
+          "build_secs": 1.917e-6,
+          "eval_secs": 19.0753865,
+          "input_lens": [
+            64
+          ],
+          "output_len": 16,
+          "counters": {
+            "ct_add": 707,
+            "scalar_add": 16,
+            "scalar_mul": 246
+          },
+          "measured": {
+            "pbs": 6996
+          }
+        },
+        {
+          "name": "linear0__requant",
+          "op_type": "Requant",
+          "build_secs": 1.041e-6,
+          "eval_secs": 5.208183875,
+          "input_lens": [
+            16
+          ],
+          "output_len": 16,
+          "counters": {
+            "bootstraps": 16,
+            "cmp_pbs_ops": 48,
+            "scalar_add": 16,
+            "scalar_mul": 16
+          },
+          "measured": {
+            "pbs": 2048
+          }
+        },
+        {
+          "name": "linear2",
+          "op_type": "Linear",
+          "build_secs": 1.875e-6,
+          "eval_secs": 4.317930083,
+          "input_lens": [
+            16
+          ],
+          "output_len": 10,
+          "counters": {
+            "ct_add": 146,
+            "scalar_add": 10,
+            "scalar_mul": 122
+          },
+          "measured": {
+            "pbs": 2339
+          }
+        }
+      ],
+      "profile_sample_id": "1053"
+    },
+    {
+      "status": "ok",
+      "model": "phase8_tanh",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "caad971e9b2a78de9a7211b796e95225935de11f17909169e5e72bd03a990c4b",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 0.6358747916666667,
+        "ci95_lower_secs": 0.6313346203333333,
+        "ci95_upper_secs": 0.6397029467777778,
+        "sample_count": 10,
+        "representative_sample_id": "1496"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 4140318720,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 46642,
+        "sample_id": "1496"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 360,
+        "encrypted_task_accuracy": 0.9583333333333334,
+        "full_test_quantized_accuracy": 0.6916666666666667,
+        "float_accuracy": {
+          "value": 0.9611111111111112,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/mnist/digit_tanh_mlp.onnx",
+          "source_sha256": "7f479c0e4ace4f0a8f2f946905d6c3a3206a4f70815adb975cef80812277c35d",
+          "sample_count": 360,
+          "recomputed": true
+        },
+        "label_flips": 105,
+        "label_flip_rate": 0.2916666666666667,
+        "absolute_output_error": {
+          "median": 20.212571286626122,
+          "p95": 30.408713145634927,
+          "p99": 34.77034336802134,
+          "max": 42.37715831386933
+        },
+        "margin_relative_score_error": {
+          "median": 1.8411994137783418,
+          "p95": 15.822947601779202,
+          "max": 36.90007122038042,
+          "finite_count": 348,
+          "zero_margin_samples": 12,
+          "zero_margin_with_nonzero_error": 12
+        },
+        "check_method": "raw_float_bound_check(bound=70.91961172186478)",
+        "exact_checks_passed": 0
+      },
+      "nodes": [
+        {
+          "name": "linear0",
+          "op_type": "Linear",
+          "build_secs": 0.000031167,
+          "eval_secs": 0.402697458,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 19
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear0__requant",
+          "op_type": "Requant",
+          "build_secs": 0.001218333,
+          "eval_secs": 0.108497583,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 4,
+            "poly_evals": 1,
+            "rescales": 4
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear2",
+          "op_type": "Linear",
+          "build_secs": 0.00002425,
+          "eval_secs": 0.120687417,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 16
+          },
+          "measured": {}
+        }
+      ],
+      "profile_sample_id": "1496"
+    },
+    {
+      "status": "ok",
+      "model": "phase8_xgb",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "f702756d9a220fad044e2ecde2622da59a28e577d12cc88bc0621c41cef0233c",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 4.85056580225,
+        "ci95_lower_secs": 4.79639665625,
+        "ci95_upper_secs": 4.93654870825,
+        "sample_count": 10,
+        "representative_sample_id": "204"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 287031296,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 49353,
+        "sample_id": "204"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 3457700,
+        "output_ciphertext_bytes": 230532
+      },
+      "pbs_split": {
+        "total_pbs": 1682,
+        "lookup_pbs": 69,
+        "carry_pbs": 1613
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.9649122807017544,
+        "full_test_quantized_accuracy": 0.9649122807017544,
+        "float_accuracy": {
+          "value": 0.9649122807017544,
+          "source": "reproduced_generator",
+          "source_path": "examples/trees/xgb_export.py",
+          "source_sha256": "9a7f57bfedb650907c2f53af0209188d9ff8bddbd8ebaede51a51891e021d15c",
+          "sample_count": 114,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "split_cmp",
+          "op_type": "Compare",
+          "build_secs": 1.208e-6,
+          "eval_secs": 0.41748075,
+          "input_lens": [
+            30
+          ],
+          "output_len": 32,
+          "counters": {
+            "cmp_pbs_ops": 32
+          },
+          "measured": {
+            "pbs": 160
+          }
+        },
+        {
+          "name": "leaf_score",
+          "op_type": "Linear",
+          "build_secs": 2.375e-6,
+          "eval_secs": 2.6880968750000003,
+          "input_lens": [
+            32
+          ],
+          "output_len": 37,
+          "counters": {
+            "ct_add": 71,
+            "scalar_add": 37,
+            "scalar_mul": 64
+          },
+          "measured": {
+            "pbs": 1058
+          }
+        },
+        {
+          "name": "leaf_sel",
+          "op_type": "Compare",
+          "build_secs": 1e-6,
+          "eval_secs": 0.484898709,
+          "input_lens": [
+            37
+          ],
+          "output_len": 37,
+          "counters": {
+            "cmp_pbs_ops": 37
+          },
+          "measured": {
+            "pbs": 185
+          }
+        },
+        {
+          "name": "logits",
+          "op_type": "Linear",
+          "build_secs": 1.334e-6,
+          "eval_secs": 1.111526417,
+          "input_lens": [
+            37
+          ],
+          "output_len": 2,
+          "counters": {
+            "ct_add": 27,
+            "scalar_add": 2,
+            "scalar_mul": 10
+          },
+          "measured": {
+            "pbs": 279
+          }
+        }
+      ],
+      "profile_sample_id": "204"
+    },
+    {
+      "status": "unsupported",
+      "model": "phase8_xgb",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "f702756d9a220fad044e2ecde2622da59a28e577d12cc88bc0621c41cef0233c",
+      "rejection": "depth/scale budget exceeded on backend 'ckks' at node 'logits' (Linear): the graph needs 360 bits of multiplicative budget by this node but the profile holds only 330 (k=360, log_delta=30). Reduce max_poly_degree, or widen the parameter profile."
+    },
+    {
+      "status": "ok",
+      "model": "phase11_tabular_mlp",
+      "backend": "tfhe",
+      "profile": null,
+      "graph_sha256": "314079871680ad676d59e97c25d5c1d28b29fa69ceb93db85ccff61a8c55df45",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 9.225688625,
+        "ci95_lower_secs": 9.166191042,
+        "ci95_upper_secs": 9.256115375,
+        "sample_count": 10,
+        "representative_sample_id": "204"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 316145664,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 51502,
+        "sample_id": "204"
+      },
+      "sizes": {
+        "client_key_bytes": 23940,
+        "server_key_bytes": 120419227,
+        "input_ciphertext_bytes": 4939460,
+        "output_ciphertext_bytes": 197604
+      },
+      "pbs_split": {
+        "total_pbs": 3615,
+        "lookup_pbs": 8,
+        "carry_pbs": 3607
+      },
+      "accuracy": {
+        "sample_count": 30,
+        "encrypted_task_accuracy": 0.956140350877193,
+        "full_test_quantized_accuracy": 0.956140350877193,
+        "float_accuracy": {
+          "value": 0.9649122807017544,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/tabular/breast_cancer_mlp.onnx",
+          "source_sha256": "f8f91cec2779f27c69c462ab3db88cbee0a35705761e921b0ae8180c92bb5124",
+          "sample_count": 114,
+          "recomputed": true
+        },
+        "label_flips": 0,
+        "label_flip_rate": 0.0,
+        "absolute_output_error": null,
+        "margin_relative_score_error": null,
+        "check_method": "quantized_reference_inferred_exact",
+        "exact_checks_passed": 30
+      },
+      "nodes": [
+        {
+          "name": "linear0",
+          "op_type": "Linear",
+          "build_secs": 1.458e-6,
+          "eval_secs": 6.076182542,
+          "input_lens": [
+            30
+          ],
+          "output_len": 8,
+          "counters": {
+            "ct_add": 206,
+            "scalar_add": 8,
+            "scalar_mul": 94
+          },
+          "measured": {
+            "pbs": 2351
+          }
+        },
+        {
+          "name": "linear0__requant",
+          "op_type": "Requant",
+          "build_secs": 1.083e-6,
+          "eval_secs": 2.5816538749999998,
+          "input_lens": [
+            8
+          ],
+          "output_len": 8,
+          "counters": {
+            "bootstraps": 8,
+            "cmp_pbs_ops": 24,
+            "scalar_add": 8,
+            "scalar_mul": 8
+          },
+          "measured": {
+            "pbs": 1000
+          }
+        },
+        {
+          "name": "linear2",
+          "op_type": "Linear",
+          "build_secs": 1.208e-6,
+          "eval_secs": 0.668902,
+          "input_lens": [
+            8
+          ],
+          "output_len": 2,
+          "counters": {
+            "ct_add": 14,
+            "scalar_add": 2,
+            "scalar_mul": 13
+          },
+          "measured": {
+            "pbs": 264
+          }
+        }
+      ],
+      "profile_sample_id": "70"
+    },
+    {
+      "status": "ok",
+      "model": "phase11_tabular_mlp",
+      "backend": "ckks",
+      "profile": null,
+      "graph_sha256": "314079871680ad676d59e97c25d5c1d28b29fa69ceb93db85ccff61a8c55df45",
+      "latency": {
+        "source": "criterion",
+        "median_secs": 0.4185479083333334,
+        "ci95_lower_secs": 0.41649618613333333,
+        "ci95_upper_secs": 0.4202311083333334,
+        "sample_count": 10,
+        "representative_sample_id": "204"
+      },
+      "memory": {
+        "peak_server_rss_bytes": 4613865472,
+        "method": "getrusage",
+        "scope": "fresh_process_server_key_load_and_eval",
+        "worker_pid": 54911,
+        "sample_id": "204"
+      },
+      "sizes": {
+        "client_key_bytes": 131196,
+        "server_key_bytes": 1869089408,
+        "input_ciphertext_bytes": 4980843,
+        "output_ciphertext_bytes": 4980843
+      },
+      "accuracy": {
+        "sample_count": 114,
+        "encrypted_task_accuracy": 0.9649122807017544,
+        "full_test_quantized_accuracy": 0.956140350877193,
+        "float_accuracy": {
+          "value": 0.9649122807017544,
+          "source": "recomputed_frozen_onnx",
+          "source_path": "examples/tabular/breast_cancer_mlp.onnx",
+          "source_sha256": "f8f91cec2779f27c69c462ab3db88cbee0a35705761e921b0ae8180c92bb5124",
+          "sample_count": 114,
+          "recomputed": true
+        },
+        "label_flips": 1,
+        "label_flip_rate": 0.008771929824561403,
+        "absolute_output_error": {
+          "median": 11.341365073233574,
+          "p95": 23.68851682345783,
+          "p99": 26.799065743042657,
+          "max": 26.83084375445081
+        },
+        "margin_relative_score_error": {
+          "median": 0.27909117376145803,
+          "p95": 2.3841405442065113,
+          "max": 3.3739380152390366,
+          "finite_count": 114,
+          "zero_margin_samples": 0,
+          "zero_margin_with_nonzero_error": 0
+        },
+        "check_method": "raw_float_bound_check(bound=57.687575156856255)",
+        "exact_checks_passed": 0
+      },
+      "nodes": [
+        {
+          "name": "linear0",
+          "op_type": "Linear",
+          "build_secs": 0.000023459,
+          "eval_secs": 0.243716042,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 17
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear0__requant",
+          "op_type": "Requant",
+          "build_secs": 0.001854875,
+          "eval_secs": 0.105452083,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 4,
+            "poly_evals": 1,
+            "rescales": 4
+          },
+          "measured": {}
+        },
+        {
+          "name": "linear2",
+          "op_type": "Linear",
+          "build_secs": 0.000019625,
+          "eval_secs": 0.060311625,
+          "input_lens": [
+            1
+          ],
+          "output_len": 1,
+          "counters": {
+            "depth_levels": 1,
+            "rescales": 1,
+            "rotations": 9
+          },
+          "measured": {}
+        }
+      ],
+      "profile_sample_id": "204"
+    }
+  ]
+}

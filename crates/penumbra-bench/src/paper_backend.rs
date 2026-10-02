@@ -120,12 +120,6 @@ impl PaperBackend for penumbra_ckks::CkksBackend {
             "phase8_gap_cnn" => penumbra_ckks::bounds::PHASE8_GAP_CNN,
             "phase8_tanh" => penumbra_ckks::bounds::PHASE8_TANH,
             "phase11_tabular_mlp" => penumbra_ckks::bounds::PHASE11_TABULAR_MLP,
-            "phase8_trees" | "phase8_xgb" => {
-                return Err(format!(
-                    "operator Compare (node in '{}') not supported on CKKS backend: depth budget exceeded",
-                    model.key
-                ));
-            }
             other => return Err(format!("unknown model '{other}' for CKKS paper policy")),
         };
 
