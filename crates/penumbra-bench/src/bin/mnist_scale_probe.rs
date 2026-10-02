@@ -161,7 +161,6 @@ fn compute_sha256(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-
 #[cfg(feature = "ckks")]
 fn check_ckks_capacity() -> Result<(String, usize, String), String> {
     let params = &penumbra_ckks::DEFAULT_PARAMS;

@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use penumbra_core::backend::Backend;
-use serde::{Deserialize, Serialize};
 use penumbra_core::profile::NodeProfile;
+use serde::{Deserialize, Serialize};
 
 use crate::models::LoadedModel;
 use crate::session::Session;

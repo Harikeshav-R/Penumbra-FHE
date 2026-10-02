@@ -2,8 +2,8 @@
 
 use std::process::Command;
 
-use serde::{Deserialize, Serialize};
 use penumbra_core::ir::Graph;
+use serde::{Deserialize, Serialize};
 
 use crate::latency::measure_latency;
 use crate::memory::capture_peak_server_rss;
@@ -740,8 +740,8 @@ mod tests {
 
     #[test]
     fn test_maybe_build_score_tap_graph() {
-        use penumbra_core::ir::Graph;
         use crate::protocol::{FloatAccuracy, PaperData};
+        use penumbra_core::ir::Graph;
 
         let make_graph = |outputs: Vec<&str>| Graph {
             schema_version: "1.0.0".to_string(),
@@ -784,7 +784,8 @@ mod tests {
 
         // Case 3: Label model does not duplicate if score_tensor already in outputs
         let g_already = make_graph(vec!["label_out", "scores"]);
-        let tapped2 = maybe_build_score_tap_graph(&g_already, &label_paper).expect("should return Some");
+        let tapped2 =
+            maybe_build_score_tap_graph(&g_already, &label_paper).expect("should return Some");
         assert_eq!(tapped2.outputs, vec!["label_out", "scores"]);
     }
 }

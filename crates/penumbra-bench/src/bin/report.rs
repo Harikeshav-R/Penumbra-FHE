@@ -347,7 +347,6 @@ fn configure_threads(threads: Option<usize>) -> Result<(), String> {
     Ok(())
 }
 
-
 fn run_worker(kind: WorkerKind, config_path: &Path) -> Result<(), String> {
     let text = std::fs::read_to_string(config_path)
         .map_err(|e| format!("cannot read {}: {e}", config_path.display()))?;

@@ -396,7 +396,6 @@ pub struct PaperReportMeta {
     pub mode: String,
 }
 
-
 impl PaperReportMeta {
     pub fn capture(mode: &str, requested_threads: usize) -> Result<Self, String> {
         let machine_model = if cfg!(target_os = "macos") {
