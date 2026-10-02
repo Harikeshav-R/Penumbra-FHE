@@ -466,8 +466,8 @@ pub fn run_metrics_worker<B: PaperBackend>(
             for (idx, sample) in paper.test.iter().enumerate() {
                 let input_cts = session.encrypt(&sample.inputs);
 
-                // Capture representative profile strictly from original graph at idx == 0
-                if idx == 0 {
+                // For label models at idx == 0, evaluate original graph separately for profile and wire size
+                if is_label_model && idx == 0 {
                     let (orig_outs, orig_profile) = eval_server(
                         &session.backend,
                         &session.sk,
@@ -482,20 +482,29 @@ pub fn run_metrics_worker<B: PaperBackend>(
                     }
                 }
 
-                let eval_result = if is_label_model {
-                    let (outputs, _profile) = eval_server(
-                        &session.backend,
-                        &session.sk,
-                        session.num_blocks,
-                        eval_g,
-                        &input_cts,
-                    )?;
-                    let out_name = &model.graph.outputs[0];
-                    let out_cts = outputs
-                        .get(out_name)
-                        .ok_or_else(|| format!("missing output tensor '{out_name}'"))?;
-                    let raw_label_floats = session.backend.decode_raw(&session.ck, out_cts);
+                // Evaluate eval_g once per sample (original graph for non-label, tap graph for label)
+                let (outputs, profile) = eval_server(
+                    &session.backend,
+                    &session.sk,
+                    session.num_blocks,
+                    eval_g,
+                    &input_cts,
+                )?;
 
+                let out_name = &model.graph.outputs[0];
+                let out_cts = outputs
+                    .get(out_name)
+                    .ok_or_else(|| format!("missing output tensor '{out_name}'"))?;
+
+                // For non-label models at idx == 0, reuse the single evaluation for profile and wire size
+                if !is_label_model && idx == 0 {
+                    rep_profile_nodes = profile.nodes;
+                    output_ct_bytes = session.ct_bytes(out_cts)?;
+                }
+
+                let raw_floats = session.backend.decode_raw(&session.ck, out_cts);
+
+                let eval_result = if is_label_model {
                     let score_cts = outputs
                         .get(&paper.score_tensor)
                         .ok_or_else(|| format!("missing score tensor '{}'", paper.score_tensor))?;
@@ -510,25 +519,12 @@ pub fn run_metrics_worker<B: PaperBackend>(
 
                     evaluate_sample_binary_label(
                         sample,
-                        &raw_label_floats,
+                        &raw_floats,
                         &raw_score_floats,
                         threshold,
                         bound,
                     )?
                 } else {
-                    let (outputs, _profile) = eval_server(
-                        &session.backend,
-                        &session.sk,
-                        session.num_blocks,
-                        &model.graph,
-                        &input_cts,
-                    )?;
-                    let out_name = &model.graph.outputs[0];
-                    let out_cts = outputs
-                        .get(out_name)
-                        .ok_or_else(|| format!("missing output tensor '{out_name}'"))?;
-                    let raw_floats = session.backend.decode_raw(&session.ck, out_cts);
-
                     evaluate_sample_multiclass(
                         &raw_floats,
                         &sample.expected_output,

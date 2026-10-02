@@ -65,8 +65,9 @@ is why the shared harness is a hard requirement rather than a convenience
 5. **Full-test vs. spot-check execution:**
    - **TFHE:** 30 distinct seeded spot checks (seed 1503; for faces, 20 test + 10 calibration rows) are verified bit-for-bit exact against `evaluate_graph_int`. Full-test task accuracy is reported as `quantized_reference_inferred_exact` with evidence of the 30 passed encrypted checks.
    - **CKKS:** All samples in the full test split are evaluated encrypted. Raw unrounded floating-point outputs are compared directly against the integer reference to prevent rounding from masking error noise.
-6. **Tie-breaking & zero-margin metrics:** Multi-class predicted labels use first-maximum tie-breaking (`argmax`). Margin-relative score errors divide max component error by top-two reference margin. Where reference top-two margins are zero (ties), relative error is reported as null and tracked via explicit zero-margin counters.
+6. **Tie-breaking & zero-margin metrics:** Multiclass predicted labels use first-maximum tie-breaking (`argmax`). Only logical output components enter metrics; non-finite components fail. Margin-relative score errors divide max component error by top-two integer-reference margin. Binary label models instead use the fixture's score tap and `abs(reference_score - decision_threshold)`; the actual decrypted decision still determines accuracy, and the original decision output retains its fixed absolute bound. Zero denominators are reported as null and tracked through explicit counters.
 7. **D16 PBS accounting:** Measured PBS operations are partitioned into logical lookup PBS (Activation/Requant `bootstraps`, Compare/Argmax `cmp_pbs_ops`) and residual carry PBS (`total_pbs - lookup_pbs`).
+8. **Report provenance:** Paper report version 2 adds original-graph node profiles and the actual `profile_sample_id`; fixture/protocol versions remain 1 and the IR is unchanged. Profiles are diagnostic and may use a different sample from Criterion. Score taps do not alter the Criterion/RSS graph. Unsupported rows preserve the actual backend graph-budget rejection before key generation, rather than a model-name policy explanation.
 
 ## Metrics
 
@@ -79,7 +80,7 @@ is why the shared harness is a hard requirement rather than a convenience
 | Task accuracy | prediction agreement with ground-truth target labels | task performance under encryption |
 | Quantized reference accuracy | prediction agreement with `evaluate_graph_int` | isolates scheme approximation error from quantization error |
 | Absolute error distribution | raw float \|err\| distribution (median, p95, p99, max) vs integer reference | ground-truth CKKS noise behavior |
-| Margin-relative score error | max score error divided by top-two reference logit margin | score perturbation relative to decision boundaries |
+| Margin-relative score error | max logit error / top-two reference margin; binary score-tap error / distance to declared threshold | score perturbation relative to decision boundaries |
 | Scheme cost proxy | bootstraps (TFHE) · depth + rotations + rescales (CKKS) | lets the numbers generalize past this machine |
 | Ciphertext size | bytes per encrypted input and output wire | bandwidth cost of client/server split |
 | Key material size | client key + evaluation key bytes | deployment storage overhead |

@@ -69,6 +69,36 @@ cargo run -p penumbra-bench --release --bin penumbra-bench-report -- --models ph
 > immediately below cite their results file; figures without a committed results file carry †
 > (see [Results provenance](#results-provenance)). Cite the cross-backend tables for anything comparative.
 
+### Phase 16 paper report contract
+
+`--mode paper` emits report `schema_version = 2`; the committed fixture's `paper`
+schema and sampling protocol remain version 1. This is not an IR change.
+Headline latency is the original graph's Criterion median and 95% confidence
+interval; isolated server RSS also evaluates the original graph.
+
+Each supported row preserves `nodes` and `profile_sample_id` from an actual
+original-graph evaluation. Node times are diagnostic, not alternate headline
+latencies. The profile sample is the first seeded TFHE spot check or first CKKS
+test sample, and need not equal Criterion's `representative_sample_id`.
+Unsupported rows retain the backend's real graph-budget error and contain no
+latency, accuracy, RSS, or node-profile claims.
+
+Multiclass classification selects the first maximum and uses only the logical
+output prefix; NaN or infinity in that prefix is an error. Its score-error
+denominator is the top-two integer-reference margin. Binary label models retain
+the actual decrypted decision output for accuracy and the fixed absolute output
+bound. A temporary accuracy-only graph also exposes the fixture's `score_tensor`:
+score error is divided by `abs(reference_score - decision_threshold)`, not by a
+scalar label's nonexistent top-two margin. This diagnostic does not introduce a
+new score-output bound. Zero denominators remain explicit counters with null
+relative errors.
+
+Correctness suites run with `RUST_TEST_THREADS=1` to avoid concurrent independent
+CKKS key generations exceeding this machine's 18 GB memory. Computation and
+paper inference retain `RAYON_NUM_THREADS=11`; test serialization changes neither
+cryptographic parameters nor the measurement protocol.
+
+
 ## Models
 
 ### Phase-2 — binary logistic regression (`examples/mnist/phase2_fixture.json`)
