@@ -385,24 +385,7 @@ pub fn run_metrics_worker<B: PaperBackend>(
 
             let rep_node_reports: Vec<NodeReport> = rep_profile_nodes
                 .into_iter()
-                .map(|n| NodeReport {
-                    name: n.name,
-                    op_type: n.op_type.to_string(),
-                    build_secs: n.build.as_secs_f64(),
-                    eval_secs: n.eval.as_secs_f64(),
-                    input_lens: n.input_lens,
-                    output_len: n.output_len,
-                    counters: n
-                        .counters
-                        .into_iter()
-                        .map(|(k, v)| (k.to_string(), v))
-                        .collect(),
-                    measured: n
-                        .measured
-                        .into_iter()
-                        .map(|(k, v)| (k.to_string(), v))
-                        .collect(),
-                })
+                .map(NodeReport::from)
                 .collect();
 
             let accuracy = AccuracyMetrics {
@@ -558,24 +541,7 @@ pub fn run_metrics_worker<B: PaperBackend>(
 
             let rep_node_reports: Vec<NodeReport> = rep_profile_nodes
                 .into_iter()
-                .map(|n| NodeReport {
-                    name: n.name,
-                    op_type: n.op_type.to_string(),
-                    build_secs: n.build.as_secs_f64(),
-                    eval_secs: n.eval.as_secs_f64(),
-                    input_lens: n.input_lens,
-                    output_len: n.output_len,
-                    counters: n
-                        .counters
-                        .into_iter()
-                        .map(|(k, v)| (k.to_string(), v))
-                        .collect(),
-                    measured: n
-                        .measured
-                        .into_iter()
-                        .map(|(k, v)| (k.to_string(), v))
-                        .collect(),
-                })
+                .map(NodeReport::from)
                 .collect();
 
             let accuracy = AccuracyMetrics {

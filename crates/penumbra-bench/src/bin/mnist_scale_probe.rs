@@ -113,28 +113,7 @@ impl From<&GraphProfile> for ProbeProfileSummary {
             .map(|(k, v)| (k.to_string(), v))
             .collect();
 
-        let nodes = p
-            .nodes
-            .iter()
-            .map(|n| NodeReport {
-                name: n.name.clone(),
-                op_type: n.op_type.to_string(),
-                build_secs: n.build.as_secs_f64(),
-                eval_secs: n.eval.as_secs_f64(),
-                input_lens: n.input_lens.clone(),
-                output_len: n.output_len,
-                counters: n
-                    .counters
-                    .iter()
-                    .map(|&(k, v)| (k.to_string(), v))
-                    .collect(),
-                measured: n
-                    .measured
-                    .iter()
-                    .map(|&(k, v)| (k.to_string(), v))
-                    .collect(),
-            })
-            .collect();
+        let nodes = p.nodes.iter().map(NodeReport::from).collect();
 
         Self {
             total_secs: p.total.as_secs_f64(),
