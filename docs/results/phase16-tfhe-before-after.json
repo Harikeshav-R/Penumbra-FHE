@@ -1,0 +1,922 @@
+{
+  "schema_version": 1,
+  "description": "Phase 16 D17 Before/After TFHE Analysis: within-scheme implementation gain (N) vs cross-scheme gap (M)",
+  "meta": {
+    "machine": "Apple M3 Pro (Mac15,6, 11 cores, 18 GB)",
+    "kernel_version": "25.6.0",
+    "os_product_version": "26.6.2",
+    "threads": 11,
+    "runtime_commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+    "build_commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+    "date": "2026-10-02"
+  },
+  "methodology_notes": [
+    "Pre-fix baseline comes from Phase 14 pre-fix benchmark (commit 488f76c6474793bc90e1a490a882fd74703a0427) using global num_blocks radix.",
+    "Post-fix diagnostic comes from Phase 16 diagnostic sweep (commit 3833c9436f872642f3e0407a8ae4dc5c0f473023) using per-tensor radix width under identical report parameters (--mode diagnostics --samples 2).",
+    "For phase2_logreg, canonical N uses Criterion median from phase13-logreg-timing.json (0.4740s) vs final phase16 Criterion median (0.3258s).",
+    "Cross-scheme ratio M is strictly derived from final Criterion medians: M = final_tfhe_criterion / final_ckks_criterion.",
+    "Diagnostic ratios N_diag are breakdown evidence, not headline Criterion latency."
+  ],
+  "rows": [
+    {
+      "model": "phase2_logreg",
+      "has_prefix_baseline": true,
+      "prefix_baseline": {
+        "source_file": "docs/results/phase14-tfhe-baseline.json",
+        "commit": "488f76c6474793bc90e1a490a882fd74703a0427",
+        "date": "2026-09-27",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 0.439418729,
+        "measured_pbs": 137,
+        "num_blocks": 6,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 2,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            2
+          ]
+        }
+      },
+      "canonical_prefix_criterion": {
+        "source_file": "docs/results/phase13-logreg-timing.json",
+        "commit": "accc268",
+        "date": "2026-09-27",
+        "median_secs": 0.4740441338928572,
+        "ci95_secs": [
+          0.46474347175,
+          0.48250307889285715
+        ]
+      },
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 0.329503917,
+        "measured_pbs": 91,
+        "num_blocks": 6,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 2,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            2
+          ]
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 0.3257504933947369,
+        "ci95_secs": [
+          0.3245431370526316,
+          0.32687800984210524
+        ],
+        "pbs_split": {
+          "total_pbs": 91,
+          "lookup_pbs": 1,
+          "carry_pbs": 90
+        }
+      },
+      "final_ckks_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 0.34042906861764705,
+        "ci95_secs": [
+          0.3400194583529412,
+          0.3415963382352941
+        ]
+      },
+      "within_scheme_diagnostic_ratio_n": 1.3335766475880773,
+      "pbs_reduction_percent": -33.57664233576642,
+      "within_scheme_canonical_criterion_ratio_n": 1.4552368868354146,
+      "cross_scheme_criterion_gap_m": 0.9568821332369933
+    },
+    {
+      "model": "phase4_cnn",
+      "has_prefix_baseline": true,
+      "prefix_baseline": {
+        "source_file": "docs/results/phase14-tfhe-baseline.json",
+        "commit": "488f76c6474793bc90e1a490a882fd74703a0427",
+        "date": "2026-09-27",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 25.440038,
+        "measured_pbs": 9104,
+        "num_blocks": 7,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            4
+          ]
+        }
+      },
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 15.638469,
+        "measured_pbs": 6134,
+        "num_blocks": 7,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            4
+          ]
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 15.625299854,
+        "ci95_secs": [
+          15.466505271,
+          15.92447875
+        ],
+        "pbs_split": {
+          "total_pbs": 6134,
+          "lookup_pbs": 32,
+          "carry_pbs": 6102
+        }
+      },
+      "final_ckks_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 0.49317878475,
+        "ci95_secs": [
+          0.4891223229166667,
+          0.5012894617916667
+        ]
+      },
+      "within_scheme_diagnostic_ratio_n": 1.6267601387322506,
+      "pbs_reduction_percent": -32.623022847100174,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": 31.682830521431914
+    },
+    {
+      "model": "phase5_digits",
+      "has_prefix_baseline": true,
+      "prefix_baseline": {
+        "source_file": "docs/results/phase14-tfhe-baseline.json",
+        "commit": "488f76c6474793bc90e1a490a882fd74703a0427",
+        "date": "2026-09-27",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 215.05546952050003,
+        "measured_pbs": 75153,
+        "num_blocks": 9,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 3,
+          "max_mult_bits": 1,
+          "weight_bits": [
+            5,
+            6
+          ]
+        }
+      },
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 76.24984162499999,
+        "measured_pbs": 31663,
+        "num_blocks": 9,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 3,
+          "max_mult_bits": 1,
+          "weight_bits": [
+            5,
+            6
+          ]
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 75.369050229,
+        "ci95_secs": [
+          75.032670292,
+          75.631949167
+        ],
+        "pbs_split": {
+          "total_pbs": 31663,
+          "lookup_pbs": 108,
+          "carry_pbs": 31555
+        }
+      },
+      "final_ckks_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 1.0833104125,
+        "ci95_secs": [
+          1.0694892582,
+          1.097382525
+        ]
+      },
+      "within_scheme_diagnostic_ratio_n": 2.8204054583896987,
+      "pbs_reduction_percent": -57.868614692693576,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": 69.57290298268964
+    },
+    {
+      "model": "phase5_qat",
+      "has_prefix_baseline": true,
+      "prefix_baseline": {
+        "source_file": "docs/results/phase14-tfhe-baseline.json",
+        "commit": "488f76c6474793bc90e1a490a882fd74703a0427",
+        "date": "2026-09-27",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 165.39435975,
+        "measured_pbs": 56470,
+        "num_blocks": 8,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 3,
+          "max_mult_bits": 1,
+          "weight_bits": [
+            5,
+            4
+          ]
+        }
+      },
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 70.18586670799999,
+        "measured_pbs": 28558,
+        "num_blocks": 8,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 3,
+          "max_mult_bits": 1,
+          "weight_bits": [
+            5,
+            4
+          ]
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 68.577716729,
+        "ci95_secs": [
+          68.462138,
+          68.73423575
+        ],
+        "pbs_split": {
+          "total_pbs": 28558,
+          "lookup_pbs": 108,
+          "carry_pbs": 28450
+        }
+      },
+      "final_ckks_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 0.9793981076666668,
+        "ci95_secs": [
+          0.965014743,
+          0.9886279548333332
+        ]
+      },
+      "within_scheme_diagnostic_ratio_n": 2.3565194462597963,
+      "pbs_reduction_percent": -49.42801487515495,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": 70.02026672522435
+    },
+    {
+      "model": "phase6_onnx",
+      "has_prefix_baseline": true,
+      "prefix_baseline": {
+        "source_file": "docs/results/phase14-tfhe-baseline.json",
+        "commit": "488f76c6474793bc90e1a490a882fd74703a0427",
+        "date": "2026-09-27",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 215.0412496045,
+        "measured_pbs": 75153,
+        "num_blocks": 9,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 3,
+          "max_mult_bits": 1,
+          "weight_bits": [
+            5,
+            6
+          ]
+        }
+      },
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 77.46161695800001,
+        "measured_pbs": 31663,
+        "num_blocks": 9,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 3,
+          "max_mult_bits": 1,
+          "weight_bits": [
+            5,
+            6
+          ]
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 75.679003104,
+        "ci95_secs": [
+          75.289041125,
+          75.995730708
+        ],
+        "pbs_split": {
+          "total_pbs": 31663,
+          "lookup_pbs": 108,
+          "carry_pbs": 31555
+        }
+      },
+      "final_ckks_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 1.08236597225,
+        "ci95_secs": [
+          1.0769672188333335,
+          1.0936070903333333
+        ]
+      },
+      "within_scheme_diagnostic_ratio_n": 2.776100707026245,
+      "pbs_reduction_percent": -57.868614692693576,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": 69.91997627815299
+    },
+    {
+      "model": "phase6_sklearn",
+      "has_prefix_baseline": true,
+      "prefix_baseline": {
+        "source_file": "docs/results/phase14-tfhe-baseline.json",
+        "commit": "488f76c6474793bc90e1a490a882fd74703a0427",
+        "date": "2026-09-27",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 41.130639146,
+        "measured_pbs": 13376,
+        "num_blocks": 10,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            8
+          ]
+        }
+      },
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 11.995925813,
+        "measured_pbs": 4704,
+        "num_blocks": 10,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            8
+          ]
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 12.1230059375,
+        "ci95_secs": [
+          11.994572396,
+          12.2211223955
+        ],
+        "pbs_split": {
+          "total_pbs": 4704,
+          "lookup_pbs": 0,
+          "carry_pbs": 4704
+        }
+      },
+      "final_ckks_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 0.3786973736875,
+        "ci95_secs": [
+          0.37729483075,
+          0.3828720611875
+        ]
+      },
+      "within_scheme_diagnostic_ratio_n": 3.4287173651429783,
+      "pbs_reduction_percent": -64.83253588516746,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": 32.01238450495268
+    },
+    {
+      "model": "phase7_faces",
+      "has_prefix_baseline": true,
+      "prefix_baseline": {
+        "source_file": "docs/results/phase14-tfhe-baseline.json",
+        "commit": "488f76c6474793bc90e1a490a882fd74703a0427",
+        "date": "2026-09-27",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 373.256057312,
+        "measured_pbs": 128571,
+        "num_blocks": 11,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            6,
+            6
+          ]
+        }
+      },
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 124.7918108545,
+        "measured_pbs": 50559,
+        "num_blocks": 11,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            6,
+            6
+          ]
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 123.0730557085,
+        "ci95_secs": [
+          122.941533229,
+          123.290841958
+        ],
+        "pbs_split": {
+          "total_pbs": 50559,
+          "lookup_pbs": 128,
+          "carry_pbs": 50431
+        }
+      },
+      "final_ckks_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 2.011356757,
+        "ci95_secs": [
+          2.003125333333333,
+          2.021170097333333
+        ]
+      },
+      "within_scheme_diagnostic_ratio_n": 2.9910300584322385,
+      "pbs_reduction_percent": -60.676202254007514,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": 61.18907313691441
+    },
+    {
+      "model": "phase8_trees",
+      "has_prefix_baseline": true,
+      "prefix_baseline": {
+        "source_file": "docs/results/phase14-tfhe-baseline.json",
+        "commit": "488f76c6474793bc90e1a490a882fd74703a0427",
+        "date": "2026-09-27",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 10.9142010415,
+        "measured_pbs": 4156,
+        "num_blocks": 7,
+        "bit_plan": {
+          "input_bits": 8,
+          "leaf_bits": 4
+        }
+      },
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 4.562283792000001,
+        "measured_pbs": 1699,
+        "num_blocks": 7,
+        "bit_plan": {
+          "input_bits": 8,
+          "leaf_bits": 4
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 4.6731120315,
+        "ci95_secs": [
+          4.6127906355,
+          4.7387936455
+        ],
+        "pbs_split": {
+          "total_pbs": 1699,
+          "lookup_pbs": 67,
+          "carry_pbs": 1632
+        }
+      },
+      "final_ckks_criterion": {
+        "status": "unsupported",
+        "rejection": "depth/scale budget exceeded on backend 'ckks' at node 'logits' (Linear): the graph needs 360 bits of multiplicative budget by this node but the profile holds only 330 (k=360, log_delta=30). Reduce max_poly_degree, or widen the parameter profile."
+      },
+      "within_scheme_diagnostic_ratio_n": 2.39226701781203,
+      "pbs_reduction_percent": -59.11934552454283,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": null
+    },
+    {
+      "model": "phase8_branch",
+      "has_prefix_baseline": true,
+      "prefix_baseline": {
+        "source_file": "docs/results/phase14-tfhe-baseline.json",
+        "commit": "488f76c6474793bc90e1a490a882fd74703a0427",
+        "date": "2026-09-27",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 134.02544262499998,
+        "measured_pbs": 47202,
+        "num_blocks": 11,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            5,
+            5,
+            5,
+            5
+          ]
+        }
+      },
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 35.4159140835,
+        "measured_pbs": 14157,
+        "num_blocks": 11,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            5,
+            5,
+            5,
+            5
+          ]
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 35.386178458,
+        "ci95_secs": [
+          35.121124625,
+          35.878169625
+        ],
+        "pbs_split": {
+          "total_pbs": 14157,
+          "lookup_pbs": 32,
+          "carry_pbs": 14125
+        }
+      },
+      "final_ckks_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 0.733265216125,
+        "ci95_secs": [
+          0.7312167421875,
+          0.7370661874375
+        ]
+      },
+      "within_scheme_diagnostic_ratio_n": 3.7843282064952097,
+      "pbs_reduction_percent": -70.00762679547476,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": 48.258362294888556
+    },
+    {
+      "model": "phase8_bn_cnn",
+      "has_prefix_baseline": true,
+      "prefix_baseline": {
+        "source_file": "docs/results/phase14-tfhe-baseline.json",
+        "commit": "488f76c6474793bc90e1a490a882fd74703a0427",
+        "date": "2026-09-27",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 204.965640937,
+        "measured_pbs": 70897,
+        "num_blocks": 9,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            4,
+            4
+          ]
+        }
+      },
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 88.02867312500001,
+        "measured_pbs": 34686,
+        "num_blocks": 9,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            4,
+            4
+          ]
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 88.0627189165,
+        "ci95_secs": [
+          87.8984840625,
+          88.2596678335
+        ],
+        "pbs_split": {
+          "total_pbs": 34686,
+          "lookup_pbs": 144,
+          "carry_pbs": 34542
+        }
+      },
+      "final_ckks_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 1.0034785208333332,
+        "ci95_secs": [
+          0.9982060971666666,
+          1.01208775
+        ]
+      },
+      "within_scheme_diagnostic_ratio_n": 2.3283963470169593,
+      "pbs_reduction_percent": -51.075503900023975,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": 87.75745278869428
+    },
+    {
+      "model": "phase8_gap_cnn",
+      "has_prefix_baseline": true,
+      "prefix_baseline": {
+        "source_file": "docs/results/phase14-tfhe-baseline.json",
+        "commit": "488f76c6474793bc90e1a490a882fd74703a0427",
+        "date": "2026-09-27",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 406.4511950415,
+        "measured_pbs": 139388,
+        "num_blocks": 10,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            4,
+            4
+          ]
+        }
+      },
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 163.07057954150002,
+        "measured_pbs": 65629,
+        "num_blocks": 10,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            4,
+            4
+          ]
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 162.9067468955,
+        "ci95_secs": [
+          162.3717920835,
+          163.067437396
+        ],
+        "pbs_split": {
+          "total_pbs": 65629,
+          "lookup_pbs": 256,
+          "carry_pbs": 65373
+        }
+      },
+      "final_ckks_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 1.717982986,
+        "ci95_secs": [
+          1.7021699583333332,
+          1.7297804721666665
+        ]
+      },
+      "within_scheme_diagnostic_ratio_n": 2.4924863588778856,
+      "pbs_reduction_percent": -52.9163199127615,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": 94.82442388722235
+    },
+    {
+      "model": "phase8_tanh",
+      "has_prefix_baseline": false,
+      "prefix_baseline": null,
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 27.744941750000002,
+        "measured_pbs": 11383,
+        "num_blocks": 10,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            5,
+            5
+          ]
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 28.118133604,
+        "ci95_secs": [
+          27.86040125,
+          28.459811875
+        ],
+        "pbs_split": {
+          "total_pbs": 11383,
+          "lookup_pbs": 16,
+          "carry_pbs": 11367
+        }
+      },
+      "final_ckks_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 0.6358747916666667,
+        "ci95_secs": [
+          0.6313346203333333,
+          0.6397029467777778
+        ]
+      },
+      "within_scheme_diagnostic_ratio_n": null,
+      "pbs_reduction_percent": null,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": 44.21960733857786
+    },
+    {
+      "model": "phase8_xgb",
+      "has_prefix_baseline": false,
+      "prefix_baseline": null,
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 4.7767612915,
+        "measured_pbs": 1682,
+        "num_blocks": 7,
+        "bit_plan": {
+          "input_bits": 8,
+          "leaf_bits": 4
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 4.85056580225,
+        "ci95_secs": [
+          4.79639665625,
+          4.93654870825
+        ],
+        "pbs_split": {
+          "total_pbs": 1682,
+          "lookup_pbs": 69,
+          "carry_pbs": 1613
+        }
+      },
+      "final_ckks_criterion": {
+        "status": "unsupported",
+        "rejection": "depth/scale budget exceeded on backend 'ckks' at node 'logits' (Linear): the graph needs 360 bits of multiplicative budget by this node but the profile holds only 330 (k=360, log_delta=30). Reduce max_poly_degree, or widen the parameter profile."
+      },
+      "within_scheme_diagnostic_ratio_n": null,
+      "pbs_reduction_percent": null,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": null
+    },
+    {
+      "model": "phase11_tabular_mlp",
+      "has_prefix_baseline": true,
+      "prefix_baseline": {
+        "source_file": "docs/results/phase14-tfhe-baseline.json",
+        "commit": "488f76c6474793bc90e1a490a882fd74703a0427",
+        "date": "2026-09-27",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 31.0417778755,
+        "measured_pbs": 10351,
+        "num_blocks": 10,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            5,
+            5
+          ]
+        }
+      },
+      "canonical_prefix_criterion": null,
+      "postfix_diagnostic": {
+        "source_file": "docs/results/phase16-tfhe-diagnostics.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "date": "2026-10-02",
+        "method": "penumbra-bench-report --mode diagnostics (samples=2)",
+        "mean_server_secs": 9.221735667,
+        "measured_pbs": 3615,
+        "num_blocks": 10,
+        "bit_plan": {
+          "act_bits": 2,
+          "input_bits": 4,
+          "max_mult_bits": 5,
+          "weight_bits": [
+            5,
+            5
+          ]
+        }
+      },
+      "final_tfhe_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 9.225688625,
+        "ci95_secs": [
+          9.166191042,
+          9.256115375
+        ],
+        "pbs_split": {
+          "total_pbs": 3615,
+          "lookup_pbs": 8,
+          "carry_pbs": 3607
+        }
+      },
+      "final_ckks_criterion": {
+        "source_file": "docs/results/phase16-paper-final.json",
+        "commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+        "median_secs": 0.4185479083333334,
+        "ci95_secs": [
+          0.41649618613333333,
+          0.4202311083333334
+        ]
+      },
+      "within_scheme_diagnostic_ratio_n": 3.36615350910383,
+      "pbs_reduction_percent": -65.07583808327698,
+      "within_scheme_canonical_criterion_ratio_n": null,
+      "cross_scheme_criterion_gap_m": 22.042132910750617
+    }
+  ]
+}

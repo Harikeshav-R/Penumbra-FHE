@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "probe": "mnist28_scale_probe",
+  "backend": "tfhe",
+  "machine_model": "Mac15,6",
+  "os_product_version": "26.6.2",
+  "kernel_version": "25.6.0",
+  "build_commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+  "runtime_commit": "3833c9436f872642f3e0407a8ae4dc5c0f473023",
+  "dirty": false,
+  "rustc_version": "rustc 1.100.0-nightly (bba531001 2026-09-20)",
+  "requested_threads": 11,
+  "actual_threads": 11,
+  "fixture_path": "examples/mnist/phase16_mnist28_fixture.json",
+  "fixture_sha256": "770259a837103496f5848bfe16c92a5360f85c3926a688f37f160b81987e52c4",
+  "graph_sha256": "0768775c1bd849cdcb8967397a1788e94909a3e9678e978cd20b88e0dba7dc6c",
+  "sample_id": "test_0",
+  "input_length": 784,
+  "ckks_linear_capacity": 256,
+  "ckks_capacity_error": "input length 784 exceeds lt_slots 256",
+  "ckks_capacity_source": "crates/penumbra-ckks/src/keys.rs:202-209",
+  "controlled_suite_exclusion_reason": "Excluded from controlled comparison suite under approved D18 capacity amendment: raw input dimension 784 exceeds CKKS linear-transform slot capacity 256; retained as TFHE scale feasibility probe.",
+  "elapsed_secs": 119.994375,
+  "within_600_secs": true,
+  "expected_logits": [
+    -86,
+    -411,
+    -129,
+    41,
+    -165,
+    -56,
+    -378,
+    238,
+    -128,
+    55
+  ],
+  "actual_logits": [
+    -86,
+    -411,
+    -129,
+    41,
+    -165,
+    -56,
+    -378,
+    238,
+    -128,
+    55
+  ],
+  "logits_exact_match": true,
+  "profile": {
+    "total_secs": 119.977246542,
+    "counter_totals": {
+      "bootstraps": 196,
+      "cmp_pbs_ops": 588,
+      "ct_add": 3378,
+      "scalar_add": 402,
+      "scalar_mul": 1780
+    },
+    "measured_totals": {
+      "pbs": 49215
+    },
+    "nodes": [
+      {
+        "name": "conv0",
+        "op_type": "Conv2d",
+        "build_secs": 1.25e-6,
+        "eval_secs": 66.088380375,
+        "input_lens": [
+          784
+        ],
+        "output_len": 196,
+        "counters": {
+          "ct_add": 1519,
+          "scalar_add": 196,
+          "scalar_mul": 1372
+        },
+        "measured": {
+          "pbs": 25921
+        }
+      },
+      {
+        "name": "conv0__requant",
+        "op_type": "Requant",
+        "build_secs": 1.416e-6,
+        "eval_secs": 29.062835917,
+        "input_lens": [
+          196
+        ],
+        "output_len": 196,
+        "counters": {
+          "bootstraps": 196,
+          "cmp_pbs_ops": 588,
+          "scalar_add": 196
+        },
+        "measured": {
+          "pbs": 11368
+        }
+      },
+      {
+        "name": "linear2",
+        "op_type": "Linear",
+        "build_secs": 0.000012792,
+        "eval_secs": 24.82591825,
+        "input_lens": [
+          196
+        ],
+        "output_len": 10,
+        "counters": {
+          "ct_add": 1859,
+          "scalar_add": 10,
+          "scalar_mul": 408
+        },
+        "measured": {
+          "pbs": 11926
+        }
+      }
+    ]
+  }
+}
