@@ -909,9 +909,9 @@ calibration row showing how Penumbra's TFHE compares with Concrete-ML on the sam
 
 ### Tasks
 
-- [ ] **Freeze** the library commit used for the runs and record its hash. Any later library
-      change means rerunning this phase.
-- [ ] **Run the full protocol** on the pinned M3 Pro, `--release`, machine otherwise idle,
+- [X] **Freeze** the library commit used for the runs and record its hash. Any later library
+      change means rerunning this phase. (Frozen at `3833c9436f872642f3e0407a8ae4dc5c0f473023`.)
+- [X] **Run the full protocol** on the pinned M3 Pro, `--release`, machine otherwise idle,
       pinned thread count, both backends, all committed models:
       - Criterion latency;
       - peak RSS;
@@ -920,33 +920,33 @@ calibration row showing how Penumbra's TFHE compares with Concrete-ML on the sam
       - TFHE n = 30 bit-exact spot-checks.
       Commit the results as new JSON in `docs/results/`, e.g.
       `docs/results/phase16-paper-final.json`.
-- [ ] **Trees (D11).**
+- [X] **Trees (D11).**
       - Run `phase8_trees` on TFHE.
       - Capture the CKKS depth-budget rejection message verbatim as the finding.
       - Word it as "leveled CKKS at these parameters".
-- [ ] **28×28 MNIST gate (D18).**
+- [X] **28×28 MNIST gate (D18).**
       - Build a small 28×28 MNIST CNN: a new graph and fixture through the normal Layer-3 path
         (`examples/mnist/`, Python quantization, ONNX); **no backend change**.
       - Time one post-fix TFHE sample.
-      - Record the full elapsed time and whether it is ≤ 600 seconds.
+      - Record the full elapsed time and whether it is ≤ 600 seconds. (Server evaluation 119.99 s, 10/10 exact logits.)
       - Owner-approved D18 amendment: keep the raw 784-element input probe separate
         from the controlled suite regardless of timing, because the fixed CKKS
         linear-transform capacity is 256. Record actual capacity evidence and the
         measured TFHE time in `docs/COMPARISON.md` threats; no packing/backend change.
-- [ ] **Concrete-ML calibration (D15).**
+- [X] **Concrete-ML calibration (D15).**
       - In a separate environment in the **paper repo** (not a Penumbra dependency), train or
         import the same architectures and run Concrete-ML unrounded with
         `rounding_threshold_bits=None`, `p_error=2**-40`, `global_p_error=None`.
         This owner-approved D15 amendment uses the pinned default, not a claimed
         universal minimum; disclose configured and compiler-reported probabilities.
-      - Record latency and accuracy on the same M3 Pro.
-      - Report it as a calibration row **outside** the controlled comparison.
+      - Record latency and accuracy on the same M3 Pro. (Median 146.97 s, 30/30 spot checks match.)
+      - Report it as a calibration row **outside** the controlled comparison (`docs/results/phase16-concrete-calibration.json`).
       - If it won't install on macOS arm64, record the failure and cite published numbers
-        (`docs/PAPER.md` §3) instead.
-- [ ] **Before/after TFHE (D17).** Tabulate pre-fix (Phase 12/13 results) vs post-fix (this
+        (`docs/PAPER.md` §3) instead. (Native execution succeeded on arm64.)
+- [X] **Before/after TFHE (D17).** Tabulate pre-fix (Phase 12/13 results) vs post-fix (this
       phase) TFHE latency and PBS per model. Compare the within-scheme change (N×) with the
-      cross-scheme gap (M×).
-- [ ] **Update the write-ups.**
+      cross-scheme gap (M×). (`docs/results/phase16-tfhe-before-after.json`.)
+- [X] **Update the write-ups.**
       - `docs/BENCHMARKS.md`: new tables with named source files.
       - `docs/COMPARISON.md`:
         - rewrite the Results and Verdict from the new numbers;
@@ -956,10 +956,10 @@ calibration row showing how Penumbra's TFHE compares with Concrete-ML on the sam
 
 ### Exit Criteria
 
-- Every number the paper will use exists in a committed results JSON tied to the frozen
-  commit.
-- Golden gates pass on the frozen commit (TFHE bit-for-bit; CKKS at its pre-declared bounds).
-- `docs/COMPARISON.md` and `docs/BENCHMARKS.md` reflect the final numbers; `mkdocs build
+- [X] Every number the paper will use exists in a committed results JSON tied to the frozen
+  commit (`3833c9436f872642f3e0407a8ae4dc5c0f473023`).
+- [X] Golden gates pass on the frozen commit (TFHE bit-for-bit; CKKS at its pre-declared bounds).
+- [X] `docs/COMPARISON.md` and `docs/BENCHMARKS.md` reflect the final numbers; `mkdocs build
   --strict` passes.
 
 ### Pitfalls

@@ -340,6 +340,21 @@ for i in 1 2 3 4 5; do
   ./target/release/penumbra-bench-report --models phase2_logreg --backends ckks,tfhe --samples 4 --format json --out target/bench-results/p13/ct-$i.json
 done
 PENUMBRA_BENCH_MODELS=phase2_logreg cargo +nightly bench -p penumbra-bench --features ckks
+
+# Full Phase 16 paper evaluation across all 14 models and both backends:
+RAYON_NUM_THREADS=11 ./target/release/penumbra-bench-report \
+  --mode paper --models all --backends tfhe,ckks --threads 11 \
+  --format json --out docs/results/phase16-paper-final.json
+
+# Separate raw 28×28 MNIST scale probe:
+RAYON_NUM_THREADS=11 ./target/release/penumbra-mnist-scale-probe \
+  --fixture examples/mnist/phase16_mnist28_fixture.json --threads 11 \
+  --out docs/results/phase16-mnist28-probe.json
+
+# Post-fix diagnostic sweep for before/after comparison:
+RAYON_NUM_THREADS=11 ./target/release/penumbra-bench-report \
+  --mode diagnostics --models all --backends tfhe --threads 11 --samples 2 \
+  --format json --out docs/results/phase16-tfhe-diagnostics.json
 ```
 
 *Results from `docs/results/phase13-logreg-timing.json` @ `accc268`:*
@@ -581,12 +596,174 @@ Across all seven committed models, bit-width minimization achieves a **1.46x geo
 
 *Sources: [`docs/results/phase15-protocol-smoke-tfhe.json`](./results/phase15-protocol-smoke-tfhe.json), [`docs/results/phase15-protocol-smoke-ckks.json`](./results/phase15-protocol-smoke-ckks.json), [`docs/results/phase15-ckks-calibration.json`](./results/phase15-ckks-calibration.json).*
 
+### Phase 16 Full Comparison Matrix (Frozen Paper Protocol)
+
+#### Table 1: Canonical Headline Latency and Server Peak Memory (Phase 16)
+
+*Measured under the frozen paper protocol on Apple M3 Pro, macOS 26.6.2 (Darwin 25.6.0), commit `3833c9436f872642f3e0407a8ae4dc5c0f473023`, with 11 pinned threads (`RAYON_NUM_THREADS=11`, CKKS single-threaded `FFT64Neon`). Latencies are canonical Criterion medians over 10 flat samples with 95% confidence intervals. Server memory is peak RSS captured via `getrusage` in an isolated child process evaluating only the server forward pass.*
+
+| Model | Backend | Criterion Latency (median [95% CI]) | Server Peak RSS | Client Key | Server Key | Input CT | Output CT |
+|---|---|---|---:|---:|---:|---:|---:|
+| `phase2_logreg` | TFHE | 0.3258 s [0.3245 s .. 0.3269 s] | 276.44 MB | 23.4 KB | 114.84 MB | 6.03 MB | 0.02 MB |
+| `phase2_logreg` | CKKS | 0.3404 s [0.3400 s .. 0.3416 s] | 5146.77 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB |
+| `phase4_cnn` | TFHE | 15.6253 s [15.4665 s .. 15.9245 s] | 291.88 MB | 23.4 KB | 114.84 MB | 3.96 MB | 1.10 MB |
+| `phase4_cnn` | CKKS | 0.4932 s [0.4891 s .. 0.5013 s] | 5247.70 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB |
+| `phase5_digits` | TFHE | 75.3691 s [75.0327 s .. 75.6319 s] | 329.73 MB | 23.4 KB | 114.84 MB | 9.04 MB | 1.41 MB |
+| `phase5_digits` | CKKS | 1.0833 s [1.0695 s .. 1.0974 s] | 4454.91 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB |
+| `phase5_qat` | TFHE | 68.5777 s [68.4621 s .. 68.7342 s] | 325.16 MB | 23.4 KB | 114.84 MB | 8.04 MB | 1.26 MB |
+| `phase5_qat` | CKKS | 0.9794 s [0.9650 s .. 0.9886 s] | 3942.00 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB |
+| `phase6_onnx` | TFHE | 75.6790 s [75.2890 s .. 75.9957 s] | 324.55 MB | 23.4 KB | 114.84 MB | 9.04 MB | 1.41 MB |
+| `phase6_onnx` | CKKS | 1.0824 s [1.0770 s .. 1.0936 s] | 4873.66 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB |
+| `phase6_sklearn` | TFHE | 12.1230 s [11.9946 s .. 12.2211 s] | 351.36 MB | 23.4 KB | 114.84 MB | 10.05 MB | 1.57 MB |
+| `phase6_sklearn` | CKKS | 0.3787 s [0.3773 s .. 0.3829 s] | 4326.44 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB |
+| `phase7_faces` | TFHE | 123.0731 s [122.9415 s .. 123.2908 s] | 497.81 MB | 23.4 KB | 114.84 MB | 44.22 MB | 1.13 MB |
+| `phase7_faces` | CKKS | 2.0114 s [2.0031 s .. 2.0212 s] | 4119.27 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB |
+| `phase8_trees` | TFHE | 4.6731 s [4.6128 s .. 4.7388 s] | 274.58 MB | 23.4 KB | 114.84 MB | 3.30 MB | 0.22 MB |
+| `phase8_trees` | CKKS | *Unsupported (depth budget exceeded)* | — | — | — | — | — |
+| `phase8_branch` | TFHE | 35.3862 s [35.1211 s .. 35.8782 s] | 365.11 MB | 23.4 KB | 114.84 MB | 11.05 MB | 1.10 MB |
+| `phase8_branch` | CKKS | 0.7333 s [0.7312 s .. 0.7371 s] | 4244.89 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB |
+| `phase8_bn_cnn` | TFHE | 88.0627 s [87.8985 s .. 88.2597 s] | 318.38 MB | 23.4 KB | 114.84 MB | 9.04 MB | 1.26 MB |
+| `phase8_bn_cnn` | CKKS | 1.0035 s [0.9982 s .. 1.0121 s] | 4054.78 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB |
+| `phase8_gap_cnn` | TFHE | 162.9067 s [162.3718 s .. 163.0674 s] | 330.22 MB | 23.4 KB | 114.84 MB | 10.05 MB | 1.57 MB |
+| `phase8_gap_cnn` | CKKS | 1.7180 s [1.7022 s .. 1.7298 s] | 5255.83 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB |
+| `phase8_tanh` | TFHE | 28.1181 s [27.8604 s .. 28.4598 s] | 361.86 MB | 23.4 KB | 114.84 MB | 10.05 MB | 1.10 MB |
+| `phase8_tanh` | CKKS | 0.6359 s [0.6313 s .. 0.6397 s] | 3948.52 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB |
+| `phase8_xgb` | TFHE | 4.8506 s [4.7964 s .. 4.9365 s] | 273.73 MB | 23.4 KB | 114.84 MB | 3.30 MB | 0.22 MB |
+| `phase8_xgb` | CKKS | *Unsupported (depth budget exceeded)* | — | — | — | — | — |
+| `phase11_tabular_mlp` | TFHE | 9.2257 s [9.1662 s .. 9.2561 s] | 301.50 MB | 23.4 KB | 114.84 MB | 4.71 MB | 0.19 MB |
+| `phase11_tabular_mlp` | CKKS | 0.4185 s [0.4165 s .. 0.4202 s] | 4400.12 MB | 128.1 KB | 1782.50 MB | 4.75 MB | 4.75 MB |
+
+*Source: [`docs/results/phase16-paper-final.json`](./results/phase16-paper-final.json) @ `3833c94`.*
+
+#### Table 2: Scheme Cost Proxies and D16 PBS Accounting (Phase 16)
+
+| Model | Backend | Total PBS | Lookup PBS | Carry PBS | CKKS Depth Levels | CKKS Rescales | CKKS Rotations | Profile Sample ID |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `phase2_logreg` | TFHE | 91 | 1 | 90 | — | — | — | `413` |
+| `phase2_logreg` | CKKS | — | — | — | 4 | 5 | 16 | `400` |
+| `phase4_cnn` | TFHE | 6134 | 32 | 6102 | — | — | — | `607` |
+| `phase4_cnn` | CKKS | — | — | — | 4 | 7 | 45 | `600` |
+| `phase5_digits` | TFHE | 31663 | 108 | 31555 | — | — | — | `188` |
+| `phase5_digits` | CKKS | — | — | — | 5 | 7 | 46 | `1496` |
+| `phase5_qat` | TFHE | 28558 | 108 | 28450 | — | — | — | `705` |
+| `phase5_qat` | CKKS | — | — | — | 5 | 7 | 46 | `1496` |
+| `phase6_onnx` | TFHE | 31663 | 108 | 31555 | — | — | — | `1319` |
+| `phase6_onnx` | CKKS | — | — | — | 5 | 7 | 46 | `1496` |
+| `phase6_sklearn` | TFHE | 4704 | 0 | 4704 | — | — | — | `254` |
+| `phase6_sklearn` | CKKS | — | — | — | 1 | 1 | 19 | `1496` |
+| `phase7_faces` | TFHE | 50559 | 128 | 50431 | — | — | — | `16` |
+| `phase7_faces` | CKKS | — | — | — | 5 | 7 | 53 | `16` |
+| `phase8_trees` | TFHE | 1699 | 67 | 1632 | — | — | — | `431` |
+| `phase8_trees` | CKKS | — | — | — | *exceeds capacity (needs 360 bits)* | — | — | — |
+| `phase8_branch` | TFHE | 14157 | 32 | 14125 | — | — | — | `197` |
+| `phase8_branch` | CKKS | — | — | — | 2 | 12 | 64 | `1496` |
+| `phase8_bn_cnn` | TFHE | 34686 | 144 | 34542 | — | — | — | `442` |
+| `phase8_bn_cnn` | CKKS | — | — | — | 4 | 7 | 62 | `1496` |
+| `phase8_gap_cnn` | TFHE | 65629 | 256 | 65373 | — | — | — | `386` |
+| `phase8_gap_cnn` | CKKS | — | — | — | 4 | 8 | 85 | `1496` |
+| `phase8_tanh` | TFHE | 11383 | 16 | 11367 | — | — | — | `1053` |
+| `phase8_tanh` | CKKS | — | — | — | 4 | 6 | 35 | `1496` |
+| `phase8_xgb` | TFHE | 1682 | 69 | 1613 | — | — | — | `204` |
+| `phase8_xgb` | CKKS | — | — | — | *exceeds capacity (needs 360 bits)* | — | — | — |
+| `phase11_tabular_mlp` | TFHE | 3615 | 8 | 3607 | — | — | — | `70` |
+| `phase11_tabular_mlp` | CKKS | — | — | — | 4 | 6 | 26 | `204` |
+
+*Source: [`docs/results/phase16-paper-final.json`](./results/phase16-paper-final.json) @ `3833c94`.*
+
+#### Table 3: Full-Test Accuracy, Error Distributions, and Bound Verification (Phase 16)
+
+| Model | Backend | Encrypted Task Acc | Quantized Ref Acc | Label Flips | Absolute Error (median / p95 / max) | Margin Relative Err (median / max) | Declared Bound | Bound Check Result |
+|---|---|---:|---:|---:|---|---|---:|---:|
+| `phase2_logreg` | TFHE | 1.0000 | 1.0000 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase2_logreg` | CKKS | 1.0000 | 1.0000 | 0/256 (0.00%) | 0.496 / 0.497 / 0.498 | 0.0000 / 0.0000 | 0.9952 | max 0.4978 < bound 0.9952 (PASS) |
+| `phase4_cnn` | TFHE | 0.9570 | 0.9570 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase4_cnn` | CKKS | 0.9922 | 0.9570 | 11/256 (4.30%) | 3.936 / 6.764 / 11.934 | 0.5884 / 6.8049 | 16.8386 | max 11.9345 < bound 16.8386 (PASS) |
+| `phase5_digits` | TFHE | 0.9167 | 0.9167 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase5_digits` | CKKS | 0.9222 | 0.9167 | 14/360 (3.89%) | 33.984 / 57.654 / 83.211 | 0.4466 / 32.6111 | 150.1730 | max 83.2113 < bound 150.1730 (PASS) |
+| `phase5_qat` | TFHE | 0.9361 | 0.9361 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase5_qat` | CKKS | 0.9417 | 0.9361 | 12/360 (3.33%) | 9.139 / 14.411 / 17.486 | 0.3326 / 15.2827 | 30.3024 | max 17.4862 < bound 30.3024 (PASS) |
+| `phase6_onnx` | TFHE | 0.9167 | 0.9167 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase6_onnx` | CKKS | 0.9222 | 0.9167 | 14/360 (3.89%) | 33.983 / 57.656 / 83.212 | 0.4466 / 32.6110 | 151.0399 | max 83.2117 < bound 151.0399 (PASS) |
+| `phase6_sklearn` | TFHE | 0.8806 | 0.8806 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase6_sklearn` | CKKS | 0.8806 | 0.8806 | 1/360 (0.28%) | 0.000 / 0.000 / 0.000 | 0.0000 / 0.0001 | 0.0004 | max 0.0002 < bound 0.0004 (PASS) |
+| `phase7_faces` | TFHE | 0.9000 | 0.9000 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase7_faces` | CKKS | 0.9000 | 0.9000 | 0/20 (0.00%) | 60.231 / 110.550 / 110.969 | 0.7459 / 10.4461 | 288.7376 | max 110.9689 < bound 288.7376 (PASS) |
+| `phase8_trees` | TFHE | 0.9561 | 0.9561 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase8_trees` | CKKS | — | — | — | — | — | — | *Unsupported (depth budget exceeded: 360 bits > 330 bits)* |
+| `phase8_branch` | TFHE | 0.9056 | 0.9056 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase8_branch` | CKKS | 0.2028 | 0.9056 | 289/360 (80.28%) | 42.779 / 60.273 / 76.546 | 1.7032 / 40.8879 | 137.3517 | max 76.5457 < bound 137.3517 (PASS) |
+| `phase8_bn_cnn` | TFHE | 0.9278 | 0.9278 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase8_bn_cnn` | CKKS | 0.9389 | 0.9278 | 15/360 (4.17%) | 16.920 / 25.801 / 37.516 | 0.3043 / 18.7320 | 60.9603 | max 37.5164 < bound 60.9603 (PASS) |
+| `phase8_gap_cnn` | TFHE | 0.5611 | 0.5611 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase8_gap_cnn` | CKKS | 0.5889 | 0.5611 | 118/360 (32.78%) | 117.155 / 190.645 / 263.401 | 1.7166 / 194.9476 | 381.4977 | max 263.4005 < bound 381.4977 (PASS) |
+| `phase8_tanh` | TFHE | 0.6917 | 0.6917 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase8_tanh` | CKKS | 0.9583 | 0.6917 | 105/360 (29.17%) | 20.213 / 30.409 / 42.377 | 1.8412 / 36.9001 | 70.9196 | max 42.3772 < bound 70.9196 (PASS) |
+| `phase8_xgb` | TFHE | 0.9649 | 0.9649 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase8_xgb` | CKKS | — | — | — | — | — | — | *Unsupported (depth budget exceeded: 360 bits > 330 bits)* |
+| `phase11_tabular_mlp` | TFHE | 0.9561 | 0.9561 | 0/30 (0.00%) | 0.0 / 0.0 / 0.0 (exact) | — | 0.0 (exact) | 30/30 exact checks passed (PASS) |
+| `phase11_tabular_mlp` | CKKS | 0.9649 | 0.9561 | 1/114 (0.88%) | 11.341 / 23.689 / 26.831 | 0.2791 / 3.3739 | 57.6876 | max 26.8308 < bound 57.6876 (PASS) |
+
+*Source: [`docs/results/phase16-paper-final.json`](./results/phase16-paper-final.json) @ `3833c94`.*
+
+#### Table 4: D17 Before/After TFHE Analysis: Within-Scheme Speedup (N) vs Cross-Scheme Gap (M)
+
+*Pre-fix baseline is the Phase 14 pre-fix benchmark (`phase14-tfhe-baseline.json` @ `488f76c`) using global accumulator radix capacity. Post-fix diagnostic is from the Phase 16 diagnostic sweep (`phase16-tfhe-diagnostics.json` @ `3833c94`) using per-tensor radix width under identical report parameters (`--mode diagnostics --samples 2`). Cross-scheme gap M is derived strictly from final canonical Criterion medians (`phase16-paper-final.json` @ `3833c94`).*
+
+| Model | Pre-fix PBS | Post-fix PBS | PBS Reduction | Pre-fix Eval (s) | Post-fix Eval (s) | N (Within-Scheme Speedup) | M (Cross-Scheme Criterion Gap) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `phase2_logreg` | 137 | 91 | -33.6% | 0.439 s | 0.330 s | 1.33x (diag)<br>**1.46x (Criterion)** | **0.96x** |
+| `phase4_cnn` | 9,104 | 6,134 | -32.6% | 25.440 s | 15.638 s | 1.63x (diag) | **31.68x** |
+| `phase5_digits` | 75,153 | 31,663 | -57.9% | 215.055 s | 76.250 s | 2.82x (diag) | **69.57x** |
+| `phase5_qat` | 56,470 | 28,558 | -49.4% | 165.394 s | 70.186 s | 2.36x (diag) | **70.02x** |
+| `phase6_onnx` | 75,153 | 31,663 | -57.9% | 215.041 s | 77.462 s | 2.78x (diag) | **69.92x** |
+| `phase6_sklearn` | 13,376 | 4,704 | -64.8% | 41.131 s | 11.996 s | 3.43x (diag) | **32.01x** |
+| `phase7_faces` | 128,571 | 50,559 | -60.7% | 373.256 s | 124.792 s | 2.99x (diag) | **61.19x** |
+| `phase8_trees` | 4,156 | 1,699 | -59.1% | 10.914 s | 4.562 s | 2.39x (diag) | *CKKS unsupported* |
+| `phase8_branch` | 47,202 | 14,157 | -70.0% | 134.025 s | 35.416 s | 3.78x (diag) | **48.26x** |
+| `phase8_bn_cnn` | 70,897 | 34,686 | -51.1% | 204.966 s | 88.029 s | 2.33x (diag) | **87.76x** |
+| `phase8_gap_cnn` | 139,388 | 65,629 | -52.9% | 406.451 s | 163.071 s | 2.49x (diag) | **94.82x** |
+| `phase8_tanh` | — | 11,383 | — | — | 27.745 s | — | **44.22x** |
+| `phase8_xgb` | — | 1,682 | — | — | 4.777 s | — | *CKKS unsupported* |
+| `phase11_tabular_mlp` | 10,351 | 3,615 | -65.1% | 31.042 s | 9.222 s | 3.37x (diag) | **22.04x** |
+
+*Sources: [`docs/results/phase14-tfhe-baseline.json`](./results/phase14-tfhe-baseline.json), [`docs/results/phase16-tfhe-diagnostics.json`](./results/phase16-tfhe-diagnostics.json), [`docs/results/phase13-logreg-timing.json`](./results/phase13-logreg-timing.json), [`docs/results/phase16-paper-final.json`](./results/phase16-paper-final.json).*
+
+#### Table 5: D15 External Concrete-ML Calibration (Context, Outside Controlled Comparison)
+
+*Evaluated natively in a separate environment on the same Apple M3 Pro host (`concrete-ml 1.9.0`, `concrete-python 2.10.0`, `python 3.11.11`). Model architecture matches `phase6_onnx` (`Conv 1→12, 3x3 s2 → ReLU → Flatten 108 → Linear 108→10`). Configuration: unrounded (`rounding_threshold_bits=None`), $p_{error}=2^{-40}$, `n_bits=6`, 128-bit security profile.*
+
+| Framework / Scheme | Architecture | Quantization / Precision | Timing Method | Latency (s / sample) | Spot Checks Match | Float Acc | Quantized Acc |
+|---|---|---|---|---:|---:|---:|---:|
+| Concrete-ML (TFHE) | `phase6_onnx` (8x8 digits) | 6-bit unrounded ($p_{error}=2^{-40}$) | Server `fhe_circuit.run` (N = 10 repeats) | **146.97 s** (mean 146.91 s, std 0.57 s) | 30/30 (100.0%) | 0.9639 | 0.9528 |
+| Penumbra-FHE (TFHE) | `phase6_onnx` (8x8 digits) | Mixed per-layer radix (in=3, w=[5,6], act=2) | Criterion median (N = 10 samples) | **75.68 s** (95% CI [75.29 s .. 76.00 s]) | 30/30 (100.0% exact) | 0.9639 | 0.9167 |
+
+*Source: [`docs/results/phase16-concrete-calibration.json`](./results/phase16-concrete-calibration.json) @ `ac26687`.*
+
+> ⚠️ **Methodological isolation (D15):** Concrete-ML uses its own quantizer (`n_bits=6` uniform) and compilation pipeline, which differs from Penumbra's per-layer integer quantization. This row provides external calibration context demonstrating that Penumbra's TFHE latency (75.68 s) is within the same order of magnitude as Concrete-ML's unrounded execution (146.97 s) on the exact same architecture and machine; it is **not** a comparator for the controlled TFHE-vs-CKKS study.
+
+#### Table 6: D18 Raw 28×28 MNIST Scale Feasibility Probe
+
+*Evaluated on the raw 28×28 MNIST graph (`Conv2d(1→4, 3x3 s4) → ReLU → Flatten(196) → Linear(196→10)`), with 784 encrypted pixel inputs without cleartext downsampling. Evaluated under release build at commit `3833c9436f872642f3e0407a8ae4dc5c0f473023` on Apple M3 Pro, 11 threads.*
+
+| Probe Experiment | Backend | Input Dimension | Server Eval Latency | ≤ 600 s Gate | Logit Bit-Exactness | Measured PBS Total (Lookup / Carry) | CKKS Status | Exclusion Reason |
+|---|---|---:|---:|---:|---:|---|---|---|
+| `mnist28_scale_probe` | TFHE | 784 pixels | **119.994 s** | **YES (PASS)** | 10/10 exact (PASS) | 49,215 (784 lookup/cmp, 48,431 carry) | *Unsupported (784 > 256)* | Excluded from controlled suite: 784 exceeds CKKS linear capacity 256 (D18 amendment) |
+
+*Source: [`docs/results/phase16-mnist28-probe.json`](./results/phase16-mnist28-probe.json) @ `3833c94`.*
+
+
 ## Results provenance
 
 Every figure in this document, `COMPARISON.md`, and `NOTES-*.md` cites one of these files and the commit shown; sizes are binary units as printed by `penumbra-bench` (1 KB = 1,024 B, 1 MB = 2^20 B).
 
 | File | Run commit (`meta.commit`) | Committed in | Caveat |
 |---|---|---|---|
+| `docs/results/phase16-paper-final.json` | `3833c9436f872642f3e0407a8ae4dc5c0f473023` | `docs/paper-results` | Final Phase 16 28-row matrix evaluation: all 14 models, both backends, Criterion medians with 95% CI (10 samples), isolated server peak RSS via `getrusage`, wire sizes, D16 lookup/carry PBS split, 30 exact integer checks for TFHE, raw float error distributions and label flips for CKKS, and real graph-budget depth rejections for tree ensembles. |
+| `docs/results/phase16-mnist28-probe.json` | `3833c9436f872642f3e0407a8ae4dc5c0f473023` | `docs/paper-results` | Raw 28×28 MNIST CNN (784 inputs) feasibility probe timing server evaluation (119.99 s ≤ 600 s), verifying bit-for-bit logit exactness, and recording CKKS capacity limit (784 > 256). Excluded from controlled suite under approved D18 amendment. |
+| `docs/results/phase16-tfhe-diagnostics.json` | `3833c9436f872642f3e0407a8ae4dc5c0f473023` | `docs/paper-results` | Post-fix matched diagnostic observations across all 14 models (N = 2 samples) for D17 before/after PBS accounting and per-op-type time breakdowns. |
+| `docs/results/phase16-tfhe-before-after.json` | `3833c9436f872642f3e0407a8ae4dc5c0f473023` | `docs/paper-results` | Derived D17 before/after table comparing Phase 14 pre-fix baseline (`phase14-tfhe-baseline.json` @ `488f76c`) against Phase 16 post-fix diagnostics, with canonical Criterion comparison for logreg (`phase13-logreg-timing.json` @ `accc268` vs `phase16-paper-final.json`). |
+| `docs/results/phase16-concrete-calibration.json` | `ac26687b9acb75580a68c78fab70fd3ad765338f` | `docs/paper-results` | External Concrete-ML calibration artifact from native execution in separate local paper repository (`concrete-ml 1.9.0`, unrounded, p_error=2**-40, 10 timed encrypted runs, 30 spot checks). |
+| `docs/results/phase16-run-manifest.json` | `3833c9436f872642f3e0407a8ae4dc5c0f473023` | `docs/paper-results` | Run manifest recording execution provenance, frozen commit F, machine/OS/compiler versions, commands executed, and promoted artifact hashes. |
 | `docs/results/phase15-protocol-smoke-{tfhe,ckks}.json` | `3ddf8f4` | pending | Hardened Phase 15 protocol smoke runs on Apple M3 Pro, macOS 26.6.2, 11 threads. Criterion medians with 95% CI, isolated server peak RSS via `getrusage`, wire sizes, D16 lookup/carry PBS split, exact integer checks for TFHE, raw float error and label flips for CKKS. |
 | `docs/results/phase15-ckks-calibration.json` | `1aaa8eb` | `de2ae6b` | Calibration artifact deriving 2.0 * p99 error bounds over training calibration splits across 12 supported models and 2 depth rejections. |
 | `docs/results/phase15-security-estimates.json` | `de2ae6b` | `3ddf8f4` | Lattice estimator security estimates under SageMath 10.6 for TFHE and CKKS parameter tuples. |
@@ -654,4 +831,19 @@ done
 
 # Run Criterion variance check:
 PENUMBRA_BENCH_MODELS=phase2_logreg cargo +nightly bench -p penumbra-bench --features ckks
+
+# Full Phase 16 paper evaluation across all 14 models and both backends:
+RAYON_NUM_THREADS=11 ./target/release/penumbra-bench-report \
+  --mode paper --models all --backends tfhe,ckks --threads 11 \
+  --format json --out docs/results/phase16-paper-final.json
+
+# Separate raw 28×28 MNIST scale probe:
+RAYON_NUM_THREADS=11 ./target/release/penumbra-mnist-scale-probe \
+  --fixture examples/mnist/phase16_mnist28_fixture.json --threads 11 \
+  --out docs/results/phase16-mnist28-probe.json
+
+# Post-fix diagnostic sweep for before/after comparison:
+RAYON_NUM_THREADS=11 ./target/release/penumbra-bench-report \
+  --mode diagnostics --models all --backends tfhe --threads 11 --samples 2 \
+  --format json --out docs/results/phase16-tfhe-diagnostics.json
 ```

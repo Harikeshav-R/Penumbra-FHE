@@ -10,6 +10,7 @@ The Python package and the four published crates share one version, and the IR `
 ## [Unreleased]
 
 ### Added
+- Phase 16 full comparison run artifacts (`docs/results/`): final 28-row matrix evaluation (`phase16-paper-final.json`), raw 28×28 scale probe (`phase16-mnist28-probe.json`), post-fix TFHE diagnostics (`phase16-tfhe-diagnostics.json`), D17 before/after within-scheme vs cross-scheme analysis (`phase16-tfhe-before-after.json`), external Concrete-ML calibration (`phase16-concrete-calibration.json`), and execution manifest (`phase16-run-manifest.json`).
 - Separate raw 28×28 MNIST scale experiment (Phase 16): a frozen Layer-3 CNN fixture and `penumbra-mnist-scale-probe` command verify TFHE logits against the integer reference and observe the existing CKKS input-capacity rejection. The probe is not a member of the controlled 14-model suite.
 - Paper benchmark evaluation protocol (Phase 15): added `examples/paper_protocol.py` establishing canonical evaluation datasets, frozen input quantization, and exact reference outputs across all 14 model fixtures under a root `paper` schema (version 1).
 - Registered `phase8_tanh` and `phase8_xgb` in `penumbra-bench` model fixtures.
