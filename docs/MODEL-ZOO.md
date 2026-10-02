@@ -1,6 +1,6 @@
 # Model zoo — validated examples
 
-Every row is a committed fixture whose FHE output is gated against `evaluate_graph_int`. TFHE is bit-for-bit. CKKS is within the named bound, or rejected loudly at load. Accuracies are the fixture's recorded test-split numbers.
+Every controlled-suite row is a committed fixture whose FHE output is gated against `evaluate_graph_int`. TFHE is bit-for-bit. CKKS is within the named bound, or rejected loudly at load. Accuracies are the fixture's recorded test-split numbers. The separately labelled MNIST28 scale probe is not a controlled-suite member; its executable enforces full-logit TFHE equality on every run.
 
 ## Validated models
 
@@ -20,6 +20,21 @@ Every row is a committed fixture whose FHE output is gated against `evaluate_gra
 | `examples/trees/phase8_trees_fixture.json` | `examples/trees/tree_export.py` | scikit-learn RandomForestClassifier lowered to Compare and Linear | Wisconsin Breast Cancer (30 features, 2 classes) | `Compare → Linear → Compare → Linear` | 0.956 | 0.956 | `runtime/tests/golden_trees.rs` | rejected at load (depth budget 360 > 330 bits): `crates/penumbra-ckks/tests/ckks_unsupported_ops.rs` | `phase8_trees` |
 | `examples/trees/phase8_xgb_fixture.json` | `examples/trees/xgb_export.py` | XGBoost XGBClassifier lowered to Compare and Linear | Wisconsin Breast Cancer (30 features, 2 classes) | `Compare → Linear → Compare → Linear` | 0.965 | 0.965 | `runtime/tests/golden_trees.rs` | rejected at load (same Compare→Linear→Compare→Linear shape as phase8_trees, 360 > 330 bits) | `phase8_xgb` |
 | `examples/tabular/phase11_tabular_mlp_fixture.json` | `examples/tabular/mlp_export.py` | PyTorch MLP (Gemm → ReLU → Gemm) exported to ONNX | Wisconsin Breast Cancer (30 features, 2 classes) | `Linear → Requant → Linear` | 0.965 | 0.956 | `runtime/tests/golden_tabular_mlp.rs` | `crates/penumbra-ckks/tests/ckks_golden_tabular_mlp.rs` (`PHASE11_TABULAR_MLP`) | `phase11_tabular_mlp` |
+| `examples/mnist/phase16_mnist28_fixture.json` | `examples/mnist/mnist28_export.py` | **Separate scale probe:** raw 28×28 Conv 1→4, kernel 3, stride 4; Linear 196→10 | official MNIST (60,000 train / 10,000 test) | `Conv2d → Requant → Linear` | 0.905 | 0.871 | exact full-logit gate in `crates/penumbra-bench/src/bin/mnist_scale_probe.rs` | excluded under approved D18: 784 inputs exceed fixed 256-element linear-transform capacity | — |
+
+### Separate raw MNIST28 scale probe
+
+The controlled benchmark registry remains **14 models**. The raw 28×28 probe
+encrypts all 784 pixels; stride-4 convolution occurs inside the encrypted graph,
+not as external downsampling. D18 excludes it from backend-parity measurements
+regardless of whether its one-sample TFHE server evaluation is ≤ 600 seconds.
+
+The frozen fixture records official dataset checksums, training/calibration
+indices, two held-out reference vectors, and full 10,000-example cleartext
+accuracies. The probe binary checks full decrypted logits before emitting
+evidence. Its server-evaluation duration is a feasibility observation, not
+Criterion headline latency or a cross-scheme ratio.
+
 
 ## Regenerating
 
@@ -40,6 +55,7 @@ uv run --extra ml --system-certs python examples/mnist/tanh_mlp_export.py
 uv run --extra ml --system-certs python examples/trees/tree_export.py
 uv run --extra ml --system-certs python examples/trees/xgb_export.py
 uv run --extra ml --system-certs python examples/tabular/mlp_export.py
+uv run --extra ml python examples/mnist/mnist28_export.py
 ```
 
 ### Paper protocol evaluation data

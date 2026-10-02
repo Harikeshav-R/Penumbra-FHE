@@ -91,3 +91,39 @@ cargo test -p penumbra-fhe-runtime --release --test golden_branch_mlp -- --ignor
 cargo test -p penumbra-fhe-runtime --release --test golden_gap_cnn -- --ignored
 cargo test -p penumbra-fhe-runtime --release --test golden_tanh_mlp -- --ignored
 ```
+
+## Separate raw 28×28 MNIST scale probe (Phase 16)
+
+`phase16_mnist28_fixture.json` is deliberately **not** registered with the
+controlled 14-model benchmark suite or the `run.py --model` selector.
+It contains raw 784-pixel inputs and a `Conv2d(1,4,3,stride=4,bias=False) →
+ReLU → Flatten → Linear(196,10)` model. Convolutional stride is evaluated under
+encryption; there is no cleartext downsampling.
+
+Training uses seed 0, the official 60,000/10,000 split, pixels divided by 255,
+five Adam epochs (learning rate 0.001, batch size 128), and 128 training
+calibration rows selected with seed 1507. The committed integer graph uses
+input bits 3, weights (5,6), activation bits 2, per-channel MSE calibration,
+and maximum requantization multiplier bits 1. Full held-out float accuracy
+is 9047/10000; quantized accuracy is 8709/10000.
+
+```bash
+# Regenerate only when intentionally replacing this frozen experiment:
+uv run --extra ml python examples/mnist/mnist28_export.py
+# Resume export after a lowering failure without retraining:
+uv run --extra ml python examples/mnist/mnist28_export.py --export-only
+
+uv run pytest tests/test_mnist28_fixture.py
+cargo +nightly build -p penumbra-bench --features ckks --release --bins
+RAYON_NUM_THREADS=11 ./target/release/penumbra-mnist-scale-probe \
+  --fixture examples/mnist/phase16_mnist28_fixture.json --threads 11 \
+  --out target/phase16/phase16-mnist28-probe.json
+```
+
+Measurement requires a clean committed checkout matching the release binary's
+build revision. The probe times only `Session::eval` and rejects any full-logit
+TFHE discrepancy before writing success evidence. Its separate CKKS input
+check observes the backend's real 784-value rejection against the fixed
+256-element linear-transform capacity. Approved D18 therefore excludes the
+probe from controlled backend parity regardless of the ≤600-second TFHE gate;
+the duration is a one-sample scale observation, not Criterion latency.
