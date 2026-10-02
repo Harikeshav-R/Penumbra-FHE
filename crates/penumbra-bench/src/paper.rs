@@ -3,6 +3,7 @@
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
+use penumbra_core::ir::Graph;
 
 use crate::latency::measure_latency;
 use crate::memory::capture_peak_server_rss;
@@ -15,13 +16,26 @@ use crate::metrics::{
 use crate::models::LoadedModel;
 use crate::paper_backend::{Comparator, PaperBackend, RowSelection};
 use crate::protocol::{
-    AccuracyMetrics, MetricsWorkerConfig, PaperConfig, PaperModelRun, PaperReportMeta,
+    AccuracyMetrics, MetricsWorkerConfig, PaperConfig, PaperData, PaperModelRun, PaperReportMeta,
     PrepareWorkerConfig, ServerMemoryMetrics, ServerRssWorkerConfig, WireSizes,
 };
 use crate::report::NodeReport;
 use crate::session::{eval_server, Session};
 
 // ---------------------------------------------------------------------------
+
+/// If this is a label model, build a temporary graph with the score tensor appended to outputs.
+fn maybe_build_score_tap_graph(graph: &Graph, paper: &PaperData) -> Option<Graph> {
+    if paper.output_kind == "label" {
+        let mut tg = graph.clone();
+        if !tg.outputs.contains(&paper.score_tensor) {
+            tg.outputs.push(paper.score_tensor.clone());
+        }
+        Some(tg)
+    } else {
+        None
+    }
+}
 // Calibration
 // ---------------------------------------------------------------------------
 
@@ -285,15 +299,7 @@ pub fn run_metrics_worker<B: PaperBackend>(
                         "calibration" => paper.calibration.get(sc.index).map(|s| s.id.clone()),
                         _ => None,
                     });
-            let tap_graph = if paper.output_kind == "label" {
-                let mut tg = model.graph.clone();
-                if !tg.outputs.contains(&paper.score_tensor) {
-                    tg.outputs.push(paper.score_tensor.clone());
-                }
-                Some(tg)
-            } else {
-                None
-            };
+            let tap_graph = maybe_build_score_tap_graph(&model.graph, paper);
 
             // TFHE 30 spot checks
             for (idx, sc) in paper.tfhe_spot_check.iter().enumerate() {
@@ -435,15 +441,7 @@ pub fn run_metrics_worker<B: PaperBackend>(
             let is_label_model = paper.output_kind == "label";
 
             // If label model, prepare temporary graph with score tensor output for accuracy
-            let tap_graph = if is_label_model {
-                let mut eg = model.graph.clone();
-                if !eg.outputs.contains(&paper.score_tensor) {
-                    eg.outputs.push(paper.score_tensor.clone());
-                }
-                Some(eg)
-            } else {
-                None
-            };
+            let tap_graph = maybe_build_score_tap_graph(&model.graph, paper);
             let eval_g = tap_graph.as_ref().unwrap_or(&model.graph);
 
             for (idx, sample) in paper.test.iter().enumerate() {
@@ -734,4 +732,59 @@ pub fn run_paper_model<B: PaperBackend>(
         output_ciphertext_bytes: output_ct_bytes,
     });
     Ok(run)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_maybe_build_score_tap_graph() {
+        use penumbra_core::ir::Graph;
+        use crate::protocol::{FloatAccuracy, PaperData};
+
+        let make_graph = |outputs: Vec<&str>| Graph {
+            schema_version: "1.0.0".to_string(),
+            num_blocks: 4,
+            input_bits: 8,
+            inputs: vec!["input".to_string()],
+            outputs: outputs.into_iter().map(String::from).collect(),
+            nodes: vec![],
+        };
+
+        let make_paper = |output_kind: &str, score_tensor: &str| PaperData {
+            schema_version: 1,
+            dataset: "test".to_string(),
+            graph_sha256: "dummy".to_string(),
+            output_kind: output_kind.to_string(),
+            score_tensor: score_tensor.to_string(),
+            decision_threshold: Some(0),
+            calibration: vec![],
+            test: vec![],
+            tfhe_spot_check: vec![],
+            float_accuracy: FloatAccuracy {
+                value: 1.0,
+                source: "test".to_string(),
+                source_path: None,
+                source_sha256: None,
+                sample_count: 0,
+                recomputed: false,
+            },
+        };
+
+        // Case 1: Non-label model returns None
+        let non_label_paper = make_paper("regression", "scores");
+        let g1 = make_graph(vec!["label_out"]);
+        assert!(maybe_build_score_tap_graph(&g1, &non_label_paper).is_none());
+
+        // Case 2: Label model appends score_tensor if absent
+        let label_paper = make_paper("label", "scores");
+        let tapped = maybe_build_score_tap_graph(&g1, &label_paper).expect("should return Some");
+        assert_eq!(tapped.outputs, vec!["label_out", "scores"]);
+
+        // Case 3: Label model does not duplicate if score_tensor already in outputs
+        let g_already = make_graph(vec!["label_out", "scores"]);
+        let tapped2 = maybe_build_score_tap_graph(&g_already, &label_paper).expect("should return Some");
+        assert_eq!(tapped2.outputs, vec!["label_out", "scores"]);
+    }
 }
