@@ -10,7 +10,7 @@ use crate::memory::capture_peak_server_rss;
 use crate::metrics::nearest_rank_quantile;
 use crate::metrics::{
     compute_absolute_distribution, compute_margin_relative_metrics, compute_pbs_split,
-    reference_top_two_margin,
+    evaluate_sample_binary_label, evaluate_sample_multiclass,
 };
 use crate::models::LoadedModel;
 use crate::paper_backend::{Comparator, PaperBackend, RowSelection};
@@ -18,6 +18,7 @@ use crate::protocol::{
     AccuracyMetrics, MetricsWorkerConfig, PaperConfig, PaperModelRun, PaperReportMeta,
     PrepareWorkerConfig, ServerMemoryMetrics, ServerRssWorkerConfig, WireSizes,
 };
+use crate::report::NodeReport;
 use crate::session::{eval_server, Session};
 
 // ---------------------------------------------------------------------------
@@ -275,6 +276,25 @@ pub fn run_metrics_worker<B: PaperBackend>(
 
     match policy.selection {
         RowSelection::SeededSpots => {
+            let profile_sample_id =
+                paper
+                    .tfhe_spot_check
+                    .first()
+                    .and_then(|sc| match sc.split.as_str() {
+                        "test" => paper.test.get(sc.index).map(|s| s.id.clone()),
+                        "calibration" => paper.calibration.get(sc.index).map(|s| s.id.clone()),
+                        _ => None,
+                    });
+            let tap_graph = if paper.output_kind == "label" {
+                let mut tg = model.graph.clone();
+                if !tg.outputs.contains(&paper.score_tensor) {
+                    tg.outputs.push(paper.score_tensor.clone());
+                }
+                Some(tg)
+            } else {
+                None
+            };
+
             // TFHE 30 spot checks
             for (idx, sc) in paper.tfhe_spot_check.iter().enumerate() {
                 let sample = match sc.split.as_str() {
@@ -285,28 +305,14 @@ pub fn run_metrics_worker<B: PaperBackend>(
 
                 let input_cts = session.encrypt(&sample.inputs);
 
-                // If phase2_logreg, evaluate graph with score tensor
-                let (outputs, profile) = if model.fixture.key == "phase2_logreg" {
-                    let mut eval_graph = model.graph.clone();
-                    if !eval_graph.outputs.contains(&"logit".to_string()) {
-                        eval_graph.outputs.push("logit".to_string());
-                    }
-                    eval_server(
-                        &session.backend,
-                        &session.sk,
-                        session.num_blocks,
-                        &eval_graph,
-                        &input_cts,
-                    )?
-                } else {
-                    eval_server(
-                        &session.backend,
-                        &session.sk,
-                        session.num_blocks,
-                        &model.graph,
-                        &input_cts,
-                    )?
-                };
+                // Evaluate original graph for primary output and representative profile
+                let (outputs, profile) = eval_server(
+                    &session.backend,
+                    &session.sk,
+                    session.num_blocks,
+                    &model.graph,
+                    &input_cts,
+                )?;
 
                 if idx == 0 {
                     rep_profile_nodes = profile.nodes.clone();
@@ -329,7 +335,7 @@ pub fn run_metrics_worker<B: PaperBackend>(
 
                 let decrypted_ints = session.decrypt(out_cts);
 
-                // Check exact integer match
+                // Check exact integer match on primary output
                 if decrypted_ints != sample.expected_output {
                     return Err(format!(
                         "TFHE exact integer mismatch on model '{}' sample {} ({:?}): got {:?}, expected {:?}",
@@ -338,10 +344,17 @@ pub fn run_metrics_worker<B: PaperBackend>(
                 }
 
                 // If label model, check score tap
-                if model.fixture.key == "phase2_logreg" {
-                    let score_cts = outputs
-                        .get("logit")
-                        .ok_or_else(|| "missing 'logit' output tensor".to_string())?;
+                if let Some(eval_graph) = &tap_graph {
+                    let (tap_outputs, _) = eval_server(
+                        &session.backend,
+                        &session.sk,
+                        session.num_blocks,
+                        eval_graph,
+                        &input_cts,
+                    )?;
+                    let score_cts = tap_outputs
+                        .get(&paper.score_tensor)
+                        .ok_or_else(|| format!("missing score tensor '{}'", paper.score_tensor))?;
                     let score_ints = session.decrypt(score_cts);
                     if let Some(expected_scores) = &sample.expected_scores {
                         if &score_ints != expected_scores {
@@ -369,6 +382,28 @@ pub fn run_metrics_worker<B: PaperBackend>(
             } else {
                 None
             };
+
+            let rep_node_reports: Vec<NodeReport> = rep_profile_nodes
+                .into_iter()
+                .map(|n| NodeReport {
+                    name: n.name,
+                    op_type: n.op_type.to_string(),
+                    build_secs: n.build.as_secs_f64(),
+                    eval_secs: n.eval.as_secs_f64(),
+                    input_lens: n.input_lens,
+                    output_len: n.output_len,
+                    counters: n
+                        .counters
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), v))
+                        .collect(),
+                    measured: n
+                        .measured
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), v))
+                        .collect(),
+                })
+                .collect();
 
             let accuracy = AccuracyMetrics {
                 sample_count: total_samples,
@@ -400,6 +435,8 @@ pub fn run_metrics_worker<B: PaperBackend>(
                 }),
                 pbs_split,
                 accuracy: Some(accuracy),
+                nodes: rep_node_reports,
+                profile_sample_id,
             })
         }
         RowSelection::FullTest => {
@@ -411,85 +448,104 @@ pub fn run_metrics_worker<B: PaperBackend>(
                 }
             };
 
+            let profile_sample_id = paper.test.first().map(|s| s.id.clone());
+            let is_label_model = paper.output_kind == "label";
+
+            // If label model, prepare temporary graph with score tensor output for accuracy
+            let tap_graph = if is_label_model {
+                let mut eg = model.graph.clone();
+                if !eg.outputs.contains(&paper.score_tensor) {
+                    eg.outputs.push(paper.score_tensor.clone());
+                }
+                Some(eg)
+            } else {
+                None
+            };
+            let eval_g = tap_graph.as_ref().unwrap_or(&model.graph);
+
             for (idx, sample) in paper.test.iter().enumerate() {
                 let input_cts = session.encrypt(&sample.inputs);
 
-                let (outputs, _profile) = eval_server(
-                    &session.backend,
-                    &session.sk,
-                    session.num_blocks,
-                    &model.graph,
-                    &input_cts,
-                )?;
-
+                // Capture representative profile strictly from original graph at idx == 0
                 if idx == 0 {
+                    let (orig_outs, orig_profile) = eval_server(
+                        &session.backend,
+                        &session.sk,
+                        session.num_blocks,
+                        &model.graph,
+                        &input_cts,
+                    )?;
+                    rep_profile_nodes = orig_profile.nodes;
                     let out_name = &model.graph.outputs[0];
-                    if let Some(cts) = outputs.get(out_name) {
+                    if let Some(cts) = orig_outs.get(out_name) {
                         output_ct_bytes = session.ct_bytes(cts)?;
                     }
                 }
 
-                let out_name = &model.graph.outputs[0];
-                let out_cts = outputs
-                    .get(out_name)
-                    .ok_or_else(|| format!("missing output tensor '{out_name}'"))?;
+                let eval_result = if is_label_model {
+                    let (outputs, _profile) = eval_server(
+                        &session.backend,
+                        &session.sk,
+                        session.num_blocks,
+                        eval_g,
+                        &input_cts,
+                    )?;
+                    let out_name = &model.graph.outputs[0];
+                    let out_cts = outputs
+                        .get(out_name)
+                        .ok_or_else(|| format!("missing output tensor '{out_name}'"))?;
+                    let raw_label_floats = session.backend.decode_raw(&session.ck, out_cts);
 
-                let raw_floats = session.backend.decode_raw(&session.ck, out_cts);
+                    let score_cts = outputs
+                        .get(&paper.score_tensor)
+                        .ok_or_else(|| format!("missing score tensor '{}'", paper.score_tensor))?;
+                    let raw_score_floats = session.backend.decode_raw(&session.ck, score_cts);
 
-                if raw_floats.len() < sample.expected_output.len() {
-                    return Err(format!(
-                        "CKKS decoded length {} < expected length {}",
-                        raw_floats.len(),
-                        sample.expected_output.len()
-                    ));
-                }
+                    let threshold = paper.decision_threshold.ok_or_else(|| {
+                        format!(
+                            "model '{}' output_kind 'label' missing decision_threshold",
+                            model.fixture.key
+                        )
+                    })?;
 
-                let max_err = raw_floats
-                    .iter()
-                    .zip(&sample.expected_output)
-                    .map(|(&got, &want)| (got - want as f64).abs())
-                    .fold(0.0f64, f64::max);
-
-                if !max_err.is_finite() {
-                    return Err(format!(
-                        "CKKS non-finite error on sample {}: {max_err}",
-                        sample.id
-                    ));
-                }
-
-                if max_err > bound {
-                    return Err(format!(
-                        "CKKS error bound violation on model '{}' sample {} (id {}): error {max_err} > bound {bound}",
-                        model.fixture.key, idx, sample.id
-                    ));
-                }
-
-                sample_max_errors.push(max_err);
-
-                // Prediction & label comparison
-                let pred_label = if model.fixture.key == "phase2_logreg" {
-                    // Nearest integer rounding of binary decision output
-                    raw_floats[0].round() as i64
+                    evaluate_sample_binary_label(
+                        sample,
+                        &raw_label_floats,
+                        &raw_score_floats,
+                        threshold,
+                        bound,
+                    )?
                 } else {
-                    // First-tie maximum argmax
-                    raw_floats
-                        .iter()
-                        .enumerate()
-                        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-                        .map(|(i, _)| i as i64)
-                        .unwrap_or(0)
+                    let (outputs, _profile) = eval_server(
+                        &session.backend,
+                        &session.sk,
+                        session.num_blocks,
+                        &model.graph,
+                        &input_cts,
+                    )?;
+                    let out_name = &model.graph.outputs[0];
+                    let out_cts = outputs
+                        .get(out_name)
+                        .ok_or_else(|| format!("missing output tensor '{out_name}'"))?;
+                    let raw_floats = session.backend.decode_raw(&session.ck, out_cts);
+
+                    evaluate_sample_multiclass(
+                        &raw_floats,
+                        &sample.expected_output,
+                        sample.expected_label,
+                        sample.target,
+                        bound,
+                    )?
                 };
 
-                if pred_label != sample.expected_label {
+                sample_max_errors.push(eval_result.max_err);
+                if eval_result.label_flip {
                     label_flips += 1;
                 }
-                if pred_label == sample.target {
+                if eval_result.task_match {
                     task_matches += 1;
                 }
-
-                // Top-two margin for score error
-                let (_, margin) = reference_top_two_margin(&sample.expected_output);
-                score_margin_errors.push((max_err, margin));
+                score_margin_errors.push(eval_result.score_margin);
             }
 
             let cleartext_matches = paper
@@ -503,6 +559,28 @@ pub fn run_metrics_worker<B: PaperBackend>(
 
             let abs_dist = compute_absolute_distribution(sample_max_errors)?;
             let margin_metrics = compute_margin_relative_metrics(&score_margin_errors)?;
+
+            let rep_node_reports: Vec<NodeReport> = rep_profile_nodes
+                .into_iter()
+                .map(|n| NodeReport {
+                    name: n.name,
+                    op_type: n.op_type.to_string(),
+                    build_secs: n.build.as_secs_f64(),
+                    eval_secs: n.eval.as_secs_f64(),
+                    input_lens: n.input_lens,
+                    output_len: n.output_len,
+                    counters: n
+                        .counters
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), v))
+                        .collect(),
+                    measured: n
+                        .measured
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), v))
+                        .collect(),
+                })
+                .collect();
 
             let accuracy = AccuracyMetrics {
                 sample_count: total_samples,
@@ -534,6 +612,8 @@ pub fn run_metrics_worker<B: PaperBackend>(
                 }),
                 pbs_split: None,
                 accuracy: Some(accuracy),
+                nodes: rep_node_reports,
+                profile_sample_id,
             })
         }
     }
@@ -556,7 +636,26 @@ pub fn run_paper_model<B: PaperBackend>(
         )
     })?;
 
-    // Check backend policy preflight: if rejected (e.g. tree models on CKKS), return unsupported
+    // Check backend graph budget preflight first: if rejected (e.g. tree models on CKKS depth budget), return unsupported
+    if let Err(rejection) = backend.check_graph_budget(&model.graph) {
+        return Ok(PaperModelRun {
+            status: "unsupported".to_string(),
+            model: model.fixture.key.to_string(),
+            backend: backend.name().to_string(),
+            profile: None,
+            graph_sha256: paper.graph_sha256.clone(),
+            rejection: Some(rejection),
+            latency: None,
+            memory: None,
+            sizes: None,
+            pbs_split: None,
+            accuracy: None,
+            nodes: Vec::new(),
+            profile_sample_id: None,
+        });
+    }
+
+    // Check backend policy preflight
     let policy_res = backend.paper_policy(model.fixture);
     let _policy = match policy_res {
         Ok(p) => p,
@@ -573,6 +672,8 @@ pub fn run_paper_model<B: PaperBackend>(
                 sizes: None,
                 pbs_split: None,
                 accuracy: None,
+                nodes: Vec::new(),
+                profile_sample_id: None,
             });
         }
     };

@@ -1,5 +1,6 @@
 //! Paper evaluation protocol schemas, worker contracts, and validation.
 
+use crate::report::NodeReport;
 use penumbra_core::ir::Graph;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -372,6 +373,10 @@ pub struct PaperModelRun {
     pub pbs_split: Option<PbsSplit>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accuracy: Option<AccuracyMetrics>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nodes: Vec<NodeReport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_sample_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

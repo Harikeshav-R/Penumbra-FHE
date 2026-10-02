@@ -644,7 +644,7 @@ fn run() -> Result<(), String> {
             }
 
             let report = PaperReport {
-                schema_version: 1,
+                schema_version: 2,
                 meta,
                 runs,
             };
